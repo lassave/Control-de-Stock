@@ -61,6 +61,78 @@ def test_completa_filas_con_menos_columnas():
     assert filas[0] == ["1", "Tornillo", ""]
 
 
+def test_conserva_las_columnas_de_mas_en_vez_de_descartarlas():
+    """Un campo de más delata un archivo mal armado: no se pierde en silencio."""
+    contenido = "sku,descripcion\n1,Tornillo,SOBRA\n".encode("utf-8")
+
+    _, filas = lectura_csv.leer(contenido)
+
+    assert filas[0] == ["1", "Tornillo", "SOBRA"]
+
+
+def test_no_se_confunde_con_un_separador_dentro_de_comillas():
+    """Contar caracteres fusionaría SKU y descripción en una sola columna."""
+    contenido = 'sku,"descripcion; larga"\n1,Tornillo\n'.encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion; larga"]
+    assert filas[0] == ["1", "Tornillo"]
+
+
+def test_saltea_un_titulo_antes_del_encabezado():
+    """Varios ERP anteponen el nombre del listado o la fecha de emisión."""
+    contenido = (
+        "Listado de stock al 10/08/2026\n"
+        "sku;descripcion\n"
+        "1;Tornillo\n"
+        "2;Tuerca\n"
+    ).encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert len(filas) == 2
+
+
+def test_ignora_la_columna_vacia_que_deja_un_separador_final():
+    contenido = "sku,descripcion,\n1,Tornillo,\n".encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert filas[0][:2] == ["1", "Tornillo"]
+
+
+def test_rechaza_un_encabezado_sin_nombres():
+    contenido = ",,\n1,2,3\n".encode("utf-8")
+
+    with pytest.raises(ValueError, match="nombres de columna"):
+        lectura_csv.leer(contenido)
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("sku;descripcion\n1;Tornillo", ";"),
+    ("sku,descripcion\n1,Tornillo", ","),
+    ("sku\tdescripcion\n1\tTornillo", "\t"),
+    ("sku|descripcion\n1|Tornillo", "|"),
+    ("una sola columna\nsin separadores", ","),
+    ("", ","),
+])
+def test_detectar_separador(texto, esperado):
+    assert lectura_csv.detectar_separador(texto) == esperado
+
+
+@pytest.mark.parametrize("texto, codificacion, esperada", [
+    ("Cañería", "utf-8", "utf-8-sig"),
+    ("Cañería", "cp1252", "cp1252"),
+    ("sin acentos", "ascii", "utf-8-sig"),
+])
+def test_detectar_codificacion(texto, codificacion, esperada):
+    """UTF-8 se prueba primero: casi todo UTF-8 también decodifica como cp1252."""
+    assert lectura_csv.detectar_codificacion(texto.encode(codificacion)) == esperada
+
+
 def test_recorta_espacios_de_los_encabezados():
     contenido = " sku , descripcion \n1,Tornillo\n".encode("utf-8")
 
