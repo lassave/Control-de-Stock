@@ -83,8 +83,9 @@ El **Conteo 1** abarca todo el maestro; los siguientes son parciales, sobre los 
 **`articulo`** — el maestro, congelado dentro de la sesión
 ```
 id, sesion_id, id_orden, tipo, material, sku, descripcion, grupo,
-ubicacion, unidad, stock_sistema, origen (importado | alta_rapida),
-creado_por, creado_en
+ubicacion, unidad, stock_sistema, costo_unitario (nullable),
+origen (importado | alta_rapida), creado_por, creado_en,
+fusionado_en (nullable)
 ```
 
 **`codigo_barras`** — tabla aparte: un SKU puede tener varios códigos
@@ -130,6 +131,12 @@ pasada_id, operario_id, ubicacion_id, fecha_asignacion
 ```
 id, nombre, definicion_json
 ```
+
+**`codigo_aprendido`** — códigos vinculados a un SKU, global y permanente
+```
+id, sku, codigo, fecha, sesion_origen_id
+```
+Vive fuera de la sesión: es lo que permite que un código resuelto hoy se reconozca solo en el próximo inventario del mismo cliente.
 
 **`evento_auditoria`** — bitácora de todo lo que no es un conteo
 ```
@@ -190,9 +197,25 @@ Filtrando por **A RECONTAR** se obtiene directamente el conjunto de SKUs que van
 
 La tolerancia es solo un cálculo, no altera datos. Al ajustarla, el tablero recalcula al instante cuántos artículos consolidan y cuántos quedan a recontar — sirve para negociar el criterio con el cliente viendo el impacto real antes de acordarlo.
 
+### Valorización de las diferencias
+
+El maestro admite una columna opcional de **costo unitario**. Con ella, el tablero calcula la diferencia en dinero:
+
+```
+dif_valorizada = dif * costo_unitario
+```
+
+Sirve para lo que realmente se discute con el cliente. Una diferencia de 12 unidades no dice nada por sí sola; el tablero ordenado por impacto económico muestra los pocos artículos que explican la mayor parte del desvío, y ahí es donde conviene poner el esfuerzo de recuento.
+
+En las métricas del panel aparecen el **desvío neto** (positivos y negativos se compensan, es el impacto contable) y el **desvío absoluto** (suma de las diferencias sin signo, que mide el desorden real del depósito aunque el neto dé cerca de cero).
+
+El costo es **opcional**: si el CSV del cliente no lo trae, las columnas quedan vacías y todo lo demás funciona igual. La tolerancia se sigue calculando sobre unidades, no sobre valor.
+
+Como el costo forma parte del maestro, **no viaja a los celulares**, por la misma razón que el stock del sistema.
+
 ### Conteo a ciegas
 
-El `stock_sistema` **nunca sale del servidor**. La descarga del maestro al celular incluye `id_orden`, `tipo`, `material`, `sku`, `descripcion`, `grupo`, `ubicacion`, `unidad` y los códigos de barras. No incluye `stock_sistema`, `dif` ni `estado`. El dato no está en la base del celular, con lo cual no es accesible aunque se inspeccione el dispositivo.
+El `stock_sistema` **nunca sale del servidor**. La descarga del maestro al celular incluye `id_orden`, `tipo`, `material`, `sku`, `descripcion`, `grupo`, `ubicacion`, `unidad` y los códigos de barras. No incluye `stock_sistema`, `costo_unitario`, `dif` ni `estado`. El dato no está en la base del celular, con lo cual no es accesible aunque se inspeccione el dispositivo.
 
 El operario **ve solo sus propias cargas** de la sesión, para poder anular un error. No ve el total del SKU ni lo contado por otros.
 
@@ -254,6 +277,8 @@ De cualquier número del tablero se tiene que poder llegar a su origen. Se apoya
 | Abrir o cerrar una pasada | Quién, cuándo, SKUs incluidos, SKUs sin contar al cerrar |
 | Marcar SKUs a recontar | Cantidad y criterio (manual o por estado) |
 | Asignar o reasignar ubicaciones | Operario, ubicaciones agregadas y quitadas |
+| Vincular un código a un SKU | Código, artículo temporal, SKU destino, conteos trasladados |
+| Cerrar la sesión | Informe de cierre generado |
 | Alta rápida | Operario y fecha (además de quedar en el propio artículo) |
 | Importar ajustes | Archivo de origen, SKUs afectados, cantidad anterior y nueva |
 | Exportar | Qué archivo y con qué filtros |
@@ -265,6 +290,19 @@ La bitácora es solo de agregado: no se edita ni se borra desde la aplicación.
 ### Códigos desconocidos (alta rápida)
 
 Si el código escaneado no está en el maestro, la app avisa con un sonido distintivo y ofrece el alta rápida: descripción, unidad, ubicación y cantidad. El artículo se crea en la sesión con `origen = alta_rapida` y el código escaneado asociado. En el panel y en la exportación salen identificados aparte, para resolverlos en el ERP.
+
+### Vinculación de códigos a un SKU existente
+
+Buena parte de las altas rápidas no son productos nuevos: son el pack por 6, el código del proveedor o la etiqueta vieja del mismo artículo. Desde el panel, cada alta rápida se puede **vincular a un SKU del maestro** con un buscador.
+
+Al vincular:
+
+- El código pasa a formar parte de los `codigo_barras` de ese SKU, con lo cual **el resto del conteo ya lo reconoce**.
+- Los conteos cargados sobre el artículo temporal se trasladan al SKU destino. Como nada se edita, el traslado se hace con eventos: se anulan los conteos del artículo temporal y se crean los equivalentes en el destino, todos referidos al evento de vinculación. El historial explica el movimiento completo.
+- El artículo temporal queda marcado con `fusionado_en` y deja de figurar como pendiente.
+- El código se guarda además en `codigo_aprendido`, **fuera de la sesión**.
+
+**Aprendizaje entre inventarios.** Al importar el maestro de una sesión nueva, el panel ofrece aplicar los códigos aprendidos cuyos SKU existan en ese maestro. Se confirma y quedan disponibles desde el arranque. Es lo que hace que el mismo pack por 6 no vuelva a aparecer como desconocido en el próximo inventario del mismo cliente.
 
 ## 6. App Android
 
@@ -408,7 +446,9 @@ Está sentado frente a una PC, con sesiones largas, mirando muchas filas y toman
 
 ### Importación
 
-Se arrastra el CSV del ERP al panel y aparece una tabla de mapeo: columnas del archivo a la izquierda, campos del sistema a la derecha (`id_orden`, `tipo`, `material`, `sku`, `descripcion`, `grupo`, `ubicacion`, `unidad`, `stock_sistema`). Vista previa de las primeras filas antes de confirmar.
+Se arrastra el CSV del ERP al panel y aparece una tabla de mapeo: columnas del archivo a la izquierda, campos del sistema a la derecha (`id_orden`, `tipo`, `material`, `sku`, `descripcion`, `grupo`, `ubicacion`, `unidad`, `stock_sistema`, `costo_unitario`). Vista previa de las primeras filas antes de confirmar.
+
+Al terminar, si hay **códigos aprendidos** de inventarios anteriores cuyos SKU existan en este maestro, el panel ofrece aplicarlos.
 
 **El orden y los nombres de columna del archivo son indistintos**: todo se resuelve en el mapeo.
 
@@ -433,7 +473,8 @@ Recién con esa vista a la vista se confirma o se cancela. Al aplicar, queda ase
 **Resumen por SKU:**
 ```
 id_orden | tipo | material | sku | descripcion | grupo | ubicacion | ubicacion_real |
-unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
+unidad | stock_sistema | ultimo_conteo | dif | costo_unitario | dif_valorizada |
+estado | fecha | observaciones
 ```
 
 - `ultimo_conteo`, `dif` y `estado` son calculados sobre el valor vigente. `estado` toma los valores `SIN CONTAR`, `CONSOLIDADO` o `A RECONTAR`.
@@ -444,6 +485,22 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 **Detalle línea por línea:** cada escaneo con operario, hora, pasada (`Conteo 1`, `Conteo 2`…), ubicación real y observaciones.
 
 Ambos se pueden exportar **con los filtros del tablero aplicados** (por ejemplo, solo las diferencias).
+
+### Informe de cierre
+
+El entregable del trabajo: el documento que se presenta y se acuerda con el cliente. Se puede previsualizar en cualquier momento y queda fijado al cerrar la sesión.
+
+Contiene:
+
+- Cliente, fechas de inicio y cierre, y operarios que participaron.
+- **Tolerancia aplicada** y cuántos artículos consolidaron gracias a ella.
+- Las pasadas realizadas, con SKUs incluidos en cada una.
+- Totales: artículos del maestro, contados, sin contar, consolidados, a recontar.
+- Diferencias finales en unidades y **valorizadas**, con desvío neto y absoluto.
+- Los artículos de mayor impacto económico, ordenados.
+- Altas rápidas, correcciones de ubicación y SKUs contados por más de un operario.
+
+Se genera como página imprimible desde el navegador —de ahí sale el PDF para firmar— y como CSV para trabajarlo aparte. No requiere ninguna librería adicional en el servidor.
 
 ### Respaldo por operario
 
@@ -489,10 +546,11 @@ Nada se edita ni se pisa: el ajuste es un evento más, y el número final se sig
 
 ```
 id_orden | tipo | material | sku | descripcion | grupo | ubicacion | ubicacion_real |
-unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
+unidad | stock_sistema | ultimo_conteo | dif | dif_valorizada | estado | fecha | observaciones
 ```
 
-- Métricas superiores: % contado, SKUs contados / totales, unidades contadas, SKUs consolidados, SKUs a recontar, altas rápidas pendientes, correcciones de ubicación, SKUs contados por más de un operario.
+- Métricas superiores: % contado, SKUs contados / totales, unidades contadas, SKUs consolidados, SKUs a recontar, **desvío neto y desvío absoluto valorizados**, altas rápidas pendientes, correcciones de ubicación, SKUs contados por más de un operario.
+- Orden por `dif_valorizada` para atacar primero las diferencias que más pesan en dinero.
 - Filtros combinables por `tipo`, `material`, `grupo`, `ubicacion`, estado (`SIN CONTAR` / `CONSOLIDADO` / `A RECONTAR`), marcas (ubicación corregida / ubicación nueva / alta rápida / fuera de asignación / contado por más de uno) y operario.
 - Avance por grupo y por ubicación, para saber dónde falta gente.
 - Detección de artículos contados en una ubicación distinta a la esperada.
@@ -501,6 +559,10 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 **Conteos** — cerrar la pasada actual, revisar diferencias, marcar SKUs a recontar (manual o todos los que quedaron en `A RECONTAR`), abrir la siguiente. Vista comparativa de todas las pasadas (`Conteo 1`, `Conteo 2`, `Conteo 3`…), con la cantidad de SKUs incluidos en cada una.
 
 **Operarios** — alta con nombre y PIN opcional, QR personal por operario, QR de instalación del APK, QR del certificado para la PWA, estado de conexión, cuánto lleva contado cada uno y si alguno tiene conteos sin sincronizar.
+
+**Altas rápidas** — la lista de artículos creados en el conteo, con su código, quién los creó y cuándo. Cada uno se puede **vincular a un SKU existente** con un buscador, o dejarlo como producto nuevo para dar de alta en el ERP. Al vincular, el código queda aprendido para los próximos inventarios.
+
+**Informe de cierre** — vista previa en cualquier momento, versión definitiva al cerrar la sesión. Imprimible a PDF y exportable a CSV (ver sección 10).
 
 **Asignación de ubicaciones** — repartir las ubicaciones de la pasada entre los operarios, ver el avance de cada uno (ubicaciones a cargo, SKUs esperados, contados, pendientes) y reasignar en caliente. Las ubicaciones sin asignar quedan destacadas para que no queden sectores olvidados.
 
@@ -536,6 +598,10 @@ Como segunda red, la carpeta `respaldos/` mantiene los CSV por operario actualiz
 - Importación de ajustes: que la vista previa calcule bien la diferencia, que los ajustes queden como conteos con autoría propia y que aparezcan en la bitácora.
 - Asignación de ubicaciones: marcado correcto de `fuera_asignacion`, y que una reasignación posterior no altere los conteos ya registrados.
 - Detección de doble conteo: que se marque solo cuando hay dos operarios distintos en la misma pasada, y que las anulaciones lo desmarquen si corresponde.
+- Vinculación de códigos: que los conteos se trasladen íntegros al SKU destino, que el total no cambie, que el artículo temporal quede fusionado y que el historial explique el movimiento.
+- Códigos aprendidos: que se ofrezcan solo cuando el SKU existe en el maestro nuevo, y que no se apliquen sin confirmación.
+- Valorización: cálculo del desvío neto y absoluto, y comportamiento correcto cuando el maestro no trae costo.
+- Informe de cierre: que los totales del informe coincidan con los del tablero y con la exportación.
 - Que `stock_sistema` no aparezca en ninguna respuesta de la API destinada a la app ni a la PWA.
 - Que el certificado del servidor se regenere al cambiar la IP y siga validando contra la CA original.
 
