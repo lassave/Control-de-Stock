@@ -495,10 +495,50 @@ def test_a_milesimas(texto, esperado):
     assert cantidades.a_milesimas(texto) == esperado
 
 
-@pytest.mark.parametrize("texto", ["", "abc", "1,2,3", None])
+@pytest.mark.parametrize("texto", [
+    "", "   ", "abc", "1,2,3", None,
+    ".", ",", "-", "-,",           # separador suelto: celda rota, no cero
+    "1 2",                         # dos números pegados, no doce mil
+    "1.23.456",                    # grupos de miles mal formados
+    "inf", "-inf", "nan", "snan",  # Decimal los acepta; acá no son cantidades
+    "1e3", "1_000",                # notación que ningún ERP exporta
+])
 def test_a_milesimas_rechaza_invalidos(texto):
     with pytest.raises(ValueError):
         cantidades.a_milesimas(texto)
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("1.234.567", 1234567000),
+    ("1,234,567", 1234567000),
+])
+def test_acepta_miles_agrupados_sin_decimales(texto, esperado):
+    """«1.234.567» es la forma normal de escribir un número grande acá."""
+    assert cantidades.a_milesimas(texto) == esperado
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("1,2345", 1235),   # redondea para arriba
+    ("1,2344", 1234),   # redondea para abajo
+    ("0,0005", 1),      # medio hacia arriba
+    ("0,0004", 0),
+])
+def test_redondea_los_decimales_sobrantes(texto, esperado):
+    """Truncar sesgaría todas las cantidades a la baja de forma sistemática."""
+    assert cantidades.a_milesimas(texto) == esperado
+
+
+def test_siempre_devuelve_enteros():
+    """La base rechaza cualquier float: la columna tiene CHECK typeof integer."""
+    for texto in ["24", "3,5", "1.234,56", "0,0005"]:
+        assert isinstance(cantidades.a_milesimas(texto), int)
+        assert isinstance(cantidades.a_centavos(texto), int)
+
+
+@pytest.mark.parametrize("texto", ["", "abc", ".", "12,,5"])
+def test_a_centavos_rechaza_invalidos(texto):
+    with pytest.raises(ValueError):
+        cantidades.a_centavos(texto)
 
 
 @pytest.mark.parametrize("milesimas, esperado", [
@@ -528,6 +568,8 @@ def test_a_centavos():
     assert cantidades.a_centavos("10") == 1000
 ```
 
+**Interfaces (recordatorio):** las tres funciones públicas llevan anotaciones de tipo — `a_milesimas(texto: str) -> int`, `a_centavos(texto: str) -> int`, `a_texto(milesimas: int) -> str` — porque todas las tareas siguientes las consumen.
+
 - [ ] **Step 2: Correr el test y verificar que falla**
 
 Run: `cd servidor && python -m pytest tests/test_cantidades.py -v`
@@ -543,64 +585,89 @@ centavos. Sumar float acumula error, y un inventario suma miles de veces.
 """
 
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 MILESIMAS = 1000
 CENTAVOS = 100
 
-# Parte entera válida: o bien dígitos corridos, o bien grupos de miles de
-# tres dígitos. Sirve para descartar entradas como "1,2,3", que si no se
-# validan se interpretan como 12,3 sin que nadie lo note.
-SIN_MILES = re.compile(r"^-?\d+$")
+SOLO_DIGITOS = re.compile(r"^-?\d+$")
 
 
-def _entero_valido(entero, separador_miles):
-    if SIN_MILES.match(entero):
-        return True
-    patron = re.compile(r"^-?\d{1,3}(" + re.escape(separador_miles) + r"\d{3})+$")
-    return bool(patron.match(entero))
+def _agrupacion_valida(entero, separador_miles):
+    """Verifica que los grupos de miles tengan tres dígitos.
 
-
-def _normalizar(texto):
-    """Deja un número con punto decimal, resolviendo el formato del origen.
-
-    Los ERP exportan indistintamente 1.234,56 y 1,234.56. El separador
-    decimal es el último que aparece; el otro es de miles.
+    Sin esto «1,2,3» se leería como 123 en vez de rechazarse, y un número
+    inventado es peor que un error: pasa por una cantidad real.
     """
-    if not isinstance(texto, str):
-        raise ValueError(f"Se esperaba texto y llegó {type(texto).__name__}")
+    if separador_miles not in entero:
+        return bool(SOLO_DIGITOS.match(entero))
+    patron = r"^-?\d{1,3}(" + re.escape(separador_miles) + r"\d{3})+$"
+    return bool(re.match(patron, entero))
 
-    limpio = texto.strip().replace(" ", "")
-    if not limpio:
-        raise ValueError("Cantidad vacía")
 
-    ultima_coma = limpio.rfind(",")
-    ultimo_punto = limpio.rfind(".")
+def _partir(limpio, texto):
+    """Separa parte entera y decimal resolviendo el formato del origen.
 
-    if ultima_coma == -1 and ultimo_punto == -1:
-        return limpio
+    Los ERP exportan indistintamente 1.234,56 y 1,234.56. Cuando conviven
+    los dos caracteres, el último es el decimal y el otro agrupa miles.
+    Cuando hay uno solo repetido (1.234.567) solo puede agrupar miles.
 
-    if ultima_coma > ultimo_punto:
-        entero, _, decimal = limpio.rpartition(",")
-        separador_miles = "."
+    Queda una ambigüedad que ningún criterio resuelve: «1.234» puede ser mil
+    doscientos treinta y cuatro o uno coma doscientos treinta y cuatro. Se
+    interpreta como decimal, que es lo habitual en cantidades. La vista
+    previa de la importación existe para detectar el caso contrario.
+    """
+    coma = limpio.rfind(",")
+    punto = limpio.rfind(".")
+
+    if coma == -1 and punto == -1:
+        if not SOLO_DIGITOS.match(limpio):
+            raise ValueError(f"Cantidad inválida: {texto!r}")
+        return limpio, ""
+
+    if coma >= 0 and punto >= 0:
+        separador_decimal = "," if coma > punto else "."
     else:
-        entero, _, decimal = limpio.rpartition(".")
-        separador_miles = ","
+        unico = "," if coma >= 0 else "."
+        if limpio.count(unico) > 1:
+            if not _agrupacion_valida(limpio, unico):
+                raise ValueError(f"Cantidad inválida: {texto!r}")
+            return limpio.replace(unico, ""), ""
+        separador_decimal = unico
 
-    if entero and not _entero_valido(entero, separador_miles):
+    separador_miles = "." if separador_decimal == "," else ","
+    entero, _, decimal = limpio.rpartition(separador_decimal)
+
+    # Un separador suelto («.» o «,») no es cero: es una celda rota. Devolver
+    # cero sería lo peor posible, porque un cero pasa por un conteo real.
+    if not decimal.isdigit():
         raise ValueError(f"Cantidad inválida: {texto!r}")
 
-    entero = entero.replace(separador_miles, "")
-    return f"{entero or '0'}.{decimal}"
+    if entero in ("", "-"):
+        entero += "0"
+    if not _agrupacion_valida(entero, separador_miles):
+        raise ValueError(f"Cantidad inválida: {texto!r}")
+
+    return entero.replace(separador_miles, ""), decimal
 
 
 def _a_escalado(texto, escala):
-    normalizado = _normalizar(texto)
+    if not isinstance(texto, str):
+        raise ValueError(f"Se esperaba texto y llegó {type(texto).__name__}")
+
+    limpio = texto.strip()
+    if not limpio:
+        raise ValueError("Cantidad vacía")
+
+    entero, decimal = _partir(limpio, texto)
+
     try:
-        valor = Decimal(normalizado)
-    except InvalidOperation as error:
+        valor = Decimal(f"{entero}.{decimal or 0}")
+        # Redondeo y no truncamiento: el ERP puede exportar más decimales de
+        # los que se guardan, y truncar sesgaría todas las cantidades a la baja.
+        return int((valor * escala).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ArithmeticError) as error:
         raise ValueError(f"Cantidad inválida: {texto!r}") from error
-    return int(valor * escala)
 
 
 def a_milesimas(texto):
