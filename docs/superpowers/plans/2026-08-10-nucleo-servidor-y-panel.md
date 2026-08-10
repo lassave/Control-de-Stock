@@ -1721,120 +1721,130 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
     indice = {campo: encabezados.index(col) for campo, col in mapeo.items() if col}
     ahora = reloj.ahora()
 
-    importados = 0
-    codigos = 0
-    descartadas = []
-    advertencias = []
+    resultado = {
+        "importados": 0, "codigos": 0, "descartadas": [], "advertencias": [],
+    }
 
-    for numero_fila, fila in enumerate(filas, start=2):
-        def valor(campo):
-            posicion = indice.get(campo)
-            return fila[posicion] if posicion is not None else ""
+    # Toda la importación es una sola transacción: un maestro a medio cargar
+    # es peor que ninguno, porque el tablero lo muestra como si estuviera
+    # completo y los artículos que faltan aparecen como no contados.
+    with con:
+        for numero_fila, fila in enumerate(filas, start=2):
+            _cargar_fila(
+                con, sesion_id, fila, numero_fila,
+                indice, encabezados, unidad_por_defecto, ahora, resultado,
+            )
 
-        if len(fila) > len(encabezados):
-            # Suele delatar una comilla sin cerrar o un separador dentro de un
-            # campo. Se avisa y se sigue: el mapeo usa las columnas por posición.
+    return resultado
+
+
+def _cargar_fila(
+    con, sesion_id, fila, numero_fila,
+    indice, encabezados, unidad_por_defecto, ahora, resultado,
+):
+    """Carga una fila del maestro, acumulando los avisos en `resultado`."""
+    descartadas = resultado["descartadas"]
+    advertencias = resultado["advertencias"]
+
+    def valor(campo):
+        posicion = indice.get(campo)
+        return fila[posicion] if posicion is not None else ""
+
+    if len(fila) > len(encabezados):
+        # Suele delatar una comilla sin cerrar o un separador dentro de un
+        # campo. Se avisa y se sigue: el mapeo usa las columnas por posición.
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": "Tiene más columnas que el encabezado",
+        })
+
+    sku = valor("sku")
+    if not sku:
+        descartadas.append({"fila": numero_fila, "motivo": "Sin SKU"})
+        return
+
+    descripcion = valor("descripcion") or sku
+    siguiente_orden = resultado["importados"] + 1
+
+    if "id_orden" in indice:
+        try:
+            id_orden = int(valor("id_orden"))
+        except ValueError:
+            id_orden = siguiente_orden
             advertencias.append({
                 "fila": numero_fila,
-                "motivo": "Tiene más columnas que el encabezado",
+                "motivo": f"Número de orden inválido, se usó {id_orden}",
+            })
+    else:
+        id_orden = siguiente_orden
+
+    stock = 0
+    if "stock_sistema" in indice:
+        try:
+            stock = cantidades.a_milesimas(valor("stock_sistema"))
+        except ValueError:
+            advertencias.append({
+                "fila": numero_fila,
+                "motivo": f"Stock «{valor('stock_sistema')}» inválido, se usó 0",
             })
 
-        sku = valor("sku")
-        if not sku:
-            descartadas.append(
-                {"fila": numero_fila, "motivo": "Sin SKU"}
-            )
-            continue
+    costo = None
+    if "costo_unitario" in indice and valor("costo_unitario"):
+        try:
+            costo = cantidades.a_centavos(valor("costo_unitario"))
+        except ValueError:
+            advertencias.append({
+                "fila": numero_fila,
+                "motivo": f"Costo «{valor('costo_unitario')}» inválido, quedó vacío",
+            })
 
-        descripcion = valor("descripcion") or sku
+    unidad = valor("unidad").upper() or unidad_por_defecto
 
-        if "id_orden" in indice:
-            try:
-                id_orden = int(valor("id_orden"))
-            except ValueError:
-                id_orden = importados + 1
-                advertencias.append({
-                    "fila": numero_fila,
-                    "motivo": f"Número de orden inválido, se usó {id_orden}",
-                })
-        else:
-            id_orden = importados + 1
+    con.execute(
+        """
+        INSERT INTO articulo (
+            sesion_id, id_orden, tipo, material, sku, descripcion, grupo,
+            ubicacion, unidad, stock_sistema, costo_unitario, origen, creado_en
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'importado', ?)
+        ON CONFLICT (sesion_id, sku) DO UPDATE SET
+            id_orden = excluded.id_orden,
+            tipo = excluded.tipo,
+            material = excluded.material,
+            descripcion = excluded.descripcion,
+            grupo = excluded.grupo,
+            ubicacion = excluded.ubicacion,
+            unidad = excluded.unidad,
+            stock_sistema = excluded.stock_sistema,
+            costo_unitario = excluded.costo_unitario
+        """,
+        (
+            sesion_id, id_orden, valor("tipo") or None, valor("material") or None,
+            sku, descripcion, valor("grupo") or None, valor("ubicacion") or None,
+            unidad, stock, costo, ahora,
+        ),
+    )
 
-        stock = 0
-        if "stock_sistema" in indice:
-            try:
-                stock = cantidades.a_milesimas(valor("stock_sistema"))
-            except ValueError:
-                advertencias.append({
-                    "fila": numero_fila,
-                    "motivo": f"Stock «{valor('stock_sistema')}» inválido, se usó 0",
-                })
+    # No se usa lastrowid: en un upsert que actualiza en vez de insertar,
+    # SQLite deja el rowid del último INSERT exitoso, que puede ser de
+    # otra fila. El SELECT por (sesion_id, sku) siempre da el correcto.
+    articulo_id = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = ?",
+        (sesion_id, sku),
+    ).fetchone()["id"]
 
-        costo = None
-        if "costo_unitario" in indice and valor("costo_unitario"):
-            try:
-                costo = cantidades.a_centavos(valor("costo_unitario"))
-            except ValueError:
-                advertencias.append({
-                    "fila": numero_fila,
-                    "motivo": f"Costo «{valor('costo_unitario')}» inválido, quedó vacío",
-                })
-
-        unidad = valor("unidad").upper() or unidad_por_defecto
-
+    codigo = valor("codigo_barras") or sku
+    ya_existe = con.execute(
+        "SELECT 1 FROM codigo_barras WHERE articulo_id = ? AND codigo = ?",
+        (articulo_id, codigo),
+    ).fetchone()
+    if not ya_existe:
         con.execute(
-            """
-            INSERT INTO articulo (
-                sesion_id, id_orden, tipo, material, sku, descripcion, grupo,
-                ubicacion, unidad, stock_sistema, costo_unitario, origen, creado_en
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'importado', ?)
-            ON CONFLICT (sesion_id, sku) DO UPDATE SET
-                id_orden = excluded.id_orden,
-                tipo = excluded.tipo,
-                material = excluded.material,
-                descripcion = excluded.descripcion,
-                grupo = excluded.grupo,
-                ubicacion = excluded.ubicacion,
-                unidad = excluded.unidad,
-                stock_sistema = excluded.stock_sistema,
-                costo_unitario = excluded.costo_unitario
-            """,
-            (
-                sesion_id, id_orden, valor("tipo") or None, valor("material") or None,
-                sku, descripcion, valor("grupo") or None, valor("ubicacion") or None,
-                unidad, stock, costo, ahora,
-            ),
-        )
-
-        # No se usa lastrowid: en un upsert que actualiza en vez de insertar,
-        # SQLite deja el rowid del último INSERT exitoso, que puede ser de
-        # otra fila. El SELECT por (sesion_id, sku) siempre da el correcto.
-        articulo_id = con.execute(
-            "SELECT id FROM articulo WHERE sesion_id = ? AND sku = ?",
-            (sesion_id, sku),
-        ).fetchone()["id"]
-
-        codigo = valor("codigo_barras") or sku
-        ya_existe = con.execute(
-            "SELECT 1 FROM codigo_barras WHERE articulo_id = ? AND codigo = ?",
+            "INSERT INTO codigo_barras (articulo_id, codigo) VALUES (?, ?)",
             (articulo_id, codigo),
-        ).fetchone()
-        if not ya_existe:
-            con.execute(
-                "INSERT INTO codigo_barras (articulo_id, codigo) VALUES (?, ?)",
-                (articulo_id, codigo),
-            )
-            codigos += 1
+        )
+        resultado["codigos"] += 1
 
-        importados += 1
-
-    con.commit()
-    return {
-        "importados": importados,
-        "codigos": codigos,
-        "descartadas": descartadas,
-        "advertencias": advertencias,
-    }
+    resultado["importados"] += 1
 ```
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
