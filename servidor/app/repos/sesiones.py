@@ -26,17 +26,21 @@ def crear(con, nombre):
         raise ValueError("Ya hay una sesión abierta. Cerrala antes de crear otra.")
 
     ahora = reloj.ahora()
-    cursor = con.execute(
-        "INSERT INTO sesion (nombre, fecha_creacion) VALUES (?, ?)",
-        (nombre, ahora),
-    )
-    sesion_id = cursor.lastrowid
 
-    con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 1, ?)",
-        (sesion_id, ahora),
-    )
-    con.commit()
+    # Las dos escrituras van juntas o no va ninguna: una sesión sin pasada
+    # no se puede usar para contar ni se puede cerrar.
+    with con:
+        cursor = con.execute(
+            "INSERT INTO sesion (nombre, fecha_creacion) VALUES (?, ?)",
+            (nombre, ahora),
+        )
+        sesion_id = cursor.lastrowid
+
+        con.execute(
+            "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 1, ?)",
+            (sesion_id, ahora),
+        )
+
     return sesion_id
 
 
@@ -67,19 +71,30 @@ def pasada_abierta(con, sesion_id):
 
 
 def cerrar(con, sesion_id):
+    obtener(con, sesion_id)  # falla con un mensaje claro si no existe
     ahora = reloj.ahora()
-    con.execute(
-        "UPDATE pasada SET estado = 'cerrada', fecha_cierre = ? "
-        "WHERE sesion_id = ? AND estado = 'abierta'",
-        (ahora, sesion_id),
-    )
-    con.execute("UPDATE sesion SET estado = 'cerrada' WHERE id = ?", (sesion_id,))
-    con.commit()
+
+    with con:
+        con.execute(
+            "UPDATE pasada SET estado = 'cerrada', fecha_cierre = ? "
+            "WHERE sesion_id = ? AND estado = 'abierta'",
+            (ahora, sesion_id),
+        )
+        con.execute("UPDATE sesion SET estado = 'cerrada' WHERE id = ?", (sesion_id,))
 
 
 def fijar_tolerancia(con, sesion_id, pct, min_abs_milesimas):
-    con.execute(
-        "UPDATE sesion SET tolerancia_pct = ?, tolerancia_min_abs = ? WHERE id = ?",
-        (pct, min_abs_milesimas, sesion_id),
-    )
-    con.commit()
+    obtener(con, sesion_id)
+
+    # La base lo rechazaría igual, pero con un mensaje de SQLite que no le
+    # dice nada a quien está corriendo el inventario.
+    if not isinstance(min_abs_milesimas, int) or isinstance(min_abs_milesimas, bool):
+        raise ValueError(
+            "La tolerancia mínima se expresa en milésimas, con un número entero."
+        )
+
+    with con:
+        con.execute(
+            "UPDATE sesion SET tolerancia_pct = ?, tolerancia_min_abs = ? WHERE id = ?",
+            (pct, min_abs_milesimas, sesion_id),
+        )

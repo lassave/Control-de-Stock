@@ -89,6 +89,40 @@ def test_rechaza_stock_decimal(con):
         crear_articulo(con, sesion_id, stock=3.5)
 
 
+def test_solo_admite_una_sesion_abierta(con):
+    """Los dispositivos se vinculan a «la» sesión abierta: no puede haber dos."""
+    crear_sesion(con)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        con.execute(
+            "INSERT INTO sesion (nombre, fecha_creacion) "
+            "VALUES ('Otra', '2026-08-10T00:00:00Z')"
+        )
+
+
+def test_el_contexto_descarta_lo_escrito_si_algo_falla(con):
+    """Dos escrituras van juntas o no va ninguna."""
+    with pytest.raises(sqlite3.IntegrityError):
+        with con:
+            crear_sesion(con)
+            con.execute(
+                "INSERT INTO pasada (sesion_id, numero, fecha_apertura) "
+                "VALUES (999, 1, '2026-08-10T00:00:00Z')"
+            )
+
+    quedaron = con.execute("SELECT COUNT(*) AS n FROM sesion").fetchone()["n"]
+    assert quedaron == 0
+
+
+def test_el_contexto_confirma_al_salir_sin_error(con):
+    with con:
+        crear_sesion(con)
+
+    con.rollback()
+    quedaron = con.execute("SELECT COUNT(*) AS n FROM sesion").fetchone()["n"]
+    assert quedaron == 1
+
+
 def test_cada_hilo_recibe_su_propia_conexion(tmp_path):
     """Sin esto, el segundo operario que sincroniza en simultáneo recibe un error."""
     conexion = db.conectar(tmp_path / "hilos.db")

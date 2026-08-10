@@ -50,6 +50,26 @@ class ConexionPorHilo:
     def commit(self):
         self._conexion.commit()
 
+    def rollback(self):
+        self._conexion.rollback()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, tipo, valor, traza):
+        """Confirma al salir bien y descarta al salir con error.
+
+        Sin esto, una operación de dos escrituras que falla en la segunda
+        deja la primera pendiente, y el commit de cualquier operación
+        posterior la persiste: aparece una sesión sin pasada, que no se
+        puede usar ni cerrar.
+        """
+        if tipo is None:
+            self.commit()
+        else:
+            self.rollback()
+        return False
+
     def close(self):
         conexion = getattr(self._local, "conexion", None)
         if conexion is not None:

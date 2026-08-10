@@ -1,5 +1,8 @@
+import re
+
 import pytest
 
+from app import reloj
 from app.repos import sesiones
 
 
@@ -80,3 +83,25 @@ def test_fijar_tolerancia(con):
     sesion = sesiones.obtener(con, sesion_id)
     assert sesion["tolerancia_pct"] == 5.0
     assert sesion["tolerancia_min_abs"] == 2000
+
+
+def test_fijar_tolerancia_rechaza_milesimas_con_decimales(con):
+    """La base lo rechazaría igual, pero con un mensaje que no dice nada."""
+    sesion_id = sesiones.crear(con, "Cliente X")
+
+    with pytest.raises(ValueError, match="milésimas"):
+        sesiones.fijar_tolerancia(con, sesion_id, 5.0, 1500.5)
+
+
+@pytest.mark.parametrize("operacion", [
+    lambda con: sesiones.cerrar(con, 999),
+    lambda con: sesiones.fijar_tolerancia(con, 999, 2.0, 1000),
+])
+def test_operar_sobre_una_sesion_inexistente_falla(con, operacion):
+    with pytest.raises(ValueError, match="No existe la sesión"):
+        operacion(con)
+
+
+def test_ahora_usa_el_formato_del_proyecto():
+    """reloj es la única fuente del formato de fecha de todo el sistema."""
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", reloj.ahora())

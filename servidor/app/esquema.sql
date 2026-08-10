@@ -11,6 +11,12 @@ CREATE TABLE IF NOT EXISTS sesion (
     CHECK (typeof(tolerancia_min_abs) = 'integer')
 );
 
+-- Una sola sesión abierta a la vez: los dispositivos se vinculan a «la»
+-- sesión abierta. El repositorio ya lo valida, pero dos hilos pueden pasar
+-- esa validación a la vez; este índice lo vuelve imposible.
+CREATE UNIQUE INDEX IF NOT EXISTS ix_sesion_abierta
+    ON sesion(estado) WHERE estado = 'abierta';
+
 CREATE TABLE IF NOT EXISTS pasada (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     sesion_id       INTEGER NOT NULL REFERENCES sesion(id),
