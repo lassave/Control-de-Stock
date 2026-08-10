@@ -1639,6 +1639,49 @@ def test_saltea_filas_sin_sku(con, sesion_id):
     assert len(resultado["descartadas"]) == 1
 
 
+def test_una_unidad_desconocida_no_frena_la_importacion(con, sesion_id):
+    """La clave foránea abortaría el archivo entero: se ataja antes."""
+    contenido = "sku,detalle,um\n1,Tornillo,UN\n2,Tuerca,CAJA\n3,Clavo,KG\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle", "unidad": "um",
+    })
+
+    assert resultado["importados"] == 3
+    assert any("CAJA" in a["motivo"] for a in resultado["advertencias"])
+
+    unidades = {
+        fila["sku"]: fila["unidad"]
+        for fila in con.execute("SELECT sku, unidad FROM articulo")
+    }
+    assert unidades == {"1": "UN", "2": "UN", "3": "KG"}
+
+
+def test_un_sku_repetido_se_cuenta_una_sola_vez(con, sesion_id):
+    contenido = "sku,detalle\n1,Tornillo\n1,Tornillo corregido\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 1
+    assert any("más de una vez" in a["motivo"] for a in resultado["advertencias"])
+
+    fila = con.execute("SELECT descripcion FROM articulo").fetchone()
+    assert fila["descripcion"] == "Tornillo corregido"
+
+
+def test_rechaza_una_unidad_por_defecto_inexistente(con, sesion_id):
+    contenido = "sku,detalle\n1,Tornillo\n".encode("utf-8")
+
+    with pytest.raises(ValueError, match="no existe"):
+        importacion.importar(
+            con, sesion_id, contenido,
+            {"sku": "sku", "descripcion": "detalle"},
+            unidad_por_defecto="INVENTADA",
+        )
+
+
 def test_reporta_las_filas_con_columnas_de_mas(con, sesion_id):
     """Una columna de más suele delatar una comilla sin cerrar."""
     contenido = "sku,detalle\n1,Tornillo\n2,Tuerca,SOBRA\n".encode("utf-8")
@@ -1688,8 +1731,6 @@ CAMPOS = [
 
 CAMPOS_OBLIGATORIOS = ["sku", "descripcion"]
 
-CAMPOS_TEXTO = ["tipo", "material", "sku", "descripcion", "grupo", "ubicacion"]
-
 
 def previsualizar(contenido, cantidad=5):
     """Encabezados y primeras filas, para armar el mapeo en pantalla."""
@@ -1721,9 +1762,18 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
     indice = {campo: encabezados.index(col) for campo, col in mapeo.items() if col}
     ahora = reloj.ahora()
 
+    # La unidad tiene clave foránea: una desconocida abortaría la importación
+    # entera con un error de restricción, justo lo contrario de la regla de
+    # que una celda mala no frena el archivo. Se validan acá y las que no
+    # existen caen en la unidad por defecto, avisando.
+    unidades = {fila["codigo"] for fila in con.execute("SELECT codigo FROM unidad")}
+    if unidad_por_defecto not in unidades:
+        raise ValueError(f"La unidad por defecto «{unidad_por_defecto}» no existe")
+
     resultado = {
         "importados": 0, "codigos": 0, "descartadas": [], "advertencias": [],
     }
+    vistos = set()
 
     # Toda la importación es una sola transacción: un maestro a medio cargar
     # es peor que ninguno, porque el tablero lo muestra como si estuviera
@@ -1731,16 +1781,16 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
     with con:
         for numero_fila, fila in enumerate(filas, start=2):
             _cargar_fila(
-                con, sesion_id, fila, numero_fila,
-                indice, encabezados, unidad_por_defecto, ahora, resultado,
+                con, sesion_id, fila, numero_fila, indice, encabezados,
+                unidad_por_defecto, unidades, ahora, resultado, vistos,
             )
 
     return resultado
 
 
 def _cargar_fila(
-    con, sesion_id, fila, numero_fila,
-    indice, encabezados, unidad_por_defecto, ahora, resultado,
+    con, sesion_id, fila, numero_fila, indice, encabezados,
+    unidad_por_defecto, unidades, ahora, resultado, vistos,
 ):
     """Carga una fila del maestro, acumulando los avisos en `resultado`."""
     descartadas = resultado["descartadas"]
@@ -1762,6 +1812,14 @@ def _cargar_fila(
     if not sku:
         descartadas.append({"fila": numero_fila, "motivo": "Sin SKU"})
         return
+
+    if sku in vistos:
+        # El upsert deja la última, que es el comportamiento razonable, pero
+        # el archivo trae un problema que conviene mirar.
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": f"El SKU «{sku}» aparece más de una vez; queda el último",
+        })
 
     descripcion = valor("descripcion") or sku
     siguiente_orden = resultado["importados"] + 1
@@ -1799,6 +1857,13 @@ def _cargar_fila(
             })
 
     unidad = valor("unidad").upper() or unidad_por_defecto
+    if unidad not in unidades:
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": f"La unidad «{unidad}» no está en el catálogo; "
+                      f"se usó {unidad_por_defecto}",
+        })
+        unidad = unidad_por_defecto
 
     con.execute(
         """
@@ -1844,7 +1909,9 @@ def _cargar_fila(
         )
         resultado["codigos"] += 1
 
-    resultado["importados"] += 1
+    if sku not in vistos:
+        vistos.add(sku)
+        resultado["importados"] += 1
 ```
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
