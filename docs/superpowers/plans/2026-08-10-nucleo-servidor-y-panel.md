@@ -2132,6 +2132,7 @@ dispositivo, sin stock ni costo, por el conteo a ciegas."
 - Produces:
   - `tablero.SIN_CONTAR`, `tablero.CONSOLIDADO`, `tablero.A_RECONTAR` — constantes de estado
   - `tablero.estado_de(dif: int, stock: int, pct: float, min_abs: int, hubo_conteo: bool) -> str`
+  - `tablero.parece_error_de_carga(contado: int, stock: int) -> str | None` — devuelve el patrón detectado (`"dígito de más"`, `"dígitos permutados"`, `"dígito repetido"`) o `None`
   - `tablero.filas(con, sesion_id, filtros: dict | None = None) -> list[dict]`
   - `tablero.resumen(con, sesion_id) -> dict`
 
@@ -2188,6 +2189,38 @@ def test_estado_de(dif, stock, esperado):
 
 def test_sin_conteo_es_sin_contar():
     assert tablero.estado_de(0, 100000, 2.0, 1000, hubo_conteo=False) == tablero.SIN_CONTAR
+
+
+@pytest.mark.parametrize("contado, stock, esperado", [
+    (240000, 24000, "dígito de más"),      # 240 en vez de 24
+    (2000,   24000, "dígito de más"),      # 2 en vez de 24
+    (2400000, 24000, "dígito de más"),     # 2400 en vez de 24
+    (42000,  24000, "dígitos permutados"), # 42 en vez de 24
+    (55000,  5000,  "dígito repetido"),    # 55 en vez de 5
+    (23000,  24000, None),                 # diferencia común, no tiene forma de tipeo
+    (0,      24000, None),                 # faltante total: es un hallazgo, no un error
+    (24000,  24000, None),                 # sin diferencia
+    (0,      0,     None),                 # ambos en cero: nada que comparar
+])
+def test_parece_error_de_carga(contado, stock, esperado):
+    assert tablero.parece_error_de_carga(contado, stock) == esperado
+
+
+def test_marca_error_de_carga_solo_a_los_que_hay_que_recontar(con, escenario):
+    contar(con, escenario, "C", 100000, "u-1")  # el sistema dice 10, se cargaron 100
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "C")
+
+    assert fila["estado"] == tablero.A_RECONTAR
+    assert fila["posible_error_carga"] == "dígito de más"
+
+
+def test_los_consolidados_no_se_marcan(con, escenario):
+    contar(con, escenario, "A", 100000, "u-1")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["posible_error_carga"] is None
 
 
 def test_filas_traen_todos_los_articulos(con, escenario):
@@ -2313,6 +2346,38 @@ def estado_de(dif, stock, pct, min_abs, hubo_conteo):
     return CONSOLIDADO if abs(dif) <= limite else A_RECONTAR
 
 
+def parece_error_de_carga(contado, stock):
+    """Detecta diferencias con forma de error de tipeo.
+
+    Es una marca para revisar primero, no una corrección: la cantidad puede
+    estar bien y la diferencia ser real. Pero da una lista corta de
+    candidatos antes de mandar medio depósito a recontar.
+
+    En la app no se puede avisar de esto sin romper el conteo a ciegas —
+    habría que conocer el stock del sistema—, así que vive solo acá.
+    """
+    if contado is None or contado == stock or stock == 0 or contado == 0:
+        return None
+
+    dc = str(abs(contado))
+    ds = str(abs(stock))
+
+    # 240 por 24, o 2 por 24: el número quedó multiplicado o dividido por
+    # una potencia de diez porque se tecleó un dígito de más o de menos.
+    if dc.rstrip("0").lstrip("0") == ds.rstrip("0").lstrip("0") and len(dc) != len(ds):
+        return "dígito de más"
+
+    # 5 tecleado dos veces queda 55.
+    if len(set(dc)) == 1 and dc[0] == ds.lstrip("0")[:1] and len(dc) != len(ds):
+        return "dígito repetido"
+
+    # 42 por 24: los mismos dígitos en otro orden.
+    if len(dc) == len(ds) and sorted(dc) == sorted(ds):
+        return "dígitos permutados"
+
+    return None
+
+
 def _consulta_base():
     """Artículos con su total contado, sin las filas anuladas.
 
@@ -2362,6 +2427,18 @@ def _armar_fila(fila, sesion):
         # centavos al dividir por mil.
         dif_valorizada = dif * costo // 1000
 
+    estado = estado_de(
+        dif or 0, fila["stock_sistema"],
+        sesion["tolerancia_pct"], sesion["tolerancia_min_abs"],
+        hubo_conteo,
+    )
+
+    # Solo tiene sentido revisar el tipeo de lo que quedó fuera de tolerancia.
+    posible_error = (
+        parece_error_de_carga(total, fila["stock_sistema"])
+        if estado == A_RECONTAR else None
+    )
+
     return {
         "id": fila["id"],
         "id_orden": fila["id_orden"],
@@ -2378,11 +2455,8 @@ def _armar_fila(fila, sesion):
         "ultimo_conteo": total,
         "dif": dif,
         "dif_valorizada": dif_valorizada,
-        "estado": estado_de(
-            dif or 0, fila["stock_sistema"],
-            sesion["tolerancia_pct"], sesion["tolerancia_min_abs"],
-            hubo_conteo,
-        ),
+        "estado": estado,
+        "posible_error_carga": posible_error,
         "fecha": fila["fecha"],
         "observaciones": fila["observaciones"],
         "origen": fila["origen"],
@@ -2394,6 +2468,9 @@ def _pasa_filtros(fila, filtros):
         esperado = filtros.get(campo)
         if esperado and fila[campo] != esperado:
             return False
+
+    if filtros.get("solo_errores_carga") and not fila["posible_error_carga"]:
+        return False
 
     texto = (filtros.get("texto") or "").strip().lower()
     if texto:
@@ -2436,6 +2513,7 @@ def resumen(con, sesion_id):
         "consolidados": sum(1 for f in todas if f["estado"] == CONSOLIDADO),
         "a_recontar": sum(1 for f in todas if f["estado"] == A_RECONTAR),
         "altas_rapidas": sum(1 for f in todas if f["origen"] == "alta_rapida"),
+        "posibles_errores_carga": sum(1 for f in todas if f["posible_error_carga"]),
         "avance_pct": round(contados * 100 / total, 1) if total else 0,
         "desvio_neto": desvio_neto,
         "desvio_absoluto": desvio_absoluto,
@@ -3045,11 +3123,13 @@ def ver_tablero(
     request: Request,
     tipo: str = "", material: str = "", grupo: str = "",
     ubicacion: str = "", estado: str = "", texto: str = "",
+    solo_errores_carga: bool = False,
 ):
     con = _con(request)
     filtros = {
         "tipo": tipo, "material": material, "grupo": grupo,
         "ubicacion": ubicacion, "estado": estado, "texto": texto,
+        "solo_errores_carga": solo_errores_carga,
     }
     return {
         "filas": tablero.filas(con, sesion_id, filtros),
@@ -3358,6 +3438,10 @@ Expected: FAIL — la carpeta `panel/` no existe
         </select>
         <select id="filtro-grupo"><option value="">Todos los grupos</option></select>
         <select id="filtro-ubicacion"><option value="">Todas las ubicaciones</option></select>
+        <label class="casilla">
+          <input id="filtro-errores-carga" type="checkbox">
+          Solo posibles errores de carga
+        </label>
         <button id="limpiar-filtros" class="secundario">Limpiar filtros</button>
         <a id="exportar-resumen" class="boton secundario">Exportar resumen</a>
         <a id="exportar-detalle" class="boton secundario">Exportar detalle</a>
@@ -3573,6 +3657,28 @@ thead th {
   font-weight: 600;
 }
 
+.marca {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--borde);
+  font-size: 0.78rem;
+  color: var(--tenue);
+}
+
+.casilla {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--borde);
+  border-radius: 5px;
+  padding: 0.4rem 0.7rem;
+  background: var(--panel);
+}
+
+.casilla input { padding: 0; }
+
 .estado-consolidado { background: var(--verde-fondo); color: var(--verde); }
 .estado-a-recontar { background: var(--rojo-fondo); color: var(--rojo); }
 .estado-sin-contar { background: var(--gris-fondo); color: var(--tenue); }
@@ -3602,7 +3708,9 @@ thead th {
 // inservible.
 const estado = {
   sesion: null,
-  filtros: { texto: "", estado: "", grupo: "", ubicacion: "" },
+  filtros: {
+    texto: "", estado: "", grupo: "", ubicacion: "", solo_errores_carga: false,
+  },
 };
 
 const ESTADOS = {
@@ -3640,6 +3748,7 @@ function dibujarMetricas(resumen) {
     ["Contados", `${resumen.contados} / ${resumen.articulos}`],
     ["Consolidados", resumen.consolidados],
     ["A recontar", resumen.a_recontar],
+    ["Posible error de carga", resumen.posibles_errores_carga],
     ["Altas rápidas", resumen.altas_rapidas],
   ];
   $("#metricas").innerHTML = tarjetas
@@ -3665,7 +3774,12 @@ function dibujarFilas(filas) {
       <td class="num">${milesimasATexto(fila.stock_sistema)}</td>
       <td class="num">${milesimasATexto(fila.ultimo_conteo)}</td>
       <td class="num">${milesimasATexto(fila.dif)}</td>
-      <td><span class="estado ${ESTADOS[fila.estado]}">${fila.estado}</span></td>
+      <td>
+        <span class="estado ${ESTADOS[fila.estado]}">${fila.estado}</span>
+        ${fila.posible_error_carga
+          ? `<span class="marca" title="Revisar antes de recontar: ${fila.posible_error_carga}">⌨ ${fila.posible_error_carga}</span>`
+          : ""}
+      </td>
       <td>${(fila.fecha || "").replace("T", " ").replace("Z", "")}</td>
       <td>${fila.observaciones || ""}</td>
     </tr>`).join("");
@@ -3842,9 +3956,17 @@ function conectarEventos() {
     });
   });
 
+  $("#filtro-errores-carga").addEventListener("change", (evento) => {
+    estado.filtros.solo_errores_carga = evento.target.checked;
+    refrescarTablero();
+  });
+
   $("#limpiar-filtros").addEventListener("click", () => {
-    estado.filtros = { texto: "", estado: "", grupo: "", ubicacion: "" };
+    estado.filtros = {
+      texto: "", estado: "", grupo: "", ubicacion: "", solo_errores_carga: false,
+    };
     $("#filtro-texto").value = "";
+    $("#filtro-errores-carga").checked = false;
     ["estado", "grupo", "ubicacion"].forEach((campo) => {
       $(`#filtro-${campo}`).value = "";
     });
