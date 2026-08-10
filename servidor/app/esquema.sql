@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS sesion (
     estado              TEXT NOT NULL DEFAULT 'abierta',
     tolerancia_pct      REAL NOT NULL DEFAULT 2.0,
     tolerancia_min_abs  INTEGER NOT NULL DEFAULT 1000,
-    CHECK (estado IN ('abierta', 'cerrada'))
+    CHECK (estado IN ('abierta', 'cerrada')),
+    CHECK (typeof(tolerancia_min_abs) = 'integer')
 );
 
 CREATE TABLE IF NOT EXISTS pasada (
@@ -39,7 +40,7 @@ CREATE TABLE IF NOT EXISTS articulo (
     descripcion     TEXT NOT NULL,
     grupo           TEXT,
     ubicacion       TEXT,
-    unidad          TEXT NOT NULL DEFAULT 'UN',
+    unidad          TEXT NOT NULL DEFAULT 'UN' REFERENCES unidad(codigo),
     stock_sistema   INTEGER NOT NULL DEFAULT 0,
     costo_unitario  INTEGER,
     origen          TEXT NOT NULL DEFAULT 'importado',
@@ -48,7 +49,12 @@ CREATE TABLE IF NOT EXISTS articulo (
     creado_en       TEXT NOT NULL,
     fusionado_en    INTEGER REFERENCES articulo(id),
     UNIQUE (sesion_id, sku),
-    CHECK (origen IN ('importado', 'alta_rapida'))
+    CHECK (origen IN ('importado', 'alta_rapida')),
+    -- La afinidad INTEGER de SQLite no es una restricción de tipo: acepta y
+    -- guarda un 3.5 como REAL. Sin este CHECK, un solo decimal colado anula
+    -- en silencio la exactitud que justifica guardar milésimas y centavos.
+    CHECK (typeof(stock_sistema) = 'integer'),
+    CHECK (costo_unitario IS NULL OR typeof(costo_unitario) = 'integer')
 );
 
 CREATE TABLE IF NOT EXISTS codigo_barras (
@@ -79,11 +85,13 @@ CREATE TABLE IF NOT EXISTS conteo (
     fuera_asignacion        INTEGER NOT NULL DEFAULT 0,
     timestamp_dispositivo   TEXT NOT NULL,
     timestamp_servidor      TEXT NOT NULL,
-    anula_uuid              TEXT REFERENCES conteo(uuid)
+    anula_uuid              TEXT REFERENCES conteo(uuid),
+    CHECK (typeof(cantidad) = 'integer')
 );
 
 CREATE INDEX IF NOT EXISTS ix_conteo_articulo ON conteo(articulo_id, pasada_id);
 CREATE INDEX IF NOT EXISTS ix_conteo_anula ON conteo(anula_uuid);
+CREATE INDEX IF NOT EXISTS ix_conteo_sesion ON conteo(sesion_id, operario_id);
 
 CREATE TABLE IF NOT EXISTS pasada_item (
     pasada_id    INTEGER NOT NULL REFERENCES pasada(id),
