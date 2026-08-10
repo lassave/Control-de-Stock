@@ -1146,6 +1146,78 @@ def test_completa_filas_con_menos_columnas():
     assert filas[0] == ["1", "Tornillo", ""]
 
 
+def test_conserva_las_columnas_de_mas_en_vez_de_descartarlas():
+    """Un campo de más delata un archivo mal armado: no se pierde en silencio."""
+    contenido = "sku,descripcion\n1,Tornillo,SOBRA\n".encode("utf-8")
+
+    _, filas = lectura_csv.leer(contenido)
+
+    assert filas[0] == ["1", "Tornillo", "SOBRA"]
+
+
+def test_no_se_confunde_con_un_separador_dentro_de_comillas():
+    """Contar caracteres fusionaría SKU y descripción en una sola columna."""
+    contenido = 'sku,"descripcion; larga"\n1,Tornillo\n'.encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion; larga"]
+    assert filas[0] == ["1", "Tornillo"]
+
+
+def test_saltea_un_titulo_antes_del_encabezado():
+    """Varios ERP anteponen el nombre del listado o la fecha de emisión."""
+    contenido = (
+        "Listado de stock al 10/08/2026\n"
+        "sku;descripcion\n"
+        "1;Tornillo\n"
+        "2;Tuerca\n"
+    ).encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert len(filas) == 2
+
+
+def test_ignora_la_columna_vacia_que_deja_un_separador_final():
+    contenido = "sku,descripcion,\n1,Tornillo,\n".encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert filas[0][:2] == ["1", "Tornillo"]
+
+
+def test_rechaza_un_encabezado_sin_nombres():
+    contenido = ",,\n1,2,3\n".encode("utf-8")
+
+    with pytest.raises(ValueError, match="nombres de columna"):
+        lectura_csv.leer(contenido)
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("sku;descripcion\n1;Tornillo", ";"),
+    ("sku,descripcion\n1,Tornillo", ","),
+    ("sku\tdescripcion\n1\tTornillo", "\t"),
+    ("sku|descripcion\n1|Tornillo", "|"),
+    ("una sola columna\nsin separadores", ","),
+    ("", ","),
+])
+def test_detectar_separador(texto, esperado):
+    assert lectura_csv.detectar_separador(texto) == esperado
+
+
+@pytest.mark.parametrize("texto, codificacion, esperada", [
+    ("Cañería", "utf-8", "utf-8-sig"),
+    ("Cañería", "cp1252", "cp1252"),
+    ("sin acentos", "ascii", "utf-8-sig"),
+])
+def test_detectar_codificacion(texto, codificacion, esperada):
+    """UTF-8 se prueba primero: casi todo UTF-8 también decodifica como cp1252."""
+    assert lectura_csv.detectar_codificacion(texto.encode(codificacion)) == esperada
+
+
 def test_recorta_espacios_de_los_encabezados():
     contenido = " sku , descripcion \n1,Tornillo\n".encode("utf-8")
 
@@ -1186,32 +1258,76 @@ las dos cosas rompe la importación entera, así que se resuelve acá.
 import csv
 import io
 
-CODIFICACIONES = ["utf-8-sig", "utf-8", "cp1252", "latin-1"]
-SEPARADORES = [";", ",", "\t", "|"]
+# utf-8-sig también decodifica UTF-8 sin BOM, así que cubre los dos casos.
+# latin-1 va última y nunca falla: mapea cualquier byte.
+CODIFICACIONES = ["utf-8-sig", "cp1252", "latin-1"]
+SEPARADORES = [",", ";", "\t", "|"]
+
+LINEAS_DE_MUESTRA = 20
 
 
-def detectar_codificacion(contenido):
-    """Devuelve la primera codificación con la que el archivo se lee entero."""
+def detectar_codificacion(contenido: bytes) -> str:
+    """Devuelve la primera codificación con la que el archivo se lee entero.
+
+    El orden importa: casi cualquier texto UTF-8 también decodifica sin
+    error como cp1252, pero al revés no. Probar UTF-8 primero evita el
+    clásico «CañerÃ­a» en las descripciones.
+    """
     for codificacion in CODIFICACIONES:
         try:
             contenido.decode(codificacion)
             return codificacion
         except UnicodeDecodeError:
             continue
-    return "latin-1"  # nunca falla: mapea cualquier byte
+    return CODIFICACIONES[-1]
 
 
-def detectar_separador(texto):
-    """El separador es el que más veces aparece en la primera línea."""
-    primera_linea = texto.splitlines()[0] if texto.splitlines() else ""
-    conteos = {sep: primera_linea.count(sep) for sep in SEPARADORES}
-    mejor = max(conteos, key=conteos.get)
-    return mejor if conteos[mejor] > 0 else ","
+def _anchos(muestra: list[str], separador: str) -> list[int]:
+    filas = list(csv.reader(muestra, delimiter=separador))
+    return [len(fila) for fila in filas if fila]
 
 
-def leer(contenido):
+def detectar_separador(texto: str) -> str:
+    """Elige el separador que parte el archivo de forma consistente.
+
+    Contar caracteres no alcanza por dos motivos. Una coma dentro de un
+    campo entre comillas cuenta igual que una separadora, así que un
+    encabezado como `sku,"descripcion; larga"` empata y puede resolverse
+    a punto y coma, fusionando columnas sin que nadie lo note. Y mirar
+    solo la primera línea falla cuando el ERP antepone un título, que no
+    tiene ningún separador.
+
+    Se prueba cada candidato con el lector de CSV real sobre las primeras
+    líneas y gana el que produce más filas del mismo ancho.
+    """
+    muestra = [linea for linea in texto.splitlines() if linea.strip()]
+    muestra = muestra[:LINEAS_DE_MUESTRA]
+    if not muestra:
+        return ","
+
+    mejor = ","
+    mejor_puntaje = (0, 0)
+
+    for separador in SEPARADORES:
+        anchos = _anchos(muestra, separador)
+        if not anchos:
+            continue
+
+        ancho_dominante = max(set(anchos), key=anchos.count)
+        if ancho_dominante < 2:
+            continue  # una sola columna: este separador no separa nada
+
+        puntaje = (anchos.count(ancho_dominante), ancho_dominante)
+        if puntaje > mejor_puntaje:
+            mejor_puntaje = puntaje
+            mejor = separador
+
+    return mejor
+
+
+def leer(contenido: bytes) -> tuple[list[str], list[list[str]]]:
     """Devuelve (encabezados, filas) a partir del contenido binario del archivo."""
-    if not contenido or not contenido.strip():
+    if not contenido.strip():
         raise ValueError("El archivo está vacío")
 
     texto = contenido.decode(detectar_codificacion(contenido))
@@ -1223,7 +1339,22 @@ def leer(contenido):
     if not todas:
         raise ValueError("El archivo está vacío")
 
-    encabezados = [celda.strip() for celda in todas[0]]
+    # Muchos ERP anteponen un título o una fecha antes del encabezado real.
+    # El encabezado es la primera línea que tiene el ancho dominante.
+    anchos = [len(fila) for fila in todas]
+    ancho = max(set(anchos), key=anchos.count)
+    primera = next(
+        (posicion for posicion, fila in enumerate(todas) if len(fila) == ancho), 0
+    )
+
+    encabezados = [celda.strip() for celda in todas[primera]]
+
+    # Un encabezado que termina en separador deja una columna sin nombre.
+    while encabezados and not encabezados[-1]:
+        encabezados.pop()
+
+    if not encabezados:
+        raise ValueError("La primera fila del archivo no tiene nombres de columna")
 
     vistos = set()
     for encabezado in encabezados:
@@ -1234,8 +1365,11 @@ def leer(contenido):
 
     cantidad = len(encabezados)
     filas = []
-    for fila in todas[1:]:
-        completa = [celda.strip() for celda in fila[:cantidad]]
+    for fila in todas[primera + 1:]:
+        # Las filas cortas se completan; las largas se conservan enteras. Un
+        # campo de más suele delatar un archivo mal armado, y descartarlo acá
+        # perdería el dato en silencio. La importación lo reporta.
+        completa = [celda.strip() for celda in fila]
         completa += [""] * (cantidad - len(completa))
         filas.append(completa)
 
@@ -1443,6 +1577,18 @@ def test_saltea_filas_sin_sku(con, sesion_id):
     assert len(resultado["descartadas"]) == 1
 
 
+def test_reporta_las_filas_con_columnas_de_mas(con, sesion_id):
+    """Una columna de más suele delatar una comilla sin cerrar."""
+    contenido = "sku,detalle\n1,Tornillo\n2,Tuerca,SOBRA\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 2
+    assert any("más columnas" in a["motivo"] for a in resultado["advertencias"])
+
+
 def test_stock_invalido_queda_en_cero_y_se_reporta(con, sesion_id):
     contenido = "sku,detalle,stock\n1,Tornillo,mucho\n".encode("utf-8")
 
@@ -1522,6 +1668,14 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
         def valor(campo):
             posicion = indice.get(campo)
             return fila[posicion] if posicion is not None else ""
+
+        if len(fila) > len(encabezados):
+            # Suele delatar una comilla sin cerrar o un separador dentro de un
+            # campo. Se avisa y se sigue: el mapeo usa las columnas por posición.
+            advertencias.append({
+                "fila": numero_fila,
+                "motivo": "Tiene más columnas que el encabezado",
+            })
 
         sku = valor("sku")
         if not sku:
