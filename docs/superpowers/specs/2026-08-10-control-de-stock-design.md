@@ -229,6 +229,7 @@ De cualquier número del tablero se tiene que poder llegar a su origen. Se apoya
 | Abrir o cerrar una pasada | Quién, cuándo, SKUs incluidos, SKUs sin contar al cerrar |
 | Marcar SKUs a recontar | Cantidad y criterio (manual o por estado) |
 | Alta rápida | Operario y fecha (además de quedar en el propio artículo) |
+| Importar ajustes | Archivo de origen, SKUs afectados, cantidad anterior y nueva |
 | Exportar | Qué archivo y con qué filtros |
 
 La bitácora es solo de agregado: no se edita ni se borra desde la aplicación.
@@ -417,6 +418,40 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 
 Ambos se pueden exportar **con los filtros del tablero aplicados** (por ejemplo, solo las diferencias).
 
+### Respaldo por operario
+
+Además de la exportación manual, el servidor mantiene un archivo CSV **por operario y por pasada**, en una carpeta aparte:
+
+```
+respaldos/<sesión>/Conteo 1 - Juan Perez.csv
+respaldos/<sesión>/Conteo 1 - Ana Gomez.csv
+respaldos/<sesión>/Conteo 2 - Juan Perez.csv
+```
+
+**Se escriben de forma incremental**, cada vez que llegan conteos sincronizados de ese operario — no al cerrar la pasada. Es lo que los vuelve un respaldo útil: cubren el escenario de una caída a mitad del conteo, que es cuando hacen falta.
+
+Contienen **una línea por SKU con la cantidad acumulada** de ese operario en esa pasada, respetando el formato del maestro:
+
+```
+id_orden | tipo | material | sku | descripcion | grupo | ubicacion | ubicacion_real |
+unidad | cantidad | fecha | observaciones
+```
+
+Dos decisiones sobre el contenido:
+
+- **Una línea por SKU, no una por escaneo.** El detalle escaneo por escaneo ya vive en la exportación de detalle; duplicarlo acá haría que el archivo dejara de parecerse al maestro, que es lo que lo hace útil.
+- **Sin `stock_sistema`.** Son archivos que circulan con facilidad —un pendrive, un mensaje— y basta con que uno llegue a un operario para arruinar el conteo a ciegas.
+
+Estos archivos son **de salida**: reflejan lo que hay en la base. Editarlos no modifica nada. Para volcar una corrección hecha fuera del sistema está la importación de ajustes.
+
+### Importación de ajustes
+
+Camino formal para corregir desde afuera cuando el sistema no contempla el caso. Se importa un CSV con `sku` y `cantidad`, y el panel muestra **qué cambiaría antes de aplicar**: para cada SKU, la cantidad actual, la nueva y la diferencia.
+
+Al confirmar, los ajustes se registran **como conteos normales** dentro de la pasada vigente, con autoría explícita de ajuste manual y la fecha, y la operación queda asentada en la bitácora con el archivo de origen y el resumen de lo aplicado.
+
+Nada se edita ni se pisa: el ajuste es un evento más, y el número final se sigue explicando por completo con lo que hay registrado.
+
 ## 11. Panel web
 
 **Sesiones** — crear, abrir, cerrar. Solo una sesión abierta a la vez, para que ningún celular se confunda de inventario. Configuración de tolerancia por sesión.
@@ -448,7 +483,9 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 
 **En la PC:** carpeta autocontenida con el servidor y su propio Python. Doble clic en `Iniciar servidor.bat` y se abre el panel en el navegador. Sin instalación previa ni configuración de rutas. La primera ejecución requiere aceptar el permiso de firewall de Windows para redes privadas; sin eso los celulares no alcanzan el servidor.
 
-**Backup:** toda la base es el archivo `inventario.db`. Copiarlo respalda maestro, conteos, pasadas y observaciones. El servidor genera una copia automática al cerrar cada pasada.
+**Backup:** toda la base es el archivo `inventario.db`. Copiarlo respalda maestro, conteos, pasadas, bitácora y observaciones. El servidor genera una copia automática al cerrar cada pasada.
+
+Como segunda red, la carpeta `respaldos/` mantiene los CSV por operario actualizados durante el conteo (ver sección 10). Sirven para reconstruir el trabajo en Excel si algo le pasara a la base.
 
 **En los celulares (app nativa):** QR de instalación → APK → QR personal. Android 8+.
 
@@ -466,6 +503,8 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 - Reimportación sobre una sesión con conteos hechos: que la vista previa detecte correctamente altas, modificaciones y ausencias, y que ningún conteo se pierda al aplicar.
 - Que cada acción con efecto sobre el estado deje su entrada en la bitácora, con valor anterior y nuevo.
 - Reconstrucción del `ultimo_conteo` de un SKU a partir de su historial, incluyendo anulaciones.
+- Respaldos por operario: que se actualicen al sincronizar y no solo al cerrar, que acumulen por SKU y que nunca incluyan `stock_sistema`.
+- Importación de ajustes: que la vista previa calcule bien la diferencia, que los ajustes queden como conteos con autoría propia y que aparezcan en la bitácora.
 - Que `stock_sistema` no aparezca en ninguna respuesta de la API destinada a la app ni a la PWA.
 - Que el certificado del servidor se regenere al cambiar la IP y siga validando contra la CA original.
 
