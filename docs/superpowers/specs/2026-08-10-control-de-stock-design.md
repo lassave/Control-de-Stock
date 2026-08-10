@@ -9,7 +9,7 @@
 
 Sistema de toma de inventario físico con escaneo de códigos de barras. Varios operarios cuentan en simultáneo con celulares Android, contra un servidor que corre en la PC del responsable, en la misma red WiFi del cliente. El resultado se exporta a CSV para volcarlo al ERP.
 
-El conteo puede extenderse varios días y admite múltiples rondas de recuento hasta acordar las diferencias con el cliente.
+El conteo puede extenderse varios días y admite múltiples reconteos hasta acordar las diferencias con el cliente.
 
 ## 2. Contexto y restricciones
 
@@ -48,7 +48,7 @@ ERP → CSV → [Panel web] → Servidor (SQLite)
 
 ### Principio: todo es un evento, nada se pisa
 
-Cada escaneo genera una fila nueva. El total contado de un SKU es la suma de sus filas dentro de la ronda vigente. Nada se sobreescribe ni se borra. Esto hace que la sincronización sea idempotente y que el conteo sea auditable de punta a punta.
+Cada escaneo genera una fila nueva. El total contado de un SKU es la suma de sus filas dentro de la pasada vigente. Nada se sobreescribe ni se borra. Esto hace que la sincronización sea idempotente y que el conteo sea auditable de punta a punta.
 
 ### Tablas del servidor
 
@@ -58,10 +58,21 @@ id, nombre, fecha_creacion, estado (abierta | cerrada),
 tolerancia_pct, tolerancia_min_abs
 ```
 
-**`ronda`** — cada pasada de conteo dentro de una sesión
+**`pasada`** — cada vuelta de conteo dentro de una sesión
 ```
 id, sesion_id, numero, estado (abierta | cerrada), fecha_apertura, fecha_cierre
 ```
+
+**Nomenclatura visible.** El campo `numero` es correlativo (1, 2, 3…) y la etiqueta que ve el usuario se deriva de él:
+
+| `numero` | Etiqueta |
+|---|---|
+| 1 | **Conteo** |
+| 2 | **Reconteo 1** |
+| 3 | **Reconteo 2** |
+| n | **Reconteo n−1** |
+
+Esa etiqueta es la que aparece en la app, en el panel y en los encabezados del CSV exportado. El número correlativo interno se usa solo para ordenar y para determinar el valor vigente.
 
 **`articulo`** — el maestro, congelado dentro de la sesión
 ```
@@ -92,15 +103,15 @@ id, sesion_id, nombre, origen (importada | nueva)
 
 **`conteo`** — cada escaneo
 ```
-uuid, sesion_id, ronda_id, articulo_id, cantidad, operario_id,
+uuid, sesion_id, pasada_id, articulo_id, cantidad, operario_id,
 ubicacion_real (nullable), observaciones (nullable),
 timestamp_dispositivo, timestamp_servidor,
 anula_uuid (nullable)
 ```
 
-**`recuento_item`** — qué SKUs entran en una ronda de recuento
+**`reconteo_item`** — qué SKUs entran en un reconteo
 ```
-ronda_id, articulo_id
+pasada_id, articulo_id
 ```
 
 **`mapeo_columnas`** — formatos de importación guardados
@@ -120,20 +131,20 @@ id, nombre, definicion_json
 
 ### Acumulación
 
-Dentro de una misma ronda, escanear repetidamente el mismo SKU **suma**. Cubre el caso de un producto presente en varias ubicaciones o contado por dos personas. Dos operarios contando el mismo SKU en simultáneo no generan conflicto: cada uno aporta su parte.
+Dentro de una misma pasada, escanear repetidamente el mismo SKU **suma**. Cubre el caso de un producto presente en varias ubicaciones o contado por dos personas. Dos operarios contando el mismo SKU en simultáneo no generan conflicto: cada uno aporta su parte.
 
-### Rondas de recuento
+### Conteo y reconteos
 
-- La **ronda 1** es el conteo inicial y abarca todo el maestro.
-- Al cerrarla, el panel lista las diferencias. Se marcan los SKUs a recontar (manualmente o con "todos los que están fuera de tolerancia") y se abre la **ronda 2**.
-- En una ronda de recuento, la app **solo acepta los SKUs marcados**. Si el operario escanea otro, la app avisa *"este artículo no está en el recuento"* y no lo carga.
-- **Cada ronda cuenta desde cero y reemplaza a la anterior** para esos SKUs. Si en R1 contaron 48 y en R2 cuentan 50, el valor vigente es 50. Sumar daría 98, que no significa nada.
-- Un SKU no incluido en una ronda conserva como vigente el valor de la última ronda en que fue contado.
-- **El recuento también es a ciegas:** el operario no ve lo que se contó en la ronda anterior, ni propio ni ajeno. De lo contrario el recuento tendería a confirmar el primer conteo en lugar de verificarlo.
-- Se pueden abrir tantas rondas como haga falta, en días distintos. Todas quedan visibles en paralelo en el tablero.
+- El **Conteo** es la primera pasada y abarca todo el maestro.
+- Al cerrarlo, el panel lista las diferencias. Se marcan los SKUs a recontar (manualmente o con "todos los que están fuera de tolerancia") y se abre el **Reconteo 1**.
+- En un reconteo, la app **solo acepta los SKUs marcados**. Si el operario escanea otro, la app avisa *"este artículo no está en el reconteo"* y no lo carga.
+- **Cada reconteo cuenta desde cero y reemplaza a la pasada anterior** para esos SKUs. Si en el Conteo se registraron 48 y en el Reconteo 1 se cuentan 50, el valor vigente es 50. Sumar daría 98, que no significa nada.
+- Un SKU no incluido en un reconteo conserva como vigente el valor de la última pasada en que fue contado.
+- **El reconteo también es a ciegas:** el operario no ve lo que se contó en la pasada anterior, ni propio ni ajeno. De lo contrario el reconteo tendería a confirmar el primer número en lugar de verificarlo.
+- Se pueden abrir tantos reconteos como haga falta (Reconteo 1, Reconteo 2, Reconteo 3…), en días distintos. Todos quedan visibles en paralelo en el tablero.
 - La sesión permanece abierta hasta que las diferencias se acuerdan con el cliente. Al cerrarla se congela todo.
 
-**Valor vigente de un SKU:** suma de sus conteos no anulados en la ronda de número más alto en la que fue contado.
+**Valor vigente de un SKU:** suma de sus conteos no anulados en la pasada de número más alto en la que fue contado.
 
 ### Tolerancia
 
@@ -198,7 +209,7 @@ Requiere Android 8 o superior.
 
 ```
 ┌─────────────────────────────┐
-│ Ronda 2          Juan   ⚡3 │  ← ronda · operario · pendientes de sync
+│ Reconteo 1       Juan   ⚡3 │  ← pasada · operario · pendientes de sync
 ├─────────────────────────────┤
 │                             │
 │      [ CÁMARA EN VIVO ]     │  ← escaneo continuo, sin apretar nada
@@ -237,7 +248,7 @@ Al leer un código: vibración, sonido, y la ficha sube desde abajo. **Mientras 
 
 - **Buscar** — para productos sin etiqueta o con código ilegible: búsqueda por descripción, SKU o ubicación contra el maestro local, offline. Sin esto, cada etiqueta rota frena el conteo.
 - **Mis conteos** — lista de las cargas propias, de la más reciente a la más vieja, con SKU, cantidad, ubicación y hora. Deslizar una línea la anula. Solo lo propio.
-- **Lista de recuento** — en rondas de recuento, los SKUs asignados con su ubicación, para ir tachando.
+- **Lista de reconteo** — durante un reconteo, los SKUs asignados con su ubicación, para ir tachando.
 - **Indicador de sincronización** — cuántos conteos faltan subir. Verde = todo al día. Nunca bloquea el trabajo.
 
 ## 7. Sincronización
@@ -245,7 +256,7 @@ Al leer un código: vibración, sonido, y la ficha sube desde abajo. **Mientras 
 - Cada conteo nace en el celular con un `uuid` propio y se guarda primero en la base local.
 - Un proceso en segundo plano empuja los pendientes apenas hay red. Si no hay, se acumulan sin interrumpir.
 - El servidor descarta los `uuid` ya recibidos: reenviar es inofensivo.
-- Como los conteos suman dentro de la ronda y nunca se editan, no existen conflictos de escritura concurrente.
+- Como los conteos suman dentro de la pasada y nunca se editan, no existen conflictos de escritura concurrente.
 - Las anulaciones viajan como eventos más, con la misma garantía.
 - El celular puede permanecer sin señal indefinidamente sin perder trabajo.
 
@@ -272,9 +283,9 @@ unidad | stock_sistema | contado | dif | estado | fecha | observaciones
 - `contado`, `dif` y `estado` son calculados sobre el valor vigente.
 - `fecha` es la del **último conteo registrado** para ese artículo. Vacía si no se contó.
 - `ubicacion_real` queda vacía si nadie la corrigió. Si hubo varias correcciones, se muestra la última y las observaciones se concatenan.
-- Con rondas activas se agregan columnas `R1`, `R2`, `R3`… con el contado de cada ronda.
+- Cuando hubo reconteos se agregan columnas por pasada: `conteo`, `reconteo_1`, `reconteo_2`… con la cantidad registrada en cada una. Quedan vacías para los SKUs que no participaron de esa pasada.
 
-**Detalle línea por línea:** cada escaneo con operario, hora, ronda, ubicación real y observaciones.
+**Detalle línea por línea:** cada escaneo con operario, hora, pasada (`Conteo` / `Reconteo n`), ubicación real y observaciones.
 
 Ambos se pueden exportar **con los filtros del tablero aplicados** (por ejemplo, solo las diferencias).
 
@@ -297,7 +308,7 @@ unidad | stock_sistema | contado | dif | estado | fecha | observaciones
 - Detección de artículos contados en una ubicación distinta a la esperada.
 - Ordenamiento por cualquier columna.
 
-**Rondas** — cerrar la ronda actual, revisar diferencias, marcar SKUs a recontar (manual o "todos los fuera de tolerancia"), abrir la siguiente. Vista comparativa de todas las rondas.
+**Conteo y reconteos** — cerrar la pasada actual, revisar diferencias, marcar SKUs a recontar (manual o "todos los fuera de tolerancia"), abrir la siguiente. Vista comparativa de todas las pasadas, con las etiquetas `Conteo`, `Reconteo 1`, `Reconteo 2`…
 
 **Operarios** — alta con nombre y PIN opcional, QR personal por operario, QR de instalación del APK, estado de conexión, cuánto lleva contado cada uno y si alguno tiene conteos sin sincronizar.
 
@@ -305,7 +316,7 @@ unidad | stock_sistema | contado | dif | estado | fecha | observaciones
 
 **En la PC:** carpeta autocontenida con el servidor y su propio Python. Doble clic en `Iniciar servidor.bat` y se abre el panel en el navegador. Sin instalación previa ni configuración de rutas. La primera ejecución requiere aceptar el permiso de firewall de Windows para redes privadas; sin eso los celulares no alcanzan el servidor.
 
-**Backup:** toda la base es el archivo `inventario.db`. Copiarlo respalda maestro, conteos, rondas y observaciones. El servidor genera una copia automática al cerrar cada ronda.
+**Backup:** toda la base es el archivo `inventario.db`. Copiarlo respalda maestro, conteos, pasadas y observaciones. El servidor genera una copia automática al cerrar cada pasada.
 
 **En los celulares:** QR de instalación → APK → QR personal. Android 8+.
 
@@ -313,11 +324,12 @@ unidad | stock_sistema | contado | dif | estado | fecha | observaciones
 
 **Automatizado (backend)** — cubre lo que puede fallar en silencio y costar caro:
 - Importación con CSVs mal formados: columnas faltantes, encabezados duplicados, filas incompletas, codificaciones distintas, separadores `,` y `;`, decimales con coma y con punto.
-- Cálculo del valor vigente por ronda, incluyendo SKUs no incluidos en rondas posteriores.
+- Cálculo del valor vigente por pasada, incluyendo SKUs no incluidos en reconteos posteriores.
 - Tolerancia en los bordes: diferencia exactamente igual al límite, stock cero, stock negativo.
 - Idempotencia de la sincronización: reenvío del mismo `uuid`, reenvíos parciales, orden alterado.
-- Anulaciones: anular un conteo ya anulado, anular un conteo de una ronda cerrada.
-- Restricción de SKUs en rondas de recuento.
+- Anulaciones: anular un conteo ya anulado, anular un conteo de una pasada cerrada.
+- Restricción de SKUs durante un reconteo.
+- Etiquetado correcto de las pasadas: `numero = 1` → "Conteo", `numero = 4` → "Reconteo 3".
 - Que `stock_sistema` no aparezca en ninguna respuesta de la API destinada a la app.
 
 **Manual (app)** — con una tanda de códigos reales:
