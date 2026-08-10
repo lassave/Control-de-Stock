@@ -151,10 +151,20 @@ def test_ignora_la_columna_vacia_que_deja_un_separador_final():
     assert filas[0][:2] == ["1", "Tornillo"]
 
 
-def test_rechaza_un_encabezado_sin_nombres():
-    contenido = ",,\n1,2,3\n".encode("utf-8")
+def test_el_encabezado_es_la_primera_linea_con_contenido():
+    """Una línea de relleno arriba se saltea igual que en cualquier otra parte."""
+    contenido = ",,\nsku,descripcion\n1,Tornillo\n".encode("utf-8")
 
-    with pytest.raises(ValueError, match="nombres de columna"):
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert filas == [["1", "Tornillo"]]
+
+
+def test_rechaza_un_archivo_de_puro_relleno():
+    contenido = ",,\n,,\n".encode("utf-8")
+
+    with pytest.raises(ValueError, match="vacío"):
         lectura_csv.leer(contenido)
 
 

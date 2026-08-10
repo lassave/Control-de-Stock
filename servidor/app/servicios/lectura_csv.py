@@ -86,11 +86,7 @@ def leer(contenido: bytes) -> tuple[list[str], list[list[str]]]:
     separador = detectar_separador(texto)
 
     lector = csv.reader(io.StringIO(texto), delimiter=separador)
-    todas = []
-    for i, fila in enumerate(lector):
-        # Mantén la primera fila para la detección de encabezados, luego filtra vacías
-        if i == 0 or any(celda.strip() for celda in fila):
-            todas.append(fila)
+    todas = [fila for fila in lector if any(celda.strip() for celda in fila)]
 
     if not todas:
         raise ValueError("El archivo está vacío")
