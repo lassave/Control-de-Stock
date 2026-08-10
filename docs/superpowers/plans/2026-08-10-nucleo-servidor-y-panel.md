@@ -71,6 +71,12 @@ CREATE TABLE IF NOT EXISTS sesion (
     CHECK (typeof(tolerancia_min_abs) = 'integer')
 );
 
+-- Una sola sesión abierta a la vez: los dispositivos se vinculan a «la»
+-- sesión abierta. El repositorio ya lo valida, pero dos hilos pueden pasar
+-- esa validación a la vez; este índice lo vuelve imposible.
+CREATE UNIQUE INDEX IF NOT EXISTS ix_sesion_abierta
+    ON sesion(estado) WHERE estado = 'abierta';
+
 CREATE TABLE IF NOT EXISTS pasada (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     sesion_id       INTEGER NOT NULL REFERENCES sesion(id),
@@ -297,6 +303,40 @@ def test_rechaza_stock_decimal(con):
         crear_articulo(con, sesion_id, stock=3.5)
 
 
+def test_solo_admite_una_sesion_abierta(con):
+    """Los dispositivos se vinculan a «la» sesión abierta: no puede haber dos."""
+    crear_sesion(con)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        con.execute(
+            "INSERT INTO sesion (nombre, fecha_creacion) "
+            "VALUES ('Otra', '2026-08-10T00:00:00Z')"
+        )
+
+
+def test_el_contexto_descarta_lo_escrito_si_algo_falla(con):
+    """Dos escrituras van juntas o no va ninguna."""
+    with pytest.raises(sqlite3.IntegrityError):
+        with con:
+            crear_sesion(con)
+            con.execute(
+                "INSERT INTO pasada (sesion_id, numero, fecha_apertura) "
+                "VALUES (999, 1, '2026-08-10T00:00:00Z')"
+            )
+
+    quedaron = con.execute("SELECT COUNT(*) AS n FROM sesion").fetchone()["n"]
+    assert quedaron == 0
+
+
+def test_el_contexto_confirma_al_salir_sin_error(con):
+    with con:
+        crear_sesion(con)
+
+    con.rollback()
+    quedaron = con.execute("SELECT COUNT(*) AS n FROM sesion").fetchone()["n"]
+    assert quedaron == 1
+
+
 def test_cada_hilo_recibe_su_propia_conexion(tmp_path):
     """Sin esto, el segundo operario que sincroniza en simultáneo recibe un error."""
     conexion = db.conectar(tmp_path / "hilos.db")
@@ -413,6 +453,26 @@ class ConexionPorHilo:
     def commit(self):
         self._conexion.commit()
 
+    def rollback(self):
+        self._conexion.rollback()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, tipo, valor, traza):
+        """Confirma al salir bien y descarta al salir con error.
+
+        Sin esto, una operación de dos escrituras que falla en la segunda
+        deja la primera pendiente, y el commit de cualquier operación
+        posterior la persiste: aparece una sesión sin pasada, que no se
+        puede usar ni cerrar.
+        """
+        if tipo is None:
+            self.commit()
+        else:
+            self.rollback()
+        return False
+
     def close(self):
         conexion = getattr(self._local, "conexion", None)
         if conexion is not None:
@@ -438,7 +498,7 @@ def crear_esquema(con):
 - [ ] **Step 6: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_db.py -v`
-Expected: PASS, 9 tests
+Expected: PASS, todos en verde
 
 - [ ] **Step 7: Commit**
 
@@ -821,6 +881,39 @@ def test_fijar_tolerancia(con):
     sesion = sesiones.obtener(con, sesion_id)
     assert sesion["tolerancia_pct"] == 5.0
     assert sesion["tolerancia_min_abs"] == 2000
+
+
+def test_fijar_tolerancia_rechaza_milesimas_con_decimales(con):
+    """La base lo rechazaría igual, pero con un mensaje que no dice nada."""
+    sesion_id = sesiones.crear(con, "Cliente X")
+
+    with pytest.raises(ValueError, match="milésimas"):
+        sesiones.fijar_tolerancia(con, sesion_id, 5.0, 1500.5)
+
+
+@pytest.mark.parametrize("operacion", [
+    lambda con: sesiones.cerrar(con, 999),
+    lambda con: sesiones.fijar_tolerancia(con, 999, 2.0, 1000),
+])
+def test_operar_sobre_una_sesion_inexistente_falla(con, operacion):
+    with pytest.raises(ValueError, match="No existe la sesión"):
+        operacion(con)
+
+
+def test_ahora_usa_el_formato_del_proyecto():
+    """reloj es la única fuente del formato de fecha de todo el sistema."""
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", reloj.ahora())
+```
+
+El archivo empieza con estos imports:
+
+```python
+import re
+
+import pytest
+
+from app import reloj
+from app.repos import sesiones
 ```
 
 - [ ] **Step 2: Correr el test y verificar que falla**
@@ -874,17 +967,21 @@ def crear(con, nombre):
         raise ValueError("Ya hay una sesión abierta. Cerrala antes de crear otra.")
 
     ahora = reloj.ahora()
-    cursor = con.execute(
-        "INSERT INTO sesion (nombre, fecha_creacion) VALUES (?, ?)",
-        (nombre, ahora),
-    )
-    sesion_id = cursor.lastrowid
 
-    con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 1, ?)",
-        (sesion_id, ahora),
-    )
-    con.commit()
+    # Las dos escrituras van juntas o no va ninguna: una sesión sin pasada
+    # no se puede usar para contar ni se puede cerrar.
+    with con:
+        cursor = con.execute(
+            "INSERT INTO sesion (nombre, fecha_creacion) VALUES (?, ?)",
+            (nombre, ahora),
+        )
+        sesion_id = cursor.lastrowid
+
+        con.execute(
+            "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 1, ?)",
+            (sesion_id, ahora),
+        )
+
     return sesion_id
 
 
@@ -915,28 +1012,39 @@ def pasada_abierta(con, sesion_id):
 
 
 def cerrar(con, sesion_id):
+    obtener(con, sesion_id)  # falla con un mensaje claro si no existe
     ahora = reloj.ahora()
-    con.execute(
-        "UPDATE pasada SET estado = 'cerrada', fecha_cierre = ? "
-        "WHERE sesion_id = ? AND estado = 'abierta'",
-        (ahora, sesion_id),
-    )
-    con.execute("UPDATE sesion SET estado = 'cerrada' WHERE id = ?", (sesion_id,))
-    con.commit()
+
+    with con:
+        con.execute(
+            "UPDATE pasada SET estado = 'cerrada', fecha_cierre = ? "
+            "WHERE sesion_id = ? AND estado = 'abierta'",
+            (ahora, sesion_id),
+        )
+        con.execute("UPDATE sesion SET estado = 'cerrada' WHERE id = ?", (sesion_id,))
 
 
 def fijar_tolerancia(con, sesion_id, pct, min_abs_milesimas):
-    con.execute(
-        "UPDATE sesion SET tolerancia_pct = ?, tolerancia_min_abs = ? WHERE id = ?",
-        (pct, min_abs_milesimas, sesion_id),
-    )
-    con.commit()
+    obtener(con, sesion_id)
+
+    # La base lo rechazaría igual, pero con un mensaje de SQLite que no le
+    # dice nada a quien está corriendo el inventario.
+    if not isinstance(min_abs_milesimas, int) or isinstance(min_abs_milesimas, bool):
+        raise ValueError(
+            "La tolerancia mínima se expresa en milésimas, con un número entero."
+        )
+
+    with con:
+        con.execute(
+            "UPDATE sesion SET tolerancia_pct = ?, tolerancia_min_abs = ? WHERE id = ?",
+            (pct, min_abs_milesimas, sesion_id),
+        )
 ```
 
 - [ ] **Step 5: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_sesiones.py -v`
-Expected: PASS, 9 tests
+Expected: PASS, todos en verde
 
 - [ ] **Step 6: Commit**
 
@@ -1991,7 +2099,7 @@ def de_operario(con, sesion_id, operario_id, limite=50):
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_conteos.py -v`
-Expected: PASS, 11 tests
+Expected: PASS, todos en verde
 
 - [ ] **Step 5: Commit**
 
