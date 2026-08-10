@@ -188,6 +188,56 @@ def test_un_sku_repetido_se_cuenta_una_sola_vez(con, sesion_id):
     assert fila["descripcion"] == "Tornillo corregido"
 
 
+def test_un_sku_repetido_no_desordena_la_numeracion(con, sesion_id):
+    """id_orden define el recorrido: dos artículos no pueden compartir número."""
+    contenido = "sku,detalle\nA,Uno\nB,Dos\nA,Uno otra vez\nC,Tres\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 3
+
+    ordenes = {
+        fila["sku"]: fila["id_orden"]
+        for fila in con.execute("SELECT sku, id_orden FROM articulo")
+    }
+    assert ordenes == {"A": 1, "B": 2, "C": 3}
+
+
+def test_avisa_cuando_falta_la_descripcion(con, sesion_id):
+    contenido = "sku,detalle\n1,\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 1
+    assert any("Sin descripción" in a["motivo"] for a in resultado["advertencias"])
+
+    fila = con.execute("SELECT descripcion FROM articulo").fetchone()
+    assert fila["descripcion"] == "1"
+
+
+def test_reimportar_actualiza_sin_duplicar(con, sesion_id):
+    primero = "sku,detalle,stock\nA,Tornillo,10\nB,Tuerca,5\n".encode("utf-8")
+    segundo = "sku,detalle,stock\nA,Tornillo hex,12\nB,Tuerca,5\n".encode("utf-8")
+    mapeo = {"sku": "sku", "descripcion": "detalle", "stock_sistema": "stock"}
+
+    importacion.importar(con, sesion_id, primero, mapeo)
+    importacion.importar(con, sesion_id, segundo, mapeo)
+
+    filas = list(con.execute(
+        "SELECT sku, descripcion, stock_sistema FROM articulo ORDER BY id_orden"
+    ))
+    assert len(filas) == 2
+    assert filas[0]["descripcion"] == "Tornillo hex"
+    assert filas[0]["stock_sistema"] == 12000
+
+    codigos = con.execute("SELECT COUNT(*) AS n FROM codigo_barras").fetchone()["n"]
+    assert codigos == 2
+
+
 def test_rechaza_una_unidad_por_defecto_inexistente(con, sesion_id):
     contenido = "sku,detalle\n1,Tornillo\n".encode("utf-8")
 

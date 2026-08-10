@@ -57,7 +57,7 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
     resultado = {
         "importados": 0, "codigos": 0, "descartadas": [], "advertencias": [],
     }
-    vistos = set()
+    vistos = {}  # sku -> id_orden ya asignado
 
     # Toda la importación es una sola transacción: un maestro a medio cargar
     # es peor que ninguno, porque el tablero lo muestra como si estuviera
@@ -97,7 +97,8 @@ def _cargar_fila(
         descartadas.append({"fila": numero_fila, "motivo": "Sin SKU"})
         return
 
-    if sku in vistos:
+    repetido = sku in vistos
+    if repetido:
         # El upsert deja la última, que es el comportamiento razonable, pero
         # el archivo trae un problema que conviene mirar.
         advertencias.append({
@@ -105,8 +106,19 @@ def _cargar_fila(
             "motivo": f"El SKU «{sku}» aparece más de una vez; queda el último",
         })
 
-    descripcion = valor("descripcion") or sku
-    siguiente_orden = resultado["importados"] + 1
+    descripcion = valor("descripcion")
+    if not descripcion:
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": "Sin descripción; se usó el SKU",
+        })
+        descripcion = sku
+
+    # El correlativo se calcula sobre los números ya asignados, no sobre la
+    # cantidad de importados: si no, una fila repetida vuelve a consumir un
+    # número y dos artículos distintos terminan con el mismo id_orden, que es
+    # el que define el orden de recorrido y de la planilla.
+    siguiente_orden = max(vistos.values(), default=0) + 1
 
     if "id_orden" in indice:
         try:
@@ -117,6 +129,8 @@ def _cargar_fila(
                 "fila": numero_fila,
                 "motivo": f"Número de orden inválido, se usó {id_orden}",
             })
+    elif repetido:
+        id_orden = vistos[sku]  # conserva el que ya tenía
     else:
         id_orden = siguiente_orden
 
@@ -193,6 +207,6 @@ def _cargar_fila(
         )
         resultado["codigos"] += 1
 
-    if sku not in vistos:
-        vistos.add(sku)
+    if not repetido:
         resultado["importados"] += 1
+    vistos[sku] = id_orden
