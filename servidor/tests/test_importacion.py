@@ -156,6 +156,49 @@ def test_saltea_filas_sin_sku(con, sesion_id):
     assert len(resultado["descartadas"]) == 1
 
 
+def test_una_unidad_desconocida_no_frena_la_importacion(con, sesion_id):
+    """La clave foránea abortaría el archivo entero: se ataja antes."""
+    contenido = "sku,detalle,um\n1,Tornillo,UN\n2,Tuerca,CAJA\n3,Clavo,KG\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle", "unidad": "um",
+    })
+
+    assert resultado["importados"] == 3
+    assert any("CAJA" in a["motivo"] for a in resultado["advertencias"])
+
+    unidades = {
+        fila["sku"]: fila["unidad"]
+        for fila in con.execute("SELECT sku, unidad FROM articulo")
+    }
+    assert unidades == {"1": "UN", "2": "UN", "3": "KG"}
+
+
+def test_un_sku_repetido_se_cuenta_una_sola_vez(con, sesion_id):
+    contenido = "sku,detalle\n1,Tornillo\n1,Tornillo corregido\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 1
+    assert any("más de una vez" in a["motivo"] for a in resultado["advertencias"])
+
+    fila = con.execute("SELECT descripcion FROM articulo").fetchone()
+    assert fila["descripcion"] == "Tornillo corregido"
+
+
+def test_rechaza_una_unidad_por_defecto_inexistente(con, sesion_id):
+    contenido = "sku,detalle\n1,Tornillo\n".encode("utf-8")
+
+    with pytest.raises(ValueError, match="no existe"):
+        importacion.importar(
+            con, sesion_id, contenido,
+            {"sku": "sku", "descripcion": "detalle"},
+            unidad_por_defecto="INVENTADA",
+        )
+
+
 def test_reporta_las_filas_con_columnas_de_mas(con, sesion_id):
     """Una columna de más suele delatar una comilla sin cerrar."""
     contenido = "sku,detalle\n1,Tornillo\n2,Tuerca,SOBRA\n".encode("utf-8")

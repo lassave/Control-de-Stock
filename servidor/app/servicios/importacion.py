@@ -15,8 +15,6 @@ CAMPOS = [
 
 CAMPOS_OBLIGATORIOS = ["sku", "descripcion"]
 
-CAMPOS_TEXTO = ["tipo", "material", "sku", "descripcion", "grupo", "ubicacion"]
-
 
 def previsualizar(contenido, cantidad=5):
     """Encabezados y primeras filas, para armar el mapeo en pantalla."""
@@ -48,9 +46,18 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
     indice = {campo: encabezados.index(col) for campo, col in mapeo.items() if col}
     ahora = reloj.ahora()
 
+    # La unidad tiene clave foránea: una desconocida abortaría la importación
+    # entera con un error de restricción, justo lo contrario de la regla de
+    # que una celda mala no frena el archivo. Se validan acá y las que no
+    # existen caen en la unidad por defecto, avisando.
+    unidades = {fila["codigo"] for fila in con.execute("SELECT codigo FROM unidad")}
+    if unidad_por_defecto not in unidades:
+        raise ValueError(f"La unidad por defecto «{unidad_por_defecto}» no existe")
+
     resultado = {
         "importados": 0, "codigos": 0, "descartadas": [], "advertencias": [],
     }
+    vistos = set()
 
     # Toda la importación es una sola transacción: un maestro a medio cargar
     # es peor que ninguno, porque el tablero lo muestra como si estuviera
@@ -58,16 +65,16 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
     with con:
         for numero_fila, fila in enumerate(filas, start=2):
             _cargar_fila(
-                con, sesion_id, fila, numero_fila,
-                indice, encabezados, unidad_por_defecto, ahora, resultado,
+                con, sesion_id, fila, numero_fila, indice, encabezados,
+                unidad_por_defecto, unidades, ahora, resultado, vistos,
             )
 
     return resultado
 
 
 def _cargar_fila(
-    con, sesion_id, fila, numero_fila,
-    indice, encabezados, unidad_por_defecto, ahora, resultado,
+    con, sesion_id, fila, numero_fila, indice, encabezados,
+    unidad_por_defecto, unidades, ahora, resultado, vistos,
 ):
     """Carga una fila del maestro, acumulando los avisos en `resultado`."""
     descartadas = resultado["descartadas"]
@@ -89,6 +96,14 @@ def _cargar_fila(
     if not sku:
         descartadas.append({"fila": numero_fila, "motivo": "Sin SKU"})
         return
+
+    if sku in vistos:
+        # El upsert deja la última, que es el comportamiento razonable, pero
+        # el archivo trae un problema que conviene mirar.
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": f"El SKU «{sku}» aparece más de una vez; queda el último",
+        })
 
     descripcion = valor("descripcion") or sku
     siguiente_orden = resultado["importados"] + 1
@@ -126,6 +141,13 @@ def _cargar_fila(
             })
 
     unidad = valor("unidad").upper() or unidad_por_defecto
+    if unidad not in unidades:
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": f"La unidad «{unidad}» no está en el catálogo; "
+                      f"se usó {unidad_por_defecto}",
+        })
+        unidad = unidad_por_defecto
 
     con.execute(
         """
@@ -171,4 +193,6 @@ def _cargar_fila(
         )
         resultado["codigos"] += 1
 
-    resultado["importados"] += 1
+    if sku not in vistos:
+        vistos.add(sku)
+        resultado["importados"] += 1
