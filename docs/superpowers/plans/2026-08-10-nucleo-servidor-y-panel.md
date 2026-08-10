@@ -1671,6 +1671,56 @@ def test_un_sku_repetido_se_cuenta_una_sola_vez(con, sesion_id):
     assert fila["descripcion"] == "Tornillo corregido"
 
 
+def test_un_sku_repetido_no_desordena_la_numeracion(con, sesion_id):
+    """id_orden define el recorrido: dos artículos no pueden compartir número."""
+    contenido = "sku,detalle\nA,Uno\nB,Dos\nA,Uno otra vez\nC,Tres\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 3
+
+    ordenes = {
+        fila["sku"]: fila["id_orden"]
+        for fila in con.execute("SELECT sku, id_orden FROM articulo")
+    }
+    assert ordenes == {"A": 1, "B": 2, "C": 3}
+
+
+def test_avisa_cuando_falta_la_descripcion(con, sesion_id):
+    contenido = "sku,detalle\n1,\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 1
+    assert any("Sin descripción" in a["motivo"] for a in resultado["advertencias"])
+
+    fila = con.execute("SELECT descripcion FROM articulo").fetchone()
+    assert fila["descripcion"] == "1"
+
+
+def test_reimportar_actualiza_sin_duplicar(con, sesion_id):
+    primero = "sku,detalle,stock\nA,Tornillo,10\nB,Tuerca,5\n".encode("utf-8")
+    segundo = "sku,detalle,stock\nA,Tornillo hex,12\nB,Tuerca,5\n".encode("utf-8")
+    mapeo = {"sku": "sku", "descripcion": "detalle", "stock_sistema": "stock"}
+
+    importacion.importar(con, sesion_id, primero, mapeo)
+    importacion.importar(con, sesion_id, segundo, mapeo)
+
+    filas = list(con.execute(
+        "SELECT sku, descripcion, stock_sistema FROM articulo ORDER BY id_orden"
+    ))
+    assert len(filas) == 2
+    assert filas[0]["descripcion"] == "Tornillo hex"
+    assert filas[0]["stock_sistema"] == 12000
+
+    codigos = con.execute("SELECT COUNT(*) AS n FROM codigo_barras").fetchone()["n"]
+    assert codigos == 2
+
+
 def test_rechaza_una_unidad_por_defecto_inexistente(con, sesion_id):
     contenido = "sku,detalle\n1,Tornillo\n".encode("utf-8")
 
@@ -1773,7 +1823,7 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
     resultado = {
         "importados": 0, "codigos": 0, "descartadas": [], "advertencias": [],
     }
-    vistos = set()
+    vistos = {}  # sku -> id_orden ya asignado
 
     # Toda la importación es una sola transacción: un maestro a medio cargar
     # es peor que ninguno, porque el tablero lo muestra como si estuviera
@@ -1813,7 +1863,8 @@ def _cargar_fila(
         descartadas.append({"fila": numero_fila, "motivo": "Sin SKU"})
         return
 
-    if sku in vistos:
+    repetido = sku in vistos
+    if repetido:
         # El upsert deja la última, que es el comportamiento razonable, pero
         # el archivo trae un problema que conviene mirar.
         advertencias.append({
@@ -1821,8 +1872,19 @@ def _cargar_fila(
             "motivo": f"El SKU «{sku}» aparece más de una vez; queda el último",
         })
 
-    descripcion = valor("descripcion") or sku
-    siguiente_orden = resultado["importados"] + 1
+    descripcion = valor("descripcion")
+    if not descripcion:
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": "Sin descripción; se usó el SKU",
+        })
+        descripcion = sku
+
+    # El correlativo se calcula sobre los números ya asignados, no sobre la
+    # cantidad de importados: si no, una fila repetida vuelve a consumir un
+    # número y dos artículos distintos terminan con el mismo id_orden, que es
+    # el que define el orden de recorrido y de la planilla.
+    siguiente_orden = max(vistos.values(), default=0) + 1
 
     if "id_orden" in indice:
         try:
@@ -1833,6 +1895,8 @@ def _cargar_fila(
                 "fila": numero_fila,
                 "motivo": f"Número de orden inválido, se usó {id_orden}",
             })
+    elif repetido:
+        id_orden = vistos[sku]  # conserva el que ya tenía
     else:
         id_orden = siguiente_orden
 
@@ -1909,9 +1973,9 @@ def _cargar_fila(
         )
         resultado["codigos"] += 1
 
-    if sku not in vistos:
-        vistos.add(sku)
+    if not repetido:
         resultado["importados"] += 1
+    vistos[sku] = id_orden
 ```
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
