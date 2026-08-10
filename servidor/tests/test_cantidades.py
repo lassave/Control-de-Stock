@@ -18,10 +18,50 @@ def test_a_milesimas(texto, esperado):
     assert cantidades.a_milesimas(texto) == esperado
 
 
-@pytest.mark.parametrize("texto", ["", "abc", "1,2,3", None])
+@pytest.mark.parametrize("texto", [
+    "", "   ", "abc", "1,2,3", None,
+    ".", ",", "-", "-,",           # separador suelto: celda rota, no cero
+    "1 2",                         # dos números pegados, no doce mil
+    "1.23.456",                    # grupos de miles mal formados
+    "inf", "-inf", "nan", "snan",  # Decimal los acepta; acá no son cantidades
+    "1e3", "1_000",                # notación que ningún ERP exporta
+])
 def test_a_milesimas_rechaza_invalidos(texto):
     with pytest.raises(ValueError):
         cantidades.a_milesimas(texto)
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("1.234.567", 1234567000),
+    ("1,234,567", 1234567000),
+])
+def test_acepta_miles_agrupados_sin_decimales(texto, esperado):
+    """«1.234.567» es la forma normal de escribir un número grande acá."""
+    assert cantidades.a_milesimas(texto) == esperado
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("1,2345", 1235),   # redondea para arriba
+    ("1,2344", 1234),   # redondea para abajo
+    ("0,0005", 1),      # medio hacia arriba
+    ("0,0004", 0),
+])
+def test_redondea_los_decimales_sobrantes(texto, esperado):
+    """Truncar sesgaría todas las cantidades a la baja de forma sistemática."""
+    assert cantidades.a_milesimas(texto) == esperado
+
+
+def test_siempre_devuelve_enteros():
+    """La base rechaza cualquier float: la columna tiene CHECK typeof integer."""
+    for texto in ["24", "3,5", "1.234,56", "0,0005"]:
+        assert isinstance(cantidades.a_milesimas(texto), int)
+        assert isinstance(cantidades.a_centavos(texto), int)
+
+
+@pytest.mark.parametrize("texto", ["", "abc", ".", "12,,5"])
+def test_a_centavos_rechaza_invalidos(texto):
+    with pytest.raises(ValueError):
+        cantidades.a_centavos(texto)
 
 
 @pytest.mark.parametrize("milesimas, esperado", [
