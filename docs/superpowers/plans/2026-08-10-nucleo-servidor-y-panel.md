@@ -1180,6 +1180,53 @@ def test_saltea_un_titulo_antes_del_encabezado():
     assert len(filas) == 2
 
 
+def test_respeta_el_encabezado_aunque_las_filas_tengan_menos_columnas():
+    """Elegir el encabezado por «ancho dominante» lo descartaba acá."""
+    contenido = (
+        "sku,descripcion,grupo\n"
+        "1,Tornillo\n"
+        "2,Tuerca\n"
+        "3,Clavo\n"
+    ).encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion", "grupo"]
+    assert len(filas) == 3
+
+
+def test_respeta_el_encabezado_aunque_las_filas_tengan_mas_columnas():
+    contenido = (
+        "sku,descripcion\n"
+        "1,Tornillo,X\n"
+        "2,Tuerca,Y\n"
+        "3,Clavo,Z\n"
+    ).encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert len(filas) == 3
+
+
+def test_ignora_las_filas_de_relleno_que_deja_excel():
+    """Excel suele dejar líneas con solo separadores o espacios al final."""
+    contenido = "sku,descripcion\n1,Tornillo\n,\n,\n".encode("utf-8")
+
+    _, filas = lectura_csv.leer(contenido)
+
+    assert filas == [["1", "Tornillo"]]
+
+
+def test_ignora_las_lineas_en_blanco_del_final():
+    contenido = "sku,descripcion\n1,Tornillo\n   \n   \n".encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert filas == [["1", "Tornillo"]]
+
+
 def test_ignora_la_columna_vacia_que_deja_un_separador_final():
     contenido = "sku,descripcion,\n1,Tornillo,\n".encode("utf-8")
 
@@ -1313,7 +1360,9 @@ def detectar_separador(texto: str) -> str:
         if not anchos:
             continue
 
-        ancho_dominante = max(set(anchos), key=anchos.count)
+        # El ancho más frecuente; ante un empate, el mayor. Sin el desempate
+        # el resultado depende del orden del conjunto y no es reproducible.
+        ancho_dominante = max(anchos, key=lambda ancho: (anchos.count(ancho), ancho))
         if ancho_dominante < 2:
             continue  # una sola columna: este separador no separa nada
 
@@ -1340,12 +1389,15 @@ def leer(contenido: bytes) -> tuple[list[str], list[list[str]]]:
         raise ValueError("El archivo está vacío")
 
     # Muchos ERP anteponen un título o una fecha antes del encabezado real.
-    # El encabezado es la primera línea que tiene el ancho dominante.
-    anchos = [len(fila) for fila in todas]
-    ancho = max(set(anchos), key=anchos.count)
-    primera = next(
-        (posicion for posicion, fila in enumerate(todas) if len(fila) == ancho), 0
-    )
+    # Se reconoce porque queda como una línea suelta sin separadores entre
+    # filas que sí los tienen. Solo se saltean esas: cualquier otra
+    # diferencia de ancho es un encabezado legítimo con filas irregulares,
+    # y elegir por «ancho dominante» descartaría el encabezado verdadero
+    # apenas la mayoría de las filas omita la última columna.
+    primera = 0
+    if any(len(fila) > 1 for fila in todas):
+        while primera < len(todas) - 1 and len(todas[primera]) <= 1:
+            primera += 1
 
     encabezados = [celda.strip() for celda in todas[primera]]
 
