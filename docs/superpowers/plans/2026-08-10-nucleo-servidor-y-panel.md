@@ -22,7 +22,7 @@ Este plan corresponde a las secciones 3, 4, 5 (parcial), 10 y 11 del spec `docs/
 - **`stock_sistema` y `costo_unitario` nunca salen en respuestas destinadas a dispositivos.** Requisito de conteo a ciegas (spec, sección 5).
 - **Fechas en ISO 8601 UTC**, guardadas como texto: `2026-08-10T14:32:05Z`.
 - **Textos de interfaz en castellano rioplatense**, sin jerga técnica.
-- **Python 3.11 mínimo.**
+- **Python 3.11 mínimo.** El intérprete del proyecto es el entorno virtual: `servidor\.venv\Scripts\python.exe`. En esta máquina el `python` del PATH es el acceso directo de la Microsoft Store y no ejecuta nada, así que **todos los comandos usan el intérprete del venv por ruta**, no `python` a secas.
 - Los mensajes de commit van en castellano, en presente, describiendo el efecto.
 
 ---
