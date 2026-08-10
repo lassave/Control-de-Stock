@@ -67,7 +67,8 @@ CREATE TABLE IF NOT EXISTS sesion (
     estado              TEXT NOT NULL DEFAULT 'abierta',
     tolerancia_pct      REAL NOT NULL DEFAULT 2.0,
     tolerancia_min_abs  INTEGER NOT NULL DEFAULT 1000,
-    CHECK (estado IN ('abierta', 'cerrada'))
+    CHECK (estado IN ('abierta', 'cerrada')),
+    CHECK (typeof(tolerancia_min_abs) = 'integer')
 );
 
 CREATE TABLE IF NOT EXISTS pasada (
@@ -99,7 +100,7 @@ CREATE TABLE IF NOT EXISTS articulo (
     descripcion     TEXT NOT NULL,
     grupo           TEXT,
     ubicacion       TEXT,
-    unidad          TEXT NOT NULL DEFAULT 'UN',
+    unidad          TEXT NOT NULL DEFAULT 'UN' REFERENCES unidad(codigo),
     stock_sistema   INTEGER NOT NULL DEFAULT 0,
     costo_unitario  INTEGER,
     origen          TEXT NOT NULL DEFAULT 'importado',
@@ -108,7 +109,12 @@ CREATE TABLE IF NOT EXISTS articulo (
     creado_en       TEXT NOT NULL,
     fusionado_en    INTEGER REFERENCES articulo(id),
     UNIQUE (sesion_id, sku),
-    CHECK (origen IN ('importado', 'alta_rapida'))
+    CHECK (origen IN ('importado', 'alta_rapida')),
+    -- La afinidad INTEGER de SQLite no es una restricción de tipo: acepta y
+    -- guarda un 3.5 como REAL. Sin este CHECK, un solo decimal colado anula
+    -- en silencio la exactitud que justifica guardar milésimas y centavos.
+    CHECK (typeof(stock_sistema) = 'integer'),
+    CHECK (costo_unitario IS NULL OR typeof(costo_unitario) = 'integer')
 );
 
 CREATE TABLE IF NOT EXISTS codigo_barras (
@@ -139,11 +145,13 @@ CREATE TABLE IF NOT EXISTS conteo (
     fuera_asignacion        INTEGER NOT NULL DEFAULT 0,
     timestamp_dispositivo   TEXT NOT NULL,
     timestamp_servidor      TEXT NOT NULL,
-    anula_uuid              TEXT REFERENCES conteo(uuid)
+    anula_uuid              TEXT REFERENCES conteo(uuid),
+    CHECK (typeof(cantidad) = 'integer')
 );
 
 CREATE INDEX IF NOT EXISTS ix_conteo_articulo ON conteo(articulo_id, pasada_id);
 CREATE INDEX IF NOT EXISTS ix_conteo_anula ON conteo(anula_uuid);
+CREATE INDEX IF NOT EXISTS ix_conteo_sesion ON conteo(sesion_id, operario_id);
 
 CREATE TABLE IF NOT EXISTS pasada_item (
     pasada_id    INTEGER NOT NULL REFERENCES pasada(id),
@@ -240,6 +248,86 @@ def test_crear_esquema_es_idempotente(con):
 def test_claves_foraneas_activas(con):
     activo = con.execute("PRAGMA foreign_keys").fetchone()[0]
     assert activo == 1
+
+
+def crear_sesion(con):
+    con.execute(
+        "INSERT INTO sesion (id, nombre, fecha_creacion) VALUES (1, 'X', '2026-08-10T00:00:00Z')"
+    )
+    return 1
+
+
+def crear_articulo(con, sesion_id, sku="A", unidad="UN", stock=0):
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "stock_sistema, creado_en) VALUES (?, 1, ?, 'Descripción', ?, ?, '2026-08-10T00:00:00Z')",
+        (sesion_id, sku, unidad, stock),
+    )
+
+
+def test_rechaza_sku_repetido_en_la_misma_sesion(con):
+    sesion_id = crear_sesion(con)
+    crear_articulo(con, sesion_id, sku="A")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        crear_articulo(con, sesion_id, sku="A")
+
+
+def test_rechaza_pasada_de_una_sesion_inexistente(con):
+    with pytest.raises(sqlite3.IntegrityError):
+        con.execute(
+            "INSERT INTO pasada (sesion_id, numero, fecha_apertura) "
+            "VALUES (999, 1, '2026-08-10T00:00:00Z')"
+        )
+
+
+def test_rechaza_unidad_que_no_existe(con):
+    """Un CSV que trae «CAJA» en vez de «CJ» no puede entrar sin que nadie lo note."""
+    sesion_id = crear_sesion(con)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        crear_articulo(con, sesion_id, unidad="CAJA")
+
+
+def test_rechaza_stock_decimal(con):
+    """Las milésimas solo son exactas si la columna guarda enteros de verdad."""
+    sesion_id = crear_sesion(con)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        crear_articulo(con, sesion_id, stock=3.5)
+
+
+def test_cada_hilo_recibe_su_propia_conexion(tmp_path):
+    """Sin esto, el segundo operario que sincroniza en simultáneo recibe un error."""
+    conexion = db.conectar(tmp_path / "hilos.db")
+    db.crear_esquema(conexion)
+
+    errores = []
+
+    def consultar():
+        try:
+            conexion.execute("SELECT COUNT(*) FROM unidad").fetchone()
+        except Exception as error:  # noqa: BLE001 — el test reporta cualquiera
+            errores.append(error)
+
+    hilos = [threading.Thread(target=consultar) for _ in range(4)]
+    for hilo in hilos:
+        hilo.start()
+    for hilo in hilos:
+        hilo.join()
+
+    assert errores == []
+```
+
+El archivo empieza con estos imports:
+
+```python
+import sqlite3
+import threading
+
+import pytest
+
+from app import db
 ```
 
 Crear `servidor/tests/conftest.py`:
@@ -276,17 +364,69 @@ Expected: FAIL con `ModuleNotFoundError` o `AttributeError: module 'app.db' has 
 """Acceso a la base SQLite: conexión y creación del esquema."""
 
 import sqlite3
+import threading
 from pathlib import Path
 
 RUTA_ESQUEMA = Path(__file__).parent / "esquema.sql"
 
 
+class ConexionPorHilo:
+    """Conexión SQLite con una instancia propia por hilo.
+
+    FastAPI atiende los endpoints sincrónicos en un pool de hilos, y SQLite
+    prohíbe usar una conexión desde un hilo distinto del que la creó.
+    Compartir una sola conexión hace fallar el segundo pedido simultáneo:
+    exactamente lo que pasa cuando dos operarios sincronizan a la vez.
+
+    Expone la misma interfaz mínima que `sqlite3.Connection` (`execute`,
+    `executescript`, `commit`, `close`), así los repositorios la usan sin
+    enterarse.
+    """
+
+    def __init__(self, ruta):
+        self.ruta = str(ruta)
+        self._local = threading.local()
+
+    @property
+    def _conexion(self):
+        conexion = getattr(self._local, "conexion", None)
+        if conexion is None:
+            conexion = sqlite3.connect(self.ruta)
+            conexion.row_factory = sqlite3.Row
+            conexion.execute("PRAGMA foreign_keys = ON")
+            # Si otro hilo está escribiendo, esperar en vez de fallar con
+            # "database is locked".
+            conexion.execute("PRAGMA busy_timeout = 5000")
+            if self.ruta != ":memory:":
+                # WAL permite leer mientras otro hilo escribe: el tablero se
+                # refresca solo mientras los celulares sincronizan.
+                conexion.execute("PRAGMA journal_mode = WAL")
+            self._local.conexion = conexion
+        return conexion
+
+    def execute(self, sql, parametros=()):
+        return self._conexion.execute(sql, parametros)
+
+    def executescript(self, script):
+        return self._conexion.executescript(script)
+
+    def commit(self):
+        self._conexion.commit()
+
+    def close(self):
+        conexion = getattr(self._local, "conexion", None)
+        if conexion is not None:
+            conexion.close()
+            self._local.conexion = None
+
+
 def conectar(ruta):
-    """Abre la base y devuelve filas accesibles por nombre de columna."""
-    conexion = sqlite3.connect(ruta)
-    conexion.row_factory = sqlite3.Row
-    conexion.execute("PRAGMA foreign_keys = ON")
-    return conexion
+    """Abre la base y devuelve filas accesibles por nombre de columna.
+
+    Con `:memory:` cada hilo tendría su propia base vacía, así que ese modo
+    sirve solo para tests de un único hilo.
+    """
+    return ConexionPorHilo(ruta)
 
 
 def crear_esquema(con):
@@ -298,7 +438,7 @@ def crear_esquema(con):
 - [ ] **Step 6: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_db.py -v`
-Expected: PASS, 4 tests
+Expected: PASS, 9 tests
 
 - [ ] **Step 7: Commit**
 
