@@ -70,7 +70,8 @@ tolerancia_pct, tolerancia_min_abs
 
 **`pasada`** — cada vuelta de conteo dentro de una sesión
 ```
-id, sesion_id, numero, estado (abierta | cerrada), fecha_apertura, fecha_cierre
+id, sesion_id, numero, estado (abierta | cerrada),
+fecha_apertura, fecha_cierre, abierta_por, cerrada_por
 ```
 
 **Nomenclatura visible.** El campo `numero` es correlativo (1, 2, 3…) y la etiqueta es directamente **"Conteo n"**: `numero = 1` → **Conteo 1**, `numero = 2` → **Conteo 2**, y así sucesivamente.
@@ -82,7 +83,8 @@ El **Conteo 1** abarca todo el maestro; los siguientes son parciales, sobre los 
 **`articulo`** — el maestro, congelado dentro de la sesión
 ```
 id, sesion_id, id_orden, tipo, material, sku, descripcion, grupo,
-ubicacion, unidad, stock_sistema, origen (importado | alta_rapida)
+ubicacion, unidad, stock_sistema, origen (importado | alta_rapida),
+creado_por, creado_en
 ```
 
 **`codigo_barras`** — tabla aparte: un SKU puede tener varios códigos
@@ -122,6 +124,12 @@ pasada_id, articulo_id
 **`mapeo_columnas`** — formatos de importación guardados
 ```
 id, nombre, definicion_json
+```
+
+**`evento_auditoria`** — bitácora de todo lo que no es un conteo
+```
+id, sesion_id, fecha, autor, accion, entidad, entidad_id,
+valor_anterior, valor_nuevo, detalle
 ```
 
 ### Decisiones de modelado
@@ -204,6 +212,28 @@ Al escanear, la app muestra la ubicación del sistema. Si no coincide, el operar
 La lista incluye un botón **"Otra…"** para ubicaciones físicas que el ERP no tiene cargadas. Lo que se escriba ahí queda marcado como *ubicación nueva*, separado de las correcciones comunes en el panel.
 
 El campo **observaciones** está disponible en cualquier conteo, con o sin corrección de ubicación (producto roto, vencido, sin etiqueta). Siempre opcional, nunca bloquea.
+
+### Trazabilidad
+
+De cualquier número del tablero se tiene que poder llegar a su origen. Se apoya en dos mecanismos distintos, según qué se esté rastreando.
+
+**Los conteos se rastrean por el propio modelo.** Ninguna fila se edita ni se borra: una corrección genera una anulación que apunta al `uuid` original. Cada fila conserva operario, pasada, hora del dispositivo y hora del servidor. El `ultimo_conteo` de un SKU siempre se puede descomponer en los escaneos que lo formaron.
+
+**Todo lo demás se rastrea por la bitácora** (`evento_auditoria`), que registra las acciones que sí modifican estado:
+
+| Acción | Qué se guarda |
+|---|---|
+| Importar maestro | Archivo, mapeo usado, artículos nuevos / modificados / ausentes |
+| Cambiar tolerancia | Valor anterior y nuevo |
+| Editar un artículo | Campo, valor anterior y nuevo |
+| Abrir o cerrar una pasada | Quién, cuándo, SKUs incluidos, SKUs sin contar al cerrar |
+| Marcar SKUs a recontar | Cantidad y criterio (manual o por estado) |
+| Alta rápida | Operario y fecha (además de quedar en el propio artículo) |
+| Exportar | Qué archivo y con qué filtros |
+
+La bitácora es solo de agregado: no se edita ni se borra desde la aplicación.
+
+**Historial por artículo.** En el panel, cada fila abre la historia completa de ese SKU: todos sus escaneos con operario y hora, las anulaciones, las correcciones de ubicación, las ediciones y en qué pasada ocurrió cada cosa. Es lo que se lleva a la reunión cuando el cliente discute un número puntual.
 
 ### Códigos desconocidos (alta rápida)
 
@@ -358,6 +388,18 @@ Si el CSV no trae `id_orden`, se genera secuencialmente (1, 2, 3…) según el o
 
 Los mapeos se guardan con nombre ("Formato Tango", "Formato Cliente X"): la siguiente importación de ese cliente es un clic.
 
+### Reimportar sobre una sesión en curso
+
+Reimportar el maestro **nunca pisa datos en silencio**. Antes de aplicar nada, el panel muestra exactamente qué cambiaría:
+
+- Artículos **nuevos** que no estaban en el maestro anterior.
+- Artículos **modificados**, campo por campo, con el valor actual y el que traería el archivo. Los cambios de `stock_sistema` se destacan, porque alteran las diferencias y por lo tanto qué consolida.
+- Artículos **ausentes** en el archivo nuevo pero presentes en la sesión. No se eliminan: quedan marcados como ausentes del ERP, porque pueden tener conteos hechos.
+
+Recién con esa vista a la vista se confirma o se cancela. Al aplicar, queda asentado en la bitácora con el resumen de lo que cambió.
+
+**Los conteos ya realizados nunca se pierden.** Se mantienen atados al artículo por su SKU; lo único que cambia es el dato del maestro contra el que se comparan.
+
 ### Exportación
 
 **Resumen por SKU:**
@@ -396,7 +438,11 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 
 **Conteos** — cerrar la pasada actual, revisar diferencias, marcar SKUs a recontar (manual o todos los que quedaron en `A RECONTAR`), abrir la siguiente. Vista comparativa de todas las pasadas (`Conteo 1`, `Conteo 2`, `Conteo 3`…), con la cantidad de SKUs incluidos en cada una.
 
-**Operarios** — alta con nombre y PIN opcional, QR personal por operario, QR de instalación del APK, estado de conexión, cuánto lleva contado cada uno y si alguno tiene conteos sin sincronizar.
+**Operarios** — alta con nombre y PIN opcional, QR personal por operario, QR de instalación del APK, QR del certificado para la PWA, estado de conexión, cuánto lleva contado cada uno y si alguno tiene conteos sin sincronizar.
+
+**Bitácora** — el registro de la sesión en orden cronológico, con filtros por tipo de acción y por autor. Muestra qué se importó, qué se editó, cuándo se abrió y cerró cada pasada y con qué tolerancia se trabajó en cada momento. Exportable.
+
+**Historial por artículo** — se abre desde cualquier fila del tablero. Muestra todos los escaneos de ese SKU con operario, hora y pasada, las anulaciones, las correcciones de ubicación y las ediciones del maestro que lo afectaron.
 
 ## 12. Instalación y operación
 
@@ -417,6 +463,9 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 - Idempotencia de la sincronización: reenvío del mismo `uuid`, reenvíos parciales, orden alterado.
 - Anulaciones: anular un conteo ya anulado, anular un conteo de una pasada cerrada.
 - Restricción de SKUs durante una pasada parcial.
+- Reimportación sobre una sesión con conteos hechos: que la vista previa detecte correctamente altas, modificaciones y ausencias, y que ningún conteo se pierda al aplicar.
+- Que cada acción con efecto sobre el estado deje su entrada en la bitácora, con valor anterior y nuevo.
+- Reconstrucción del `ultimo_conteo` de un SKU a partir de su historial, incluyendo anulaciones.
 - Que `stock_sistema` no aparezca en ninguna respuesta de la API destinada a la app ni a la PWA.
 - Que el certificado del servidor se regenere al cambiar la IP y siga validando contra la CA original.
 
