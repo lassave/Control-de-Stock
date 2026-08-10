@@ -9,7 +9,7 @@
 
 Sistema de toma de inventario físico con escaneo de códigos de barras. Varios operarios cuentan en simultáneo con celulares Android, contra un servidor que corre en la PC del responsable, en la misma red WiFi del cliente. El resultado se exporta a CSV para volcarlo al ERP.
 
-El conteo puede extenderse varios días y admite múltiples reconteos hasta acordar las diferencias con el cliente.
+El inventario puede extenderse varios días y admite conteos sucesivos sobre los artículos con diferencias, hasta acordarlas con el cliente.
 
 ## 2. Contexto y restricciones
 
@@ -63,16 +63,11 @@ tolerancia_pct, tolerancia_min_abs
 id, sesion_id, numero, estado (abierta | cerrada), fecha_apertura, fecha_cierre
 ```
 
-**Nomenclatura visible.** El campo `numero` es correlativo (1, 2, 3…) y la etiqueta que ve el usuario se deriva de él:
+**Nomenclatura visible.** El campo `numero` es correlativo (1, 2, 3…) y la etiqueta es directamente **"Conteo n"**: `numero = 1` → **Conteo 1**, `numero = 2` → **Conteo 2**, y así sucesivamente.
 
-| `numero` | Etiqueta |
-|---|---|
-| 1 | **Conteo** |
-| 2 | **Reconteo 1** |
-| 3 | **Reconteo 2** |
-| n | **Reconteo n−1** |
+Esa etiqueta es la que aparece en la app, en el panel y en los encabezados del CSV exportado (`conteo_1`, `conteo_2`, …). Etiqueta y número interno coinciden, sin conversiones intermedias.
 
-Esa etiqueta es la que aparece en la app, en el panel y en los encabezados del CSV exportado. El número correlativo interno se usa solo para ordenar y para determinar el valor vigente.
+El **Conteo 1** abarca todo el maestro; los siguientes son parciales, sobre los SKUs marcados a recontar. Esa diferencia no vive en el nombre: el panel muestra cuántos SKUs incluye cada pasada.
 
 **`articulo`** — el maestro, congelado dentro de la sesión
 ```
@@ -109,7 +104,7 @@ timestamp_dispositivo, timestamp_servidor,
 anula_uuid (nullable)
 ```
 
-**`reconteo_item`** — qué SKUs entran en un reconteo
+**`pasada_item`** — qué SKUs entran en una pasada parcial
 ```
 pasada_id, articulo_id
 ```
@@ -133,15 +128,15 @@ id, nombre, definicion_json
 
 Dentro de una misma pasada, escanear repetidamente el mismo SKU **suma**. Cubre el caso de un producto presente en varias ubicaciones o contado por dos personas. Dos operarios contando el mismo SKU en simultáneo no generan conflicto: cada uno aporta su parte.
 
-### Conteo y reconteos
+### Conteos sucesivos
 
-- El **Conteo** es la primera pasada y abarca todo el maestro.
-- Al cerrarlo, el panel lista las diferencias. Se marcan los SKUs a recontar (manualmente o con "todos los que están fuera de tolerancia") y se abre el **Reconteo 1**.
-- En un reconteo, la app **solo acepta los SKUs marcados**. Si el operario escanea otro, la app avisa *"este artículo no está en el reconteo"* y no lo carga.
-- **Cada reconteo cuenta desde cero y reemplaza a la pasada anterior** para esos SKUs. Si en el Conteo se registraron 48 y en el Reconteo 1 se cuentan 50, el valor vigente es 50. Sumar daría 98, que no significa nada.
-- Un SKU no incluido en un reconteo conserva como vigente el valor de la última pasada en que fue contado.
-- **El reconteo también es a ciegas:** el operario no ve lo que se contó en la pasada anterior, ni propio ni ajeno. De lo contrario el reconteo tendería a confirmar el primer número en lugar de verificarlo.
-- Se pueden abrir tantos reconteos como haga falta (Reconteo 1, Reconteo 2, Reconteo 3…), en días distintos. Todos quedan visibles en paralelo en el tablero.
+- El **Conteo 1** es la primera pasada y abarca todo el maestro.
+- Al cerrarlo, el panel lista las diferencias. Se marcan los SKUs a recontar (manualmente o con "todos los que están fuera de tolerancia") y se abre el **Conteo 2**.
+- En una pasada parcial, la app **solo acepta los SKUs marcados**. Si el operario escanea otro, la app avisa *"este artículo no está en el conteo actual"* y no lo carga.
+- **Cada pasada cuenta desde cero y reemplaza a la anterior** para esos SKUs. Si en el Conteo 1 se registraron 48 y en el Conteo 2 se cuentan 50, el valor vigente es 50. Sumar daría 98, que no significa nada.
+- Un SKU no incluido en una pasada conserva como vigente el valor de la última en que fue contado.
+- **Los conteos sucesivos también son a ciegas:** el operario no ve lo que se contó en la pasada anterior, ni propio ni ajeno. De lo contrario tendería a confirmar el primer número en lugar de verificarlo.
+- Se pueden abrir tantas pasadas como haga falta (Conteo 2, Conteo 3, Conteo 4…), en días distintos. Todas quedan visibles en paralelo en el tablero.
 - La sesión permanece abierta hasta que las diferencias se acuerdan con el cliente. Al cerrarla se congela todo.
 
 **Valor vigente de un SKU:** suma de sus conteos no anulados en la pasada de número más alto en la que fue contado.
@@ -209,7 +204,7 @@ Requiere Android 8 o superior.
 
 ```
 ┌─────────────────────────────┐
-│ Reconteo 1       Juan   ⚡3 │  ← pasada · operario · pendientes de sync
+│ Conteo 2         Juan   ⚡3 │  ← pasada · operario · pendientes de sync
 ├─────────────────────────────┤
 │                             │
 │      [ CÁMARA EN VIVO ]     │  ← escaneo continuo, sin apretar nada
@@ -248,7 +243,7 @@ Al leer un código: vibración, sonido, y la ficha sube desde abajo. **Mientras 
 
 - **Buscar** — para productos sin etiqueta o con código ilegible: búsqueda por descripción, SKU o ubicación contra el maestro local, offline. Sin esto, cada etiqueta rota frena el conteo.
 - **Mis conteos** — lista de las cargas propias, de la más reciente a la más vieja, con SKU, cantidad, ubicación y hora. Deslizar una línea la anula. Solo lo propio.
-- **Lista de reconteo** — durante un reconteo, los SKUs asignados con su ubicación, para ir tachando.
+- **Lista a recontar** — durante una pasada parcial, los SKUs asignados con su ubicación, para ir tachando.
 - **Indicador de sincronización** — cuántos conteos faltan subir. Verde = todo al día. Nunca bloquea el trabajo.
 
 ## 7. Sincronización
@@ -283,9 +278,9 @@ unidad | stock_sistema | contado | dif | estado | fecha | observaciones
 - `contado`, `dif` y `estado` son calculados sobre el valor vigente.
 - `fecha` es la del **último conteo registrado** para ese artículo. Vacía si no se contó.
 - `ubicacion_real` queda vacía si nadie la corrigió. Si hubo varias correcciones, se muestra la última y las observaciones se concatenan.
-- Cuando hubo reconteos se agregan columnas por pasada: `conteo`, `reconteo_1`, `reconteo_2`… con la cantidad registrada en cada una. Quedan vacías para los SKUs que no participaron de esa pasada.
+- Cuando hubo más de una pasada se agregan columnas `conteo_1`, `conteo_2`, `conteo_3`… con la cantidad registrada en cada una. Quedan vacías para los SKUs que no participaron de esa pasada.
 
-**Detalle línea por línea:** cada escaneo con operario, hora, pasada (`Conteo` / `Reconteo n`), ubicación real y observaciones.
+**Detalle línea por línea:** cada escaneo con operario, hora, pasada (`Conteo 1`, `Conteo 2`…), ubicación real y observaciones.
 
 Ambos se pueden exportar **con los filtros del tablero aplicados** (por ejemplo, solo las diferencias).
 
@@ -308,7 +303,7 @@ unidad | stock_sistema | contado | dif | estado | fecha | observaciones
 - Detección de artículos contados en una ubicación distinta a la esperada.
 - Ordenamiento por cualquier columna.
 
-**Conteo y reconteos** — cerrar la pasada actual, revisar diferencias, marcar SKUs a recontar (manual o "todos los fuera de tolerancia"), abrir la siguiente. Vista comparativa de todas las pasadas, con las etiquetas `Conteo`, `Reconteo 1`, `Reconteo 2`…
+**Conteos** — cerrar la pasada actual, revisar diferencias, marcar SKUs a recontar (manual o "todos los fuera de tolerancia"), abrir la siguiente. Vista comparativa de todas las pasadas (`Conteo 1`, `Conteo 2`, `Conteo 3`…), con la cantidad de SKUs incluidos en cada una.
 
 **Operarios** — alta con nombre y PIN opcional, QR personal por operario, QR de instalación del APK, estado de conexión, cuánto lleva contado cada uno y si alguno tiene conteos sin sincronizar.
 
@@ -324,12 +319,11 @@ unidad | stock_sistema | contado | dif | estado | fecha | observaciones
 
 **Automatizado (backend)** — cubre lo que puede fallar en silencio y costar caro:
 - Importación con CSVs mal formados: columnas faltantes, encabezados duplicados, filas incompletas, codificaciones distintas, separadores `,` y `;`, decimales con coma y con punto.
-- Cálculo del valor vigente por pasada, incluyendo SKUs no incluidos en reconteos posteriores.
+- Cálculo del valor vigente por pasada, incluyendo SKUs no incluidos en pasadas posteriores.
 - Tolerancia en los bordes: diferencia exactamente igual al límite, stock cero, stock negativo.
 - Idempotencia de la sincronización: reenvío del mismo `uuid`, reenvíos parciales, orden alterado.
 - Anulaciones: anular un conteo ya anulado, anular un conteo de una pasada cerrada.
-- Restricción de SKUs durante un reconteo.
-- Etiquetado correcto de las pasadas: `numero = 1` → "Conteo", `numero = 4` → "Reconteo 3".
+- Restricción de SKUs durante una pasada parcial.
 - Que `stock_sistema` no aparezca en ninguna respuesta de la API destinada a la app.
 
 **Manual (app)** — con una tanda de códigos reales:
