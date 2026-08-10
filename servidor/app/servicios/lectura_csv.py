@@ -63,7 +63,9 @@ def detectar_separador(texto: str) -> str:
         if not anchos:
             continue
 
-        ancho_dominante = max(set(anchos), key=anchos.count)
+        # El ancho más frecuente; ante un empate, el mayor. Sin el desempate
+        # el resultado depende del orden del conjunto y no es reproducible.
+        ancho_dominante = max(anchos, key=lambda ancho: (anchos.count(ancho), ancho))
         if ancho_dominante < 2:
             continue  # una sola columna: este separador no separa nada
 
@@ -84,20 +86,25 @@ def leer(contenido: bytes) -> tuple[list[str], list[list[str]]]:
     separador = detectar_separador(texto)
 
     lector = csv.reader(io.StringIO(texto), delimiter=separador)
-    todas = [fila for fila in lector if fila]
+    todas = []
+    for i, fila in enumerate(lector):
+        # Mantén la primera fila para la detección de encabezados, luego filtra vacías
+        if i == 0 or any(celda.strip() for celda in fila):
+            todas.append(fila)
 
     if not todas:
         raise ValueError("El archivo está vacío")
 
     # Muchos ERP anteponen un título o una fecha antes del encabezado real.
-    # El encabezado es la primera línea que tiene el ancho dominante.
-    anchos = [len(fila) for fila in todas]
-    # Encuentra el ancho que aparece más veces; si hay empate, prefiere el que aparece primero.
-    max_count = max(anchos.count(w) for w in set(anchos))
-    ancho = next(w for w in anchos if anchos.count(w) == max_count)
-    primera = next(
-        (posicion for posicion, fila in enumerate(todas) if len(fila) == ancho), 0
-    )
+    # Se reconoce porque queda como una línea suelta sin separadores entre
+    # filas que sí los tienen. Solo se saltean esas: cualquier otra
+    # diferencia de ancho es un encabezado legítimo con filas irregulares,
+    # y elegir por «ancho dominante» descartaría el encabezado verdadero
+    # apenas la mayoría de las filas omita la última columna.
+    primera = 0
+    if any(len(fila) > 1 for fila in todas):
+        while primera < len(todas) - 1 and len(todas[primera]) <= 1:
+            primera += 1
 
     encabezados = [celda.strip() for celda in todas[primera]]
 

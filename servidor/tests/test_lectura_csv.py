@@ -95,6 +95,53 @@ def test_saltea_un_titulo_antes_del_encabezado():
     assert len(filas) == 2
 
 
+def test_respeta_el_encabezado_aunque_las_filas_tengan_menos_columnas():
+    """Elegir el encabezado por «ancho dominante» lo descartaba acá."""
+    contenido = (
+        "sku,descripcion,grupo\n"
+        "1,Tornillo\n"
+        "2,Tuerca\n"
+        "3,Clavo\n"
+    ).encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion", "grupo"]
+    assert len(filas) == 3
+
+
+def test_respeta_el_encabezado_aunque_las_filas_tengan_mas_columnas():
+    contenido = (
+        "sku,descripcion\n"
+        "1,Tornillo,X\n"
+        "2,Tuerca,Y\n"
+        "3,Clavo,Z\n"
+    ).encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert len(filas) == 3
+
+
+def test_ignora_las_filas_de_relleno_que_deja_excel():
+    """Excel suele dejar líneas con solo separadores o espacios al final."""
+    contenido = "sku,descripcion\n1,Tornillo\n,\n,\n".encode("utf-8")
+
+    _, filas = lectura_csv.leer(contenido)
+
+    assert filas == [["1", "Tornillo"]]
+
+
+def test_ignora_las_lineas_en_blanco_del_final():
+    contenido = "sku,descripcion\n1,Tornillo\n   \n   \n".encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert filas == [["1", "Tornillo"]]
+
+
 def test_ignora_la_columna_vacia_que_deja_un_separador_final():
     contenido = "sku,descripcion,\n1,Tornillo,\n".encode("utf-8")
 
