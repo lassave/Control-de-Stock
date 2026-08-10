@@ -131,7 +131,7 @@ Dentro de una misma pasada, escanear repetidamente el mismo SKU **suma**. Cubre 
 ### Conteos sucesivos
 
 - El **Conteo 1** es la primera pasada y abarca todo el maestro.
-- Al cerrarlo, el panel lista las diferencias. Se marcan los SKUs a recontar (manualmente o con "todos los que están fuera de tolerancia") y se abre el **Conteo 2**.
+- Al cerrarlo, el panel lista las diferencias. Se marcan los SKUs a recontar (manualmente o tomando de una todos los que quedaron en estado `A RECONTAR`) y se abre el **Conteo 2**.
 - En una pasada parcial, la app **solo acepta los SKUs marcados**. Si el operario escanea otro, la app avisa *"este artículo no está en el conteo actual"* y no lo carga.
 - **Cada pasada cuenta desde cero y reemplaza a la anterior** para esos SKUs. Si en el Conteo 1 se registraron 48 y en el Conteo 2 se cuentan 50, el valor vigente es 50. Sumar daría 98, que no significa nada.
 - Un SKU no incluido en una pasada conserva como vigente el valor de la última en que fue contado.
@@ -139,23 +139,33 @@ Dentro de una misma pasada, escanear repetidamente el mismo SKU **suma**. Cubre 
 - Se pueden abrir tantas pasadas como haga falta (Conteo 2, Conteo 3, Conteo 4…), en días distintos. Todas quedan visibles en paralelo en el tablero.
 - La sesión permanece abierta hasta que las diferencias se acuerdan con el cliente. Al cerrarla se congela todo.
 
-**Valor vigente de un SKU:** suma de sus conteos no anulados en la pasada de número más alto en la que fue contado.
+**Valor vigente de un SKU:** suma de sus conteos no anulados en la pasada de número más alto en la que fue contado. Se expone en el tablero y en la exportación como **`ultimo_conteo`**.
 
 ### Tolerancia
 
 Un artículo está **dentro de tolerancia** si:
 
 ```
-|contado - stock_sistema| <= max(|stock_sistema| * tolerancia_pct, tolerancia_min_abs)
+|ultimo_conteo - stock_sistema| <= max(|stock_sistema| * tolerancia_pct, tolerancia_min_abs)
 ```
 
 El valor absoluto sobre `stock_sistema` cubre el caso de stock teórico negativo, que algunos ERP arrastran por errores de carga.
 
 Valores por defecto: **2%** con mínimo de **1 unidad**. Configurables por sesión desde el panel.
 
-La tolerancia es solo un cálculo, no altera datos. Puede cambiarse en cualquier momento y el tablero recalcula al instante — sirve para negociar el criterio con el cliente viendo el impacto real.
+### Estado de cada artículo
 
-Estados resultantes: **sin contar** (⬜), **dentro de tolerancia** (✅), **fuera de tolerancia** (⚠️).
+El campo `estado` resume la situación de cada SKU:
+
+| Estado | Condición |
+|---|---|
+| ⬜ **SIN CONTAR** | Nunca se registró un conteo del artículo. |
+| ✅ **CONSOLIDADO** | La diferencia contra el sistema es 0, o entra dentro de la tolerancia. El artículo se da por cerrado. |
+| ⚠️ **A RECONTAR** | La diferencia queda fuera de la tolerancia. Candidato a la pasada siguiente. |
+
+Filtrando por **A RECONTAR** se obtiene directamente el conjunto de SKUs que van a la próxima pasada — el panel permite marcarlos todos de una vez desde ese filtro.
+
+La tolerancia es solo un cálculo, no altera datos. Al ajustarla, el tablero recalcula al instante cuántos artículos consolidan y cuántos quedan a recontar — sirve para negociar el criterio con el cliente viendo el impacto real antes de acordarlo.
 
 ### Conteo a ciegas
 
@@ -272,10 +282,10 @@ Los mapeos se guardan con nombre ("Formato Tango", "Formato Cliente X"): la sigu
 **Resumen por SKU:**
 ```
 id_orden | tipo | material | sku | descripcion | grupo | ubicacion | ubicacion_real |
-unidad | stock_sistema | contado | dif | estado | fecha | observaciones
+unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 ```
 
-- `contado`, `dif` y `estado` son calculados sobre el valor vigente.
+- `ultimo_conteo`, `dif` y `estado` son calculados sobre el valor vigente. `estado` toma los valores `SIN CONTAR`, `CONSOLIDADO` o `A RECONTAR`.
 - `fecha` es la del **último conteo registrado** para ese artículo. Vacía si no se contó.
 - `ubicacion_real` queda vacía si nadie la corrigió. Si hubo varias correcciones, se muestra la última y las observaciones se concatenan.
 - Cuando hubo más de una pasada se agregan columnas `conteo_1`, `conteo_2`, `conteo_3`… con la cantidad registrada en cada una. Quedan vacías para los SKUs que no participaron de esa pasada.
@@ -294,16 +304,16 @@ Ambos se pueden exportar **con los filtros del tablero aplicados** (por ejemplo,
 
 ```
 id_orden | tipo | material | sku | descripcion | grupo | ubicacion | ubicacion_real |
-unidad | stock_sistema | contado | dif | estado | fecha | observaciones
+unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 ```
 
-- Métricas superiores: % contado, SKUs contados / totales, unidades contadas, diferencias detectadas, altas rápidas pendientes, correcciones de ubicación.
-- Filtros combinables por `tipo`, `material`, `grupo`, `ubicacion`, estado (sin contar / dentro de tolerancia / fuera de tolerancia / ubicación corregida / ubicación nueva / alta rápida) y operario.
+- Métricas superiores: % contado, SKUs contados / totales, unidades contadas, SKUs consolidados, SKUs a recontar, altas rápidas pendientes, correcciones de ubicación.
+- Filtros combinables por `tipo`, `material`, `grupo`, `ubicacion`, estado (`SIN CONTAR` / `CONSOLIDADO` / `A RECONTAR`), marcas (ubicación corregida / ubicación nueva / alta rápida) y operario.
 - Avance por grupo y por ubicación, para saber dónde falta gente.
 - Detección de artículos contados en una ubicación distinta a la esperada.
 - Ordenamiento por cualquier columna.
 
-**Conteos** — cerrar la pasada actual, revisar diferencias, marcar SKUs a recontar (manual o "todos los fuera de tolerancia"), abrir la siguiente. Vista comparativa de todas las pasadas (`Conteo 1`, `Conteo 2`, `Conteo 3`…), con la cantidad de SKUs incluidos en cada una.
+**Conteos** — cerrar la pasada actual, revisar diferencias, marcar SKUs a recontar (manual o todos los que quedaron en `A RECONTAR`), abrir la siguiente. Vista comparativa de todas las pasadas (`Conteo 1`, `Conteo 2`, `Conteo 3`…), con la cantidad de SKUs incluidos en cada una.
 
 **Operarios** — alta con nombre y PIN opcional, QR personal por operario, QR de instalación del APK, estado de conexión, cuánto lleva contado cada uno y si alguno tiene conteos sin sincronizar.
 
