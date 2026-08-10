@@ -112,13 +112,18 @@ id, sesion_id, nombre, origen (importada | nueva)
 ```
 uuid, sesion_id, pasada_id, articulo_id, cantidad, operario_id,
 ubicacion_real (nullable), observaciones (nullable),
-timestamp_dispositivo, timestamp_servidor,
+fuera_asignacion (bool), timestamp_dispositivo, timestamp_servidor,
 anula_uuid (nullable)
 ```
 
 **`pasada_item`** — qué SKUs entran en una pasada parcial
 ```
 pasada_id, articulo_id
+```
+
+**`asignacion`** — qué ubicaciones le tocan a cada operario en una pasada
+```
+pasada_id, operario_id, ubicacion_id, fecha_asignacion
 ```
 
 **`mapeo_columnas`** — formatos de importación guardados
@@ -213,6 +218,26 @@ La lista incluye un botón **"Otra…"** para ubicaciones físicas que el ERP no
 
 El campo **observaciones** está disponible en cualquier conteo, con o sin corrección de ubicación (producto roto, vencido, sin etiqueta). Siempre opcional, nunca bloquea.
 
+### Asignación de ubicaciones
+
+Desde el tablero se reparten las ubicaciones entre los operarios de la pasada. Cada uno recibe su lista de trabajo, que la app muestra con el avance: qué ubicaciones tiene, cuántos SKUs esperados lleva contados y cuántos le faltan.
+
+**La asignación es una guía, no una restricción.** Si un operario escanea un artículo cuya ubicación no le corresponde, la app avisa —*"este artículo figura en B-02, que no es tuya"*— y lo deja cargar confirmando. El conteo se registra con `fuera_asignacion`, visible en el tablero.
+
+El motivo de no bloquear: encontrar mercadería donde no debería estar es uno de los hallazgos valiosos del inventario, y es la razón por la que existe la corrección de ubicación con observaciones. Un operario que se topa con tres cajas de otro pasillo tiene que poder registrarlas.
+
+**Reasignación en caliente.** Cuando alguien termina su sector se le pasan ubicaciones libres desde el tablero; la app se actualiza al sincronizar. Sin esto, la asignación se vuelve un estorbo a las pocas horas.
+
+Las ubicaciones sin asignar quedan visibles en el tablero, para que no queden sectores olvidados.
+
+### Detección de doble conteo
+
+Dentro de una pasada los conteos suman, lo que es correcto cuando un SKU está en varias ubicaciones, pero significa que **si dos operarios recorren el mismo estante sin saberlo, el total se duplica** y aparece como sobrante.
+
+Cuando un SKU recibe conteos de **dos operarios distintos en la misma pasada**, el tablero lo marca para revisión. Es una marca, no un bloqueo: puede ser legítimo. Pero es la única defensa real contra la duplicación, porque la asignación de ubicaciones no alcanza — dos personas pueden contar el mismo estante físico aunque tengan ubicaciones distintas asignadas, ya que el maestro no siempre dice la verdad sobre dónde está cada cosa.
+
+Desde la marca se llega al historial del artículo, que muestra quién cargó qué y cuándo.
+
 ### Trazabilidad
 
 De cualquier número del tablero se tiene que poder llegar a su origen. Se apoya en dos mecanismos distintos, según qué se esté rastreando.
@@ -228,6 +253,7 @@ De cualquier número del tablero se tiene que poder llegar a su origen. Se apoya
 | Editar un artículo | Campo, valor anterior y nuevo |
 | Abrir o cerrar una pasada | Quién, cuándo, SKUs incluidos, SKUs sin contar al cerrar |
 | Marcar SKUs a recontar | Cantidad y criterio (manual o por estado) |
+| Asignar o reasignar ubicaciones | Operario, ubicaciones agregadas y quitadas |
 | Alta rápida | Operario y fecha (además de quedar en el propio artículo) |
 | Importar ajustes | Archivo de origen, SKUs afectados, cantidad anterior y nueva |
 | Exportar | Qué archivo y con qué filtros |
@@ -294,6 +320,7 @@ Al leer un código: vibración, sonido, y la ficha sube desde abajo. **Mientras 
 
 - **Buscar** — para productos sin etiqueta o con código ilegible: búsqueda por descripción, SKU o ubicación contra el maestro local, offline. Sin esto, cada etiqueta rota frena el conteo.
 - **Mis conteos** — lista de las cargas propias, de la más reciente a la más vieja, con SKU, cantidad, ubicación y hora. Deslizar una línea la anula. Solo lo propio.
+- **Mis ubicaciones** — la lista de trabajo asignada, con el avance de cada ubicación (SKUs esperados, contados, pendientes). Se actualiza al sincronizar, así una reasignación desde el tablero llega sola.
 - **Lista a recontar** — durante una pasada parcial, los SKUs asignados con su ubicación, para ir tachando.
 - **Indicador de sincronización** — cuántos conteos faltan subir. Verde = todo al día. Nunca bloquea el trabajo.
 
@@ -465,8 +492,8 @@ id_orden | tipo | material | sku | descripcion | grupo | ubicacion | ubicacion_r
 unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 ```
 
-- Métricas superiores: % contado, SKUs contados / totales, unidades contadas, SKUs consolidados, SKUs a recontar, altas rápidas pendientes, correcciones de ubicación.
-- Filtros combinables por `tipo`, `material`, `grupo`, `ubicacion`, estado (`SIN CONTAR` / `CONSOLIDADO` / `A RECONTAR`), marcas (ubicación corregida / ubicación nueva / alta rápida) y operario.
+- Métricas superiores: % contado, SKUs contados / totales, unidades contadas, SKUs consolidados, SKUs a recontar, altas rápidas pendientes, correcciones de ubicación, SKUs contados por más de un operario.
+- Filtros combinables por `tipo`, `material`, `grupo`, `ubicacion`, estado (`SIN CONTAR` / `CONSOLIDADO` / `A RECONTAR`), marcas (ubicación corregida / ubicación nueva / alta rápida / fuera de asignación / contado por más de uno) y operario.
 - Avance por grupo y por ubicación, para saber dónde falta gente.
 - Detección de artículos contados en una ubicación distinta a la esperada.
 - Ordenamiento por cualquier columna.
@@ -474,6 +501,8 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 **Conteos** — cerrar la pasada actual, revisar diferencias, marcar SKUs a recontar (manual o todos los que quedaron en `A RECONTAR`), abrir la siguiente. Vista comparativa de todas las pasadas (`Conteo 1`, `Conteo 2`, `Conteo 3`…), con la cantidad de SKUs incluidos en cada una.
 
 **Operarios** — alta con nombre y PIN opcional, QR personal por operario, QR de instalación del APK, QR del certificado para la PWA, estado de conexión, cuánto lleva contado cada uno y si alguno tiene conteos sin sincronizar.
+
+**Asignación de ubicaciones** — repartir las ubicaciones de la pasada entre los operarios, ver el avance de cada uno (ubicaciones a cargo, SKUs esperados, contados, pendientes) y reasignar en caliente. Las ubicaciones sin asignar quedan destacadas para que no queden sectores olvidados.
 
 **Bitácora** — el registro de la sesión en orden cronológico, con filtros por tipo de acción y por autor. Muestra qué se importó, qué se editó, cuándo se abrió y cerró cada pasada y con qué tolerancia se trabajó en cada momento. Exportable.
 
@@ -505,6 +534,8 @@ Como segunda red, la carpeta `respaldos/` mantiene los CSV por operario actualiz
 - Reconstrucción del `ultimo_conteo` de un SKU a partir de su historial, incluyendo anulaciones.
 - Respaldos por operario: que se actualicen al sincronizar y no solo al cerrar, que acumulen por SKU y que nunca incluyan `stock_sistema`.
 - Importación de ajustes: que la vista previa calcule bien la diferencia, que los ajustes queden como conteos con autoría propia y que aparezcan en la bitácora.
+- Asignación de ubicaciones: marcado correcto de `fuera_asignacion`, y que una reasignación posterior no altere los conteos ya registrados.
+- Detección de doble conteo: que se marque solo cuando hay dos operarios distintos en la misma pasada, y que las anulaciones lo desmarquen si corresponde.
 - Que `stock_sistema` no aparezca en ninguna respuesta de la API destinada a la app ni a la PWA.
 - Que el certificado del servidor se regenere al cambiar la IP y siga validando contra la CA original.
 
