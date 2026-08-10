@@ -26,23 +26,33 @@ Tres componentes:
 
 | Componente | Tecnología | Rol |
 |---|---|---|
-| **Servidor** | Python + FastAPI + SQLite | Única fuente de verdad. Expone API HTTP y sirve el panel. |
+| **Servidor** | Python + FastAPI + SQLite | Única fuente de verdad. Expone la API y sirve el panel y la PWA. |
 | **Panel web** | HTML + JS | Tablero de control, importación, exportación, administración. |
-| **App Android** | Kotlin + CameraX + ML Kit + Room | Escaneo y carga de cantidades, offline-first. |
+| **App Android** | Kotlin + CameraX + ML Kit + Room | Camino principal de conteo. Offline-first. |
+| **PWA** | HTML + JS + Service Worker + IndexedDB | Alternativa para iPhone y celulares donde no se puede instalar el APK. |
 
 ```
 ERP → CSV → [Panel web] → Servidor (SQLite)
-                              ↕ WiFi (HTTP, red local)
-                        [Celulares Android] → escaneo → cola local → sync
-                              ↓
-                     Panel: tablero en vivo
-                              ↓
-                        CSV final → ERP
+                           ↕ WiFi, red local
+                    ┌──────┴───────┐
+              HTTP  │              │  HTTPS
+        [App Android nativa]  [PWA: iPhone y
+         escaneo → cola        Android sin APK]
+         local → sync          escaneo → cola local → sync
+                    └──────┬───────┘
+                           ↓
+                  Panel: tablero en vivo
+                           ↓
+                     CSV final → ERP
 ```
 
 **Vinculación de celulares:** el panel genera códigos QR que contienen la dirección del servidor. No se configuran IPs a mano. Si la IP cambia, se regenera el QR.
 
-**Elección de Android nativo sobre PWA:** la velocidad y tolerancia del escaneo (códigos gastados, poca luz, reflejos) determina si la herramienta se usa o se abandona en un conteo de miles de ítems. ML Kit es netamente superior a las alternativas web, y la app nativa evita la restricción de contexto seguro que bloquea la cámara en HTTP sobre red local.
+**Por qué la app nativa es el camino principal:** la velocidad y tolerancia del escaneo (códigos gastados, poca luz, reflejos) determina si la herramienta se usa o se abandona en un conteo de miles de ítems. ML Kit es netamente superior a las alternativas web, y la app nativa no depende de certificados ni de permisos de navegador.
+
+**Por qué existe igual la PWA:** cubre los iPhone y los celulares donde no se puede instalar el APK (políticas del equipo, versión de Android, restricciones corporativas). Sin ella, un operario con el celular equivocado queda sin poder trabajar. Ver sección 7.
+
+**Ambas hablan la misma API y comparten las mismas reglas de negocio.** El servidor no distingue de dónde viene un conteo: recibe eventos con `uuid`, los aplica igual y responde igual. Eso evita mantener dos lógicas en paralelo.
 
 ## 4. Modelo de datos
 
@@ -256,7 +266,78 @@ Al leer un código: vibración, sonido, y la ficha sube desde abajo. **Mientras 
 - **Lista a recontar** — durante una pasada parcial, los SKUs asignados con su ubicación, para ir tachando.
 - **Indicador de sincronización** — cuántos conteos faltan subir. Verde = todo al día. Nunca bloquea el trabajo.
 
-## 7. Sincronización
+## 7. Variante web (PWA)
+
+Alternativa para iPhone y para celulares Android donde no se puede instalar el APK. Ofrece las **mismas funciones** que la app nativa: escaneo por cámara, trabajo sin señal, alta rápida, corrección de ubicación y anulaciones.
+
+### Cómo se resuelve el acceso a la cámara y el offline
+
+Los navegadores habilitan cámara y almacenamiento offline solo sobre HTTPS. Para lograrlo en una red local sin internet:
+
+1. **El servidor genera una autoridad certificante propia** (CA) la primera vez que arranca, y la guarda junto a la base. Es única y permanente.
+2. **Esa CA se instala una vez por celular.** El panel muestra un QR que descarga el certificado, junto con las instrucciones paso a paso para Android y para iPhone.
+3. **En cada arranque, el servidor emite su propio certificado firmado por esa CA**, para la IP que tenga en ese momento.
+
+El punto 3 es el que hace esto sostenible: al cambiar de cliente o de red, la IP cambia y el certificado se regenera solo. **Los celulares no necesitan volver a configurarse** — ya confían en la CA, que es la misma siempre. El trámite es una sola vez por equipo, no una vez por conteo.
+
+El servidor escucha en HTTP (panel, API de la app nativa) y en HTTPS (PWA) al mismo tiempo.
+
+### Funcionamiento
+
+- **Escaneo:** en Android usa el lector de códigos nativo del navegador. En iPhone, que no lo tiene, se usa un decodificador incluido en la propia página. No hay descargas externas: todo se sirve desde el servidor local.
+- **Offline:** un Service Worker guarda la aplicación y el maestro completo. Los conteos se acumulan en la base del navegador y se envían con la misma lógica de `uuid` e idempotencia que la app nativa.
+- **Instalación:** desde el navegador, "Agregar a la pantalla de inicio". Queda con ícono propio y pantalla completa. En iPhone este paso además es lo que protege los datos guardados de ser borrados por el sistema, así que la PWA guía al operario para que lo haga antes de empezar a contar.
+- **Vinculación:** el mismo QR personal del operario que usa la app nativa.
+
+### Límites conocidos
+
+Se documentan porque condicionan cuándo conviene usarla:
+
+- El escaneo por cámara web es **más lento y menos tolerante** que ML Kit, sobre todo con códigos gastados o poca luz. En iPhone la diferencia es mayor.
+- iOS puede liberar el almacenamiento del navegador si el equipo queda con poco espacio. Por eso la PWA avisa cuando hay conteos sin sincronizar y recomienda no acumular trabajo offline prolongado en iPhone.
+- Si la pantalla se bloquea, la cámara se corta y hay que volver a apuntar. La PWA mantiene la pantalla encendida mientras está en modo escaneo.
+
+**Criterio de uso:** la app nativa para los operarios que hacen el grueso del conteo; la PWA para los equipos que no la admiten.
+
+## 8. Experiencia de uso y diseño
+
+El sistema lo usan dos perfiles muy distintos, en condiciones muy distintas. El diseño responde a eso.
+
+### App y PWA — el operario
+
+Está de pie, moviéndose, con una mano ocupada, en un depósito con mala luz y ruido, repitiendo la misma operación cientos de veces. Todo lo demás se subordina a eso.
+
+- **Una sola acción principal por pantalla.** Escanear, o cargar la cantidad. Nunca las dos cosas compitiendo.
+- **Sin scroll en la pantalla de carga.** Todo lo necesario para confirmar entra sin desplazar.
+- **Controles en la mitad inferior**, al alcance del pulgar con una mano.
+- **Objetivos táctiles grandes:** mínimo 48 dp, y las teclas del numérico bastante más, porque se usan con apuro y a veces con guantes.
+- **Jerarquía visual clara:** la descripción del artículo domina la pantalla; SKU, grupo y material quedan en segundo plano. El operario tiene que confirmar de un vistazo que tiene el producto correcto en la mano.
+- **Feedback por tres vías a la vez** — sonido, vibración y color — con timbres distintos para *leído*, *código desconocido* y *error*. En un depósito ruidoso no se escucha; con el celular en movimiento no se ve. Al menos una de las tres siempre llega.
+- **Alto contraste y texto grande**, legible con poca luz y a distancia de brazo.
+- **Los errores se explican en castellano llano y dicen qué hacer**: "Este artículo no está en el conteo actual" y no un código de error.
+- **El estado de sincronización nunca interrumpe.** Es un indicador discreto; si hay pendientes se ven, pero jamás bloquea el escaneo ni abre diálogos.
+- **Nada que se pueda tocar sin querer borra trabajo.** Anular un conteo requiere un gesto deliberado y muestra qué se está anulando.
+
+### Panel — el responsable
+
+Está sentado frente a una PC, con sesiones largas, mirando muchas filas y tomando decisiones sobre ellas.
+
+- **Las métricas que importan, arriba y grandes:** avance, consolidados, a recontar. Se leen sin buscar.
+- **Tabla densa pero legible**, con encabezado fijo al desplazar y las columnas numéricas alineadas a la derecha para poder compararlas de un vistazo.
+- **El estado se comunica con color, ícono y texto a la vez**, nunca solo con color: una diferencia no puede pasar desapercibida por daltonismo o por un monitor mal calibrado.
+- **El refresco automático no mueve el piso.** Al actualizarse, se mantienen la posición de scroll, los filtros y la fila seleccionada. Un tablero que salta mientras lo leés es inservible.
+- **Los filtros activos están siempre a la vista** y se quitan de a uno. Nunca se exporta o se decide sobre una vista filtrada sin que se vea que lo está.
+- **Las acciones de peso piden confirmación y explican la consecuencia:** cerrar una pasada avisa cuántos SKUs quedan sin contar antes de seguir.
+- **Todo lo que se ve se puede exportar**, con los filtros aplicados.
+
+### Transversal
+
+- Contraste suficiente para lectura cómoda (referencia WCAG AA) en las tres interfaces.
+- Un mismo criterio visual para los estados en app, PWA y panel: el mismo color y el mismo ícono significan lo mismo en todos lados.
+- Todos los textos en castellano rioplatense, sin jerga técnica.
+- Nada de dependencias externas: tipografías, íconos y estilos se sirven desde el servidor local, porque durante el conteo puede no haber internet.
+
+## 9. Sincronización
 
 - Cada conteo nace en el celular con un `uuid` propio y se guarda primero en la base local.
 - Un proceso en segundo plano empuja los pendientes apenas hay red. Si no hay, se acumulan sin interrumpir.
@@ -265,7 +346,7 @@ Al leer un código: vibración, sonido, y la ficha sube desde abajo. **Mientras 
 - Las anulaciones viajan como eventos más, con la misma garantía.
 - El celular puede permanecer sin señal indefinidamente sin perder trabajo.
 
-## 8. Importación y exportación CSV
+## 10. Importación y exportación CSV
 
 ### Importación
 
@@ -294,11 +375,11 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 
 Ambos se pueden exportar **con los filtros del tablero aplicados** (por ejemplo, solo las diferencias).
 
-## 9. Panel web
+## 11. Panel web
 
 **Sesiones** — crear, abrir, cerrar. Solo una sesión abierta a la vez, para que ningún celular se confunda de inventario. Configuración de tolerancia por sesión.
 
-**Importar maestro** — mapeo de columnas con vista previa y formatos guardados (ver sección 8).
+**Importar maestro** — mapeo de columnas con vista previa y formatos guardados (ver sección 10).
 
 **Tablero en vivo** — tabla completa, refresco automático cada pocos segundos:
 
@@ -317,15 +398,17 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 
 **Operarios** — alta con nombre y PIN opcional, QR personal por operario, QR de instalación del APK, estado de conexión, cuánto lleva contado cada uno y si alguno tiene conteos sin sincronizar.
 
-## 10. Instalación y operación
+## 12. Instalación y operación
 
 **En la PC:** carpeta autocontenida con el servidor y su propio Python. Doble clic en `Iniciar servidor.bat` y se abre el panel en el navegador. Sin instalación previa ni configuración de rutas. La primera ejecución requiere aceptar el permiso de firewall de Windows para redes privadas; sin eso los celulares no alcanzan el servidor.
 
 **Backup:** toda la base es el archivo `inventario.db`. Copiarlo respalda maestro, conteos, pasadas y observaciones. El servidor genera una copia automática al cerrar cada pasada.
 
-**En los celulares:** QR de instalación → APK → QR personal. Android 8+.
+**En los celulares (app nativa):** QR de instalación → APK → QR personal. Android 8+.
 
-## 11. Testing
+**En los celulares (PWA):** QR del certificado → instalarlo siguiendo las instrucciones que muestra el panel → abrir la dirección segura del servidor → "Agregar a la pantalla de inicio" → QR personal. El certificado se instala una sola vez por equipo y sigue sirviendo aunque cambie la red o el cliente.
+
+## 13. Testing
 
 **Automatizado (backend)** — cubre lo que puede fallar en silencio y costar caro:
 - Importación con CSVs mal formados: columnas faltantes, encabezados duplicados, filas incompletas, codificaciones distintas, separadores `,` y `;`, decimales con coma y con punto.
@@ -334,21 +417,26 @@ unidad | stock_sistema | ultimo_conteo | dif | estado | fecha | observaciones
 - Idempotencia de la sincronización: reenvío del mismo `uuid`, reenvíos parciales, orden alterado.
 - Anulaciones: anular un conteo ya anulado, anular un conteo de una pasada cerrada.
 - Restricción de SKUs durante una pasada parcial.
-- Que `stock_sistema` no aparezca en ninguna respuesta de la API destinada a la app.
+- Que `stock_sistema` no aparezca en ninguna respuesta de la API destinada a la app ni a la PWA.
+- Que el certificado del servidor se regenere al cambiar la IP y siga validando contra la CA original.
 
-**Manual (app)** — con una tanda de códigos reales:
+**Manual (app y PWA)** — con una tanda de códigos reales, en ambas interfaces:
 - Escaneo con códigos gastados, con reflejo y con poca luz.
 - Corte de WiFi a mitad del conteo: verificar que no se pierda ningún escaneo y que sincronice al volver.
 - Alta rápida y corrección de ubicación completas.
+- PWA: instalación del certificado desde cero en un Android y en un iPhone, siguiendo solo las instrucciones del panel.
+- PWA en iPhone: cerrar la app, bloquear el equipo y volver, con conteos pendientes sin sincronizar.
+- Conteo mixto: dos operarios con app nativa y uno con PWA sobre la misma pasada.
 
 **Datos de prueba:** se genera un CSV de ejemplo con artículos y códigos reales para recorrer el circuito completo antes de usarlo en un cliente.
 
-## 12. Fuera de alcance
+## 14. Fuera de alcance
 
 Deliberadamente excluido:
 
 - **Conversión entre unidades** (contar cajas de un artículo medido en kg). Requeriría factores de conversión por artículo; se descartó por decisión explícita.
-- **iOS.** No hay necesidad; agregarlo obligaría a un stack multiplataforma sin beneficio.
+- **App nativa de iOS.** Los iPhone se cubren con la PWA. Una app de iOS obligaría a cuenta de desarrollador de Apple y a distribución por App Store, desproporcionado para el caso.
+- **Soporte para lectores de código Bluetooth.** Queda anotado como refuerzo posible si la velocidad de escaneo resultara insuficiente en algún cliente.
 - **Acceso desde fuera de la red local.** El servidor opera en la LAN del cliente durante el conteo.
 - **Integración automática con el ERP.** El intercambio es por CSV en ambos sentidos.
 - **Multi-cliente simultáneo en el servidor.** Una sesión abierta a la vez.
