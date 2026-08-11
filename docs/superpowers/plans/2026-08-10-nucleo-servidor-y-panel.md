@@ -2346,6 +2346,8 @@ Un `evento` es: `{"uuid": str, "codigo": str, "cantidad": int (milésimas), "tim
 Crear `servidor/tests/test_conteos.py`:
 
 ```python
+import sqlite3
+
 import pytest
 
 from app.repos import conteos, operarios, sesiones
@@ -2494,6 +2496,34 @@ def test_una_anulacion_que_llega_antes_es_reintentable(con, escenario):
     )
 
     assert resultado["rechazados"][0]["reintentable"] is True
+
+
+def test_un_error_transitorio_de_la_base_es_reintentable(con, escenario, monkeypatch):
+    """«database is locked» pasa cuando dos operarios sincronizan a la vez.
+
+    Marcarlo como definitivo haría que el celular descarte un conteo que el
+    operario sí hizo: una unidad que desaparece sin que nadie se entere.
+    """
+    def falla(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(conteos, "registrar", falla)
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"], [evento("u-1")]
+    )
+
+    assert resultado["rechazados"][0]["reintentable"] is True
+
+
+def test_una_anulacion_vacia_se_trata_como_ausente(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1", anula_uuid="")],
+    )
+
+    assert resultado["registrados"] == 1
+    assert resultado["rechazados"] == []
 
 
 def test_un_codigo_desconocido_no_es_reintentable(con, escenario):
@@ -2726,7 +2756,10 @@ def registrar(con, sesion_id, operario_id, evento):
     if articulo is None:
         raise EventoInvalido(f"Código desconocido: {evento['codigo']}")
 
-    anula = evento.get("anula_uuid")
+    # Un anula_uuid vacío es «sin anulación», no una anulación rota: si se
+    # dejara pasar, lo rechazaría la clave foránea y el motivo que llegaría al
+    # celular sería el texto en inglés de SQLite.
+    anula = evento.get("anula_uuid") or None
     if anula:
         original = con.execute(
             "SELECT sesion_id, articulo_id FROM conteo WHERE uuid = ?", (anula,)
@@ -2783,10 +2816,19 @@ def registrar_lote(con, sesion_id, operario_id, eventos):
             # La tupla es amplia a propósito: un evento con una forma
             # inesperada tiene que rechazarse solo, nunca frenar a los demás.
             # Perder un lote entero le cuesta al operario media jornada.
+            reintentable = getattr(error, "reintentable", False)
+
+            if isinstance(error, sqlite3.OperationalError):
+                # «database is locked» y parientes son transitorios: pasan
+                # cuando dos operarios sincronizan a la vez, que es para lo
+                # que está el busy_timeout. Decirle al celular que no
+                # reintente sería descartar un conteo que sí se hizo.
+                reintentable = True
+
             rechazados.append({
                 "uuid": evento.get("uuid") if isinstance(evento, dict) else None,
                 "motivo": str(error),
-                "reintentable": getattr(error, "reintentable", False),
+                "reintentable": reintentable,
             })
             continue
 
