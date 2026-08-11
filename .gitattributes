@@ -1,0 +1,13 @@
+# cmd.exe necesita CRLF: con saltos de línea LF se come el primer carácter
+# de cada línea y el arranque falla con errores incomprensibles («"hcp" no
+# se reconoce como un comando»). Sin esto, un clon en Linux o un checkout
+# con core.autocrlf=input entrega un .bat roto a la PC del cliente.
+*.bat text eol=crlf
+
+# El resto queda con LF en el repositorio.
+*.py text eol=lf
+*.sql text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf

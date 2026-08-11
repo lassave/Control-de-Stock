@@ -22,7 +22,7 @@ Este plan corresponde a las secciones 3, 4, 5 (parcial), 10 y 11 del spec `docs/
 - **`stock_sistema` y `costo_unitario` nunca salen en respuestas destinadas a dispositivos.** Requisito de conteo a ciegas (spec, sección 5).
 - **Fechas en ISO 8601 UTC**, guardadas como texto: `2026-08-10T14:32:05Z`.
 - **Textos de interfaz en castellano rioplatense**, sin jerga técnica.
-- **Python 3.11 mínimo.**
+- **Python 3.11 mínimo.** El intérprete del proyecto es el entorno virtual: `servidor\.venv\Scripts\python.exe`. En esta máquina el `python` del PATH es el acceso directo de la Microsoft Store y no ejecuta nada, así que **todos los comandos usan el intérprete del venv por ruta**, no `python` a secas.
 - Los mensajes de commit van en castellano, en presente, describiendo el efecto.
 
 ---
@@ -67,8 +67,15 @@ CREATE TABLE IF NOT EXISTS sesion (
     estado              TEXT NOT NULL DEFAULT 'abierta',
     tolerancia_pct      REAL NOT NULL DEFAULT 2.0,
     tolerancia_min_abs  INTEGER NOT NULL DEFAULT 1000,
-    CHECK (estado IN ('abierta', 'cerrada'))
+    CHECK (estado IN ('abierta', 'cerrada')),
+    CHECK (typeof(tolerancia_min_abs) = 'integer')
 );
+
+-- Una sola sesión abierta a la vez: los dispositivos se vinculan a «la»
+-- sesión abierta. El repositorio ya lo valida, pero dos hilos pueden pasar
+-- esa validación a la vez; este índice lo vuelve imposible.
+CREATE UNIQUE INDEX IF NOT EXISTS ix_sesion_abierta
+    ON sesion(estado) WHERE estado = 'abierta';
 
 CREATE TABLE IF NOT EXISTS pasada (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,7 +106,7 @@ CREATE TABLE IF NOT EXISTS articulo (
     descripcion     TEXT NOT NULL,
     grupo           TEXT,
     ubicacion       TEXT,
-    unidad          TEXT NOT NULL DEFAULT 'UN',
+    unidad          TEXT NOT NULL DEFAULT 'UN' REFERENCES unidad(codigo),
     stock_sistema   INTEGER NOT NULL DEFAULT 0,
     costo_unitario  INTEGER,
     origen          TEXT NOT NULL DEFAULT 'importado',
@@ -108,7 +115,12 @@ CREATE TABLE IF NOT EXISTS articulo (
     creado_en       TEXT NOT NULL,
     fusionado_en    INTEGER REFERENCES articulo(id),
     UNIQUE (sesion_id, sku),
-    CHECK (origen IN ('importado', 'alta_rapida'))
+    CHECK (origen IN ('importado', 'alta_rapida')),
+    -- La afinidad INTEGER de SQLite no es una restricción de tipo: acepta y
+    -- guarda un 3.5 como REAL. Sin este CHECK, un solo decimal colado anula
+    -- en silencio la exactitud que justifica guardar milésimas y centavos.
+    CHECK (typeof(stock_sistema) = 'integer'),
+    CHECK (costo_unitario IS NULL OR typeof(costo_unitario) = 'integer')
 );
 
 CREATE TABLE IF NOT EXISTS codigo_barras (
@@ -139,11 +151,13 @@ CREATE TABLE IF NOT EXISTS conteo (
     fuera_asignacion        INTEGER NOT NULL DEFAULT 0,
     timestamp_dispositivo   TEXT NOT NULL,
     timestamp_servidor      TEXT NOT NULL,
-    anula_uuid              TEXT REFERENCES conteo(uuid)
+    anula_uuid              TEXT REFERENCES conteo(uuid),
+    CHECK (typeof(cantidad) = 'integer')
 );
 
 CREATE INDEX IF NOT EXISTS ix_conteo_articulo ON conteo(articulo_id, pasada_id);
 CREATE INDEX IF NOT EXISTS ix_conteo_anula ON conteo(anula_uuid);
+CREATE INDEX IF NOT EXISTS ix_conteo_sesion ON conteo(sesion_id, operario_id);
 
 CREATE TABLE IF NOT EXISTS pasada_item (
     pasada_id    INTEGER NOT NULL REFERENCES pasada(id),
@@ -240,6 +254,120 @@ def test_crear_esquema_es_idempotente(con):
 def test_claves_foraneas_activas(con):
     activo = con.execute("PRAGMA foreign_keys").fetchone()[0]
     assert activo == 1
+
+
+def crear_sesion(con):
+    con.execute(
+        "INSERT INTO sesion (id, nombre, fecha_creacion) VALUES (1, 'X', '2026-08-10T00:00:00Z')"
+    )
+    return 1
+
+
+def crear_articulo(con, sesion_id, sku="A", unidad="UN", stock=0):
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "stock_sistema, creado_en) VALUES (?, 1, ?, 'Descripción', ?, ?, '2026-08-10T00:00:00Z')",
+        (sesion_id, sku, unidad, stock),
+    )
+
+
+def test_rechaza_sku_repetido_en_la_misma_sesion(con):
+    sesion_id = crear_sesion(con)
+    crear_articulo(con, sesion_id, sku="A")
+
+    with pytest.raises(sqlite3.IntegrityError):
+        crear_articulo(con, sesion_id, sku="A")
+
+
+def test_rechaza_pasada_de_una_sesion_inexistente(con):
+    with pytest.raises(sqlite3.IntegrityError):
+        con.execute(
+            "INSERT INTO pasada (sesion_id, numero, fecha_apertura) "
+            "VALUES (999, 1, '2026-08-10T00:00:00Z')"
+        )
+
+
+def test_rechaza_unidad_que_no_existe(con):
+    """Un CSV que trae «CAJA» en vez de «CJ» no puede entrar sin que nadie lo note."""
+    sesion_id = crear_sesion(con)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        crear_articulo(con, sesion_id, unidad="CAJA")
+
+
+def test_rechaza_stock_decimal(con):
+    """Las milésimas solo son exactas si la columna guarda enteros de verdad."""
+    sesion_id = crear_sesion(con)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        crear_articulo(con, sesion_id, stock=3.5)
+
+
+def test_solo_admite_una_sesion_abierta(con):
+    """Los dispositivos se vinculan a «la» sesión abierta: no puede haber dos."""
+    crear_sesion(con)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        con.execute(
+            "INSERT INTO sesion (nombre, fecha_creacion) "
+            "VALUES ('Otra', '2026-08-10T00:00:00Z')"
+        )
+
+
+def test_el_contexto_descarta_lo_escrito_si_algo_falla(con):
+    """Dos escrituras van juntas o no va ninguna."""
+    with pytest.raises(sqlite3.IntegrityError):
+        with con:
+            crear_sesion(con)
+            con.execute(
+                "INSERT INTO pasada (sesion_id, numero, fecha_apertura) "
+                "VALUES (999, 1, '2026-08-10T00:00:00Z')"
+            )
+
+    quedaron = con.execute("SELECT COUNT(*) AS n FROM sesion").fetchone()["n"]
+    assert quedaron == 0
+
+
+def test_el_contexto_confirma_al_salir_sin_error(con):
+    with con:
+        crear_sesion(con)
+
+    con.rollback()
+    quedaron = con.execute("SELECT COUNT(*) AS n FROM sesion").fetchone()["n"]
+    assert quedaron == 1
+
+
+def test_cada_hilo_recibe_su_propia_conexion(tmp_path):
+    """Sin esto, el segundo operario que sincroniza en simultáneo recibe un error."""
+    conexion = db.conectar(tmp_path / "hilos.db")
+    db.crear_esquema(conexion)
+
+    errores = []
+
+    def consultar():
+        try:
+            conexion.execute("SELECT COUNT(*) FROM unidad").fetchone()
+        except Exception as error:  # noqa: BLE001 — el test reporta cualquiera
+            errores.append(error)
+
+    hilos = [threading.Thread(target=consultar) for _ in range(4)]
+    for hilo in hilos:
+        hilo.start()
+    for hilo in hilos:
+        hilo.join()
+
+    assert errores == []
+```
+
+El archivo empieza con estos imports:
+
+```python
+import sqlite3
+import threading
+
+import pytest
+
+from app import db
 ```
 
 Crear `servidor/tests/conftest.py`:
@@ -276,17 +404,89 @@ Expected: FAIL con `ModuleNotFoundError` o `AttributeError: module 'app.db' has 
 """Acceso a la base SQLite: conexión y creación del esquema."""
 
 import sqlite3
+import threading
 from pathlib import Path
 
 RUTA_ESQUEMA = Path(__file__).parent / "esquema.sql"
 
 
+class ConexionPorHilo:
+    """Conexión SQLite con una instancia propia por hilo.
+
+    FastAPI atiende los endpoints sincrónicos en un pool de hilos, y SQLite
+    prohíbe usar una conexión desde un hilo distinto del que la creó.
+    Compartir una sola conexión hace fallar el segundo pedido simultáneo:
+    exactamente lo que pasa cuando dos operarios sincronizan a la vez.
+
+    Expone la misma interfaz mínima que `sqlite3.Connection` (`execute`,
+    `executescript`, `commit`, `close`), así los repositorios la usan sin
+    enterarse.
+    """
+
+    def __init__(self, ruta):
+        self.ruta = str(ruta)
+        self._local = threading.local()
+
+    @property
+    def _conexion(self):
+        conexion = getattr(self._local, "conexion", None)
+        if conexion is None:
+            conexion = sqlite3.connect(self.ruta)
+            conexion.row_factory = sqlite3.Row
+            conexion.execute("PRAGMA foreign_keys = ON")
+            # Si otro hilo está escribiendo, esperar en vez de fallar con
+            # "database is locked".
+            conexion.execute("PRAGMA busy_timeout = 5000")
+            if self.ruta != ":memory:":
+                # WAL permite leer mientras otro hilo escribe: el tablero se
+                # refresca solo mientras los celulares sincronizan.
+                conexion.execute("PRAGMA journal_mode = WAL")
+            self._local.conexion = conexion
+        return conexion
+
+    def execute(self, sql, parametros=()):
+        return self._conexion.execute(sql, parametros)
+
+    def executescript(self, script):
+        return self._conexion.executescript(script)
+
+    def commit(self):
+        self._conexion.commit()
+
+    def rollback(self):
+        self._conexion.rollback()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, tipo, valor, traza):
+        """Confirma al salir bien y descarta al salir con error.
+
+        Sin esto, una operación de dos escrituras que falla en la segunda
+        deja la primera pendiente, y el commit de cualquier operación
+        posterior la persiste: aparece una sesión sin pasada, que no se
+        puede usar ni cerrar.
+        """
+        if tipo is None:
+            self.commit()
+        else:
+            self.rollback()
+        return False
+
+    def close(self):
+        conexion = getattr(self._local, "conexion", None)
+        if conexion is not None:
+            conexion.close()
+            self._local.conexion = None
+
+
 def conectar(ruta):
-    """Abre la base y devuelve filas accesibles por nombre de columna."""
-    conexion = sqlite3.connect(ruta)
-    conexion.row_factory = sqlite3.Row
-    conexion.execute("PRAGMA foreign_keys = ON")
-    return conexion
+    """Abre la base y devuelve filas accesibles por nombre de columna.
+
+    Con `:memory:` cada hilo tendría su propia base vacía, así que ese modo
+    sirve solo para tests de un único hilo.
+    """
+    return ConexionPorHilo(ruta)
 
 
 def crear_esquema(con):
@@ -298,7 +498,7 @@ def crear_esquema(con):
 - [ ] **Step 6: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_db.py -v`
-Expected: PASS, 4 tests
+Expected: PASS, todos en verde
 
 - [ ] **Step 7: Commit**
 
@@ -355,10 +555,50 @@ def test_a_milesimas(texto, esperado):
     assert cantidades.a_milesimas(texto) == esperado
 
 
-@pytest.mark.parametrize("texto", ["", "abc", "1,2,3", None])
+@pytest.mark.parametrize("texto", [
+    "", "   ", "abc", "1,2,3", None,
+    ".", ",", "-", "-,",           # separador suelto: celda rota, no cero
+    "1 2",                         # dos números pegados, no doce mil
+    "1.23.456",                    # grupos de miles mal formados
+    "inf", "-inf", "nan", "snan",  # Decimal los acepta; acá no son cantidades
+    "1e3", "1_000",                # notación que ningún ERP exporta
+])
 def test_a_milesimas_rechaza_invalidos(texto):
     with pytest.raises(ValueError):
         cantidades.a_milesimas(texto)
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("1.234.567", 1234567000),
+    ("1,234,567", 1234567000),
+])
+def test_acepta_miles_agrupados_sin_decimales(texto, esperado):
+    """«1.234.567» es la forma normal de escribir un número grande acá."""
+    assert cantidades.a_milesimas(texto) == esperado
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("1,2345", 1235),   # redondea para arriba
+    ("1,2344", 1234),   # redondea para abajo
+    ("0,0005", 1),      # medio hacia arriba
+    ("0,0004", 0),
+])
+def test_redondea_los_decimales_sobrantes(texto, esperado):
+    """Truncar sesgaría todas las cantidades a la baja de forma sistemática."""
+    assert cantidades.a_milesimas(texto) == esperado
+
+
+def test_siempre_devuelve_enteros():
+    """La base rechaza cualquier float: la columna tiene CHECK typeof integer."""
+    for texto in ["24", "3,5", "1.234,56", "0,0005"]:
+        assert isinstance(cantidades.a_milesimas(texto), int)
+        assert isinstance(cantidades.a_centavos(texto), int)
+
+
+@pytest.mark.parametrize("texto", ["", "abc", ".", "12,,5"])
+def test_a_centavos_rechaza_invalidos(texto):
+    with pytest.raises(ValueError):
+        cantidades.a_centavos(texto)
 
 
 @pytest.mark.parametrize("milesimas, esperado", [
@@ -388,6 +628,8 @@ def test_a_centavos():
     assert cantidades.a_centavos("10") == 1000
 ```
 
+**Interfaces (recordatorio):** las tres funciones públicas llevan anotaciones de tipo — `a_milesimas(texto: str) -> int`, `a_centavos(texto: str) -> int`, `a_texto(milesimas: int) -> str` — porque todas las tareas siguientes las consumen.
+
 - [ ] **Step 2: Correr el test y verificar que falla**
 
 Run: `cd servidor && python -m pytest tests/test_cantidades.py -v`
@@ -403,64 +645,89 @@ centavos. Sumar float acumula error, y un inventario suma miles de veces.
 """
 
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 MILESIMAS = 1000
 CENTAVOS = 100
 
-# Parte entera válida: o bien dígitos corridos, o bien grupos de miles de
-# tres dígitos. Sirve para descartar entradas como "1,2,3", que si no se
-# validan se interpretan como 12,3 sin que nadie lo note.
-SIN_MILES = re.compile(r"^-?\d+$")
+SOLO_DIGITOS = re.compile(r"^-?\d+$")
 
 
-def _entero_valido(entero, separador_miles):
-    if SIN_MILES.match(entero):
-        return True
-    patron = re.compile(r"^-?\d{1,3}(" + re.escape(separador_miles) + r"\d{3})+$")
-    return bool(patron.match(entero))
+def _agrupacion_valida(entero, separador_miles):
+    """Verifica que los grupos de miles tengan tres dígitos.
 
-
-def _normalizar(texto):
-    """Deja un número con punto decimal, resolviendo el formato del origen.
-
-    Los ERP exportan indistintamente 1.234,56 y 1,234.56. El separador
-    decimal es el último que aparece; el otro es de miles.
+    Sin esto «1,2,3» se leería como 123 en vez de rechazarse, y un número
+    inventado es peor que un error: pasa por una cantidad real.
     """
-    if not isinstance(texto, str):
-        raise ValueError(f"Se esperaba texto y llegó {type(texto).__name__}")
+    if separador_miles not in entero:
+        return bool(SOLO_DIGITOS.match(entero))
+    patron = r"^-?\d{1,3}(" + re.escape(separador_miles) + r"\d{3})+$"
+    return bool(re.match(patron, entero))
 
-    limpio = texto.strip().replace(" ", "")
-    if not limpio:
-        raise ValueError("Cantidad vacía")
 
-    ultima_coma = limpio.rfind(",")
-    ultimo_punto = limpio.rfind(".")
+def _partir(limpio, texto):
+    """Separa parte entera y decimal resolviendo el formato del origen.
 
-    if ultima_coma == -1 and ultimo_punto == -1:
-        return limpio
+    Los ERP exportan indistintamente 1.234,56 y 1,234.56. Cuando conviven
+    los dos caracteres, el último es el decimal y el otro agrupa miles.
+    Cuando hay uno solo repetido (1.234.567) solo puede agrupar miles.
 
-    if ultima_coma > ultimo_punto:
-        entero, _, decimal = limpio.rpartition(",")
-        separador_miles = "."
+    Queda una ambigüedad que ningún criterio resuelve: «1.234» puede ser mil
+    doscientos treinta y cuatro o uno coma doscientos treinta y cuatro. Se
+    interpreta como decimal, que es lo habitual en cantidades. La vista
+    previa de la importación existe para detectar el caso contrario.
+    """
+    coma = limpio.rfind(",")
+    punto = limpio.rfind(".")
+
+    if coma == -1 and punto == -1:
+        if not SOLO_DIGITOS.match(limpio):
+            raise ValueError(f"Cantidad inválida: {texto!r}")
+        return limpio, ""
+
+    if coma >= 0 and punto >= 0:
+        separador_decimal = "," if coma > punto else "."
     else:
-        entero, _, decimal = limpio.rpartition(".")
-        separador_miles = ","
+        unico = "," if coma >= 0 else "."
+        if limpio.count(unico) > 1:
+            if not _agrupacion_valida(limpio, unico):
+                raise ValueError(f"Cantidad inválida: {texto!r}")
+            return limpio.replace(unico, ""), ""
+        separador_decimal = unico
 
-    if entero and not _entero_valido(entero, separador_miles):
+    separador_miles = "." if separador_decimal == "," else ","
+    entero, _, decimal = limpio.rpartition(separador_decimal)
+
+    # Un separador suelto («.» o «,») no es cero: es una celda rota. Devolver
+    # cero sería lo peor posible, porque un cero pasa por un conteo real.
+    if not decimal.isdigit():
         raise ValueError(f"Cantidad inválida: {texto!r}")
 
-    entero = entero.replace(separador_miles, "")
-    return f"{entero or '0'}.{decimal}"
+    if entero in ("", "-"):
+        entero += "0"
+    if not _agrupacion_valida(entero, separador_miles):
+        raise ValueError(f"Cantidad inválida: {texto!r}")
+
+    return entero.replace(separador_miles, ""), decimal
 
 
 def _a_escalado(texto, escala):
-    normalizado = _normalizar(texto)
+    if not isinstance(texto, str):
+        raise ValueError(f"Se esperaba texto y llegó {type(texto).__name__}")
+
+    limpio = texto.strip()
+    if not limpio:
+        raise ValueError("Cantidad vacía")
+
+    entero, decimal = _partir(limpio, texto)
+
     try:
-        valor = Decimal(normalizado)
-    except InvalidOperation as error:
+        valor = Decimal(f"{entero}.{decimal or 0}")
+        # Redondeo y no truncamiento: el ERP puede exportar más decimales de
+        # los que se guardan, y truncar sesgaría todas las cantidades a la baja.
+        return int((valor * escala).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ArithmeticError) as error:
         raise ValueError(f"Cantidad inválida: {texto!r}") from error
-    return int(valor * escala)
 
 
 def a_milesimas(texto):
@@ -471,6 +738,19 @@ def a_milesimas(texto):
 def a_centavos(texto):
     """Convierte texto a centavos. '1.234,56' -> 123456."""
     return _a_escalado(texto, CENTAVOS)
+
+
+def a_texto_importe(centavos):
+    """Convierte centavos a texto con dos decimales. 12345 -> '123,45'.
+
+    Vive acá, junto a `a_centavos`, para que la conversión de importes tenga
+    una sola implementación: la exportación y el panel muestran plata los dos.
+    """
+    if centavos is None:
+        return ""
+    signo = "-" if centavos < 0 else ""
+    entero, resto = divmod(abs(centavos), CENTAVOS)
+    return f"{signo}{entero},{resto:02d}"
 
 
 def a_texto(milesimas):
@@ -614,6 +894,39 @@ def test_fijar_tolerancia(con):
     sesion = sesiones.obtener(con, sesion_id)
     assert sesion["tolerancia_pct"] == 5.0
     assert sesion["tolerancia_min_abs"] == 2000
+
+
+def test_fijar_tolerancia_rechaza_milesimas_con_decimales(con):
+    """La base lo rechazaría igual, pero con un mensaje que no dice nada."""
+    sesion_id = sesiones.crear(con, "Cliente X")
+
+    with pytest.raises(ValueError, match="milésimas"):
+        sesiones.fijar_tolerancia(con, sesion_id, 5.0, 1500.5)
+
+
+@pytest.mark.parametrize("operacion", [
+    lambda con: sesiones.cerrar(con, 999),
+    lambda con: sesiones.fijar_tolerancia(con, 999, 2.0, 1000),
+])
+def test_operar_sobre_una_sesion_inexistente_falla(con, operacion):
+    with pytest.raises(ValueError, match="No existe la sesión"):
+        operacion(con)
+
+
+def test_ahora_usa_el_formato_del_proyecto():
+    """reloj es la única fuente del formato de fecha de todo el sistema."""
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", reloj.ahora())
+```
+
+El archivo empieza con estos imports:
+
+```python
+import re
+
+import pytest
+
+from app import reloj
+from app.repos import sesiones
 ```
 
 - [ ] **Step 2: Correr el test y verificar que falla**
@@ -667,17 +980,21 @@ def crear(con, nombre):
         raise ValueError("Ya hay una sesión abierta. Cerrala antes de crear otra.")
 
     ahora = reloj.ahora()
-    cursor = con.execute(
-        "INSERT INTO sesion (nombre, fecha_creacion) VALUES (?, ?)",
-        (nombre, ahora),
-    )
-    sesion_id = cursor.lastrowid
 
-    con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 1, ?)",
-        (sesion_id, ahora),
-    )
-    con.commit()
+    # Las dos escrituras van juntas o no va ninguna: una sesión sin pasada
+    # no se puede usar para contar ni se puede cerrar.
+    with con:
+        cursor = con.execute(
+            "INSERT INTO sesion (nombre, fecha_creacion) VALUES (?, ?)",
+            (nombre, ahora),
+        )
+        sesion_id = cursor.lastrowid
+
+        con.execute(
+            "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 1, ?)",
+            (sesion_id, ahora),
+        )
+
     return sesion_id
 
 
@@ -708,28 +1025,39 @@ def pasada_abierta(con, sesion_id):
 
 
 def cerrar(con, sesion_id):
+    obtener(con, sesion_id)  # falla con un mensaje claro si no existe
     ahora = reloj.ahora()
-    con.execute(
-        "UPDATE pasada SET estado = 'cerrada', fecha_cierre = ? "
-        "WHERE sesion_id = ? AND estado = 'abierta'",
-        (ahora, sesion_id),
-    )
-    con.execute("UPDATE sesion SET estado = 'cerrada' WHERE id = ?", (sesion_id,))
-    con.commit()
+
+    with con:
+        con.execute(
+            "UPDATE pasada SET estado = 'cerrada', fecha_cierre = ? "
+            "WHERE sesion_id = ? AND estado = 'abierta'",
+            (ahora, sesion_id),
+        )
+        con.execute("UPDATE sesion SET estado = 'cerrada' WHERE id = ?", (sesion_id,))
 
 
 def fijar_tolerancia(con, sesion_id, pct, min_abs_milesimas):
-    con.execute(
-        "UPDATE sesion SET tolerancia_pct = ?, tolerancia_min_abs = ? WHERE id = ?",
-        (pct, min_abs_milesimas, sesion_id),
-    )
-    con.commit()
+    obtener(con, sesion_id)
+
+    # La base lo rechazaría igual, pero con un mensaje de SQLite que no le
+    # dice nada a quien está corriendo el inventario.
+    if not isinstance(min_abs_milesimas, int) or isinstance(min_abs_milesimas, bool):
+        raise ValueError(
+            "La tolerancia mínima se expresa en milésimas, con un número entero."
+        )
+
+    with con:
+        con.execute(
+            "UPDATE sesion SET tolerancia_pct = ?, tolerancia_min_abs = ? WHERE id = ?",
+            (pct, min_abs_milesimas, sesion_id),
+        )
 ```
 
 - [ ] **Step 5: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_sesiones.py -v`
-Expected: PASS, 9 tests
+Expected: PASS, todos en verde
 
 - [ ] **Step 6: Commit**
 
@@ -831,6 +1159,135 @@ def test_completa_filas_con_menos_columnas():
     assert filas[0] == ["1", "Tornillo", ""]
 
 
+def test_conserva_las_columnas_de_mas_en_vez_de_descartarlas():
+    """Un campo de más delata un archivo mal armado: no se pierde en silencio."""
+    contenido = "sku,descripcion\n1,Tornillo,SOBRA\n".encode("utf-8")
+
+    _, filas = lectura_csv.leer(contenido)
+
+    assert filas[0] == ["1", "Tornillo", "SOBRA"]
+
+
+def test_no_se_confunde_con_un_separador_dentro_de_comillas():
+    """Contar caracteres fusionaría SKU y descripción en una sola columna."""
+    contenido = 'sku,"descripcion; larga"\n1,Tornillo\n'.encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion; larga"]
+    assert filas[0] == ["1", "Tornillo"]
+
+
+def test_saltea_un_titulo_antes_del_encabezado():
+    """Varios ERP anteponen el nombre del listado o la fecha de emisión."""
+    contenido = (
+        "Listado de stock al 10/08/2026\n"
+        "sku;descripcion\n"
+        "1;Tornillo\n"
+        "2;Tuerca\n"
+    ).encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert len(filas) == 2
+
+
+def test_respeta_el_encabezado_aunque_las_filas_tengan_menos_columnas():
+    """Elegir el encabezado por «ancho dominante» lo descartaba acá."""
+    contenido = (
+        "sku,descripcion,grupo\n"
+        "1,Tornillo\n"
+        "2,Tuerca\n"
+        "3,Clavo\n"
+    ).encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion", "grupo"]
+    assert len(filas) == 3
+
+
+def test_respeta_el_encabezado_aunque_las_filas_tengan_mas_columnas():
+    contenido = (
+        "sku,descripcion\n"
+        "1,Tornillo,X\n"
+        "2,Tuerca,Y\n"
+        "3,Clavo,Z\n"
+    ).encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert len(filas) == 3
+
+
+def test_ignora_las_filas_de_relleno_que_deja_excel():
+    """Excel suele dejar líneas con solo separadores o espacios al final."""
+    contenido = "sku,descripcion\n1,Tornillo\n,\n,\n".encode("utf-8")
+
+    _, filas = lectura_csv.leer(contenido)
+
+    assert filas == [["1", "Tornillo"]]
+
+
+def test_ignora_las_lineas_en_blanco_del_final():
+    contenido = "sku,descripcion\n1,Tornillo\n   \n   \n".encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert filas == [["1", "Tornillo"]]
+
+
+def test_ignora_la_columna_vacia_que_deja_un_separador_final():
+    contenido = "sku,descripcion,\n1,Tornillo,\n".encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert filas[0][:2] == ["1", "Tornillo"]
+
+
+def test_el_encabezado_es_la_primera_linea_con_contenido():
+    """Una línea de relleno arriba se saltea igual que en cualquier otra parte."""
+    contenido = ",,\nsku,descripcion\n1,Tornillo\n".encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "descripcion"]
+    assert filas == [["1", "Tornillo"]]
+
+
+def test_rechaza_un_archivo_de_puro_relleno():
+    contenido = ",,\n,,\n".encode("utf-8")
+
+    with pytest.raises(ValueError, match="vacío"):
+        lectura_csv.leer(contenido)
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("sku;descripcion\n1;Tornillo", ";"),
+    ("sku,descripcion\n1,Tornillo", ","),
+    ("sku\tdescripcion\n1\tTornillo", "\t"),
+    ("sku|descripcion\n1|Tornillo", "|"),
+    ("una sola columna\nsin separadores", ","),
+    ("", ","),
+])
+def test_detectar_separador(texto, esperado):
+    assert lectura_csv.detectar_separador(texto) == esperado
+
+
+@pytest.mark.parametrize("texto, codificacion, esperada", [
+    ("Cañería", "utf-8", "utf-8-sig"),
+    ("Cañería", "cp1252", "cp1252"),
+    ("sin acentos", "ascii", "utf-8-sig"),
+])
+def test_detectar_codificacion(texto, codificacion, esperada):
+    """UTF-8 se prueba primero: casi todo UTF-8 también decodifica como cp1252."""
+    assert lectura_csv.detectar_codificacion(texto.encode(codificacion)) == esperada
+
+
 def test_recorta_espacios_de_los_encabezados():
     contenido = " sku , descripcion \n1,Tornillo\n".encode("utf-8")
 
@@ -871,32 +1328,78 @@ las dos cosas rompe la importación entera, así que se resuelve acá.
 import csv
 import io
 
-CODIFICACIONES = ["utf-8-sig", "utf-8", "cp1252", "latin-1"]
-SEPARADORES = [";", ",", "\t", "|"]
+# utf-8-sig también decodifica UTF-8 sin BOM, así que cubre los dos casos.
+# latin-1 va última y nunca falla: mapea cualquier byte.
+CODIFICACIONES = ["utf-8-sig", "cp1252", "latin-1"]
+SEPARADORES = [",", ";", "\t", "|"]
+
+LINEAS_DE_MUESTRA = 20
 
 
-def detectar_codificacion(contenido):
-    """Devuelve la primera codificación con la que el archivo se lee entero."""
+def detectar_codificacion(contenido: bytes) -> str:
+    """Devuelve la primera codificación con la que el archivo se lee entero.
+
+    El orden importa: casi cualquier texto UTF-8 también decodifica sin
+    error como cp1252, pero al revés no. Probar UTF-8 primero evita el
+    clásico «CañerÃ­a» en las descripciones.
+    """
     for codificacion in CODIFICACIONES:
         try:
             contenido.decode(codificacion)
             return codificacion
         except UnicodeDecodeError:
             continue
-    return "latin-1"  # nunca falla: mapea cualquier byte
+    return CODIFICACIONES[-1]
 
 
-def detectar_separador(texto):
-    """El separador es el que más veces aparece en la primera línea."""
-    primera_linea = texto.splitlines()[0] if texto.splitlines() else ""
-    conteos = {sep: primera_linea.count(sep) for sep in SEPARADORES}
-    mejor = max(conteos, key=conteos.get)
-    return mejor if conteos[mejor] > 0 else ","
+def _anchos(muestra: list[str], separador: str) -> list[int]:
+    filas = list(csv.reader(muestra, delimiter=separador))
+    return [len(fila) for fila in filas if fila]
 
 
-def leer(contenido):
+def detectar_separador(texto: str) -> str:
+    """Elige el separador que parte el archivo de forma consistente.
+
+    Contar caracteres no alcanza por dos motivos. Una coma dentro de un
+    campo entre comillas cuenta igual que una separadora, así que un
+    encabezado como `sku,"descripcion; larga"` empata y puede resolverse
+    a punto y coma, fusionando columnas sin que nadie lo note. Y mirar
+    solo la primera línea falla cuando el ERP antepone un título, que no
+    tiene ningún separador.
+
+    Se prueba cada candidato con el lector de CSV real sobre las primeras
+    líneas y gana el que produce más filas del mismo ancho.
+    """
+    muestra = [linea for linea in texto.splitlines() if linea.strip()]
+    muestra = muestra[:LINEAS_DE_MUESTRA]
+    if not muestra:
+        return ","
+
+    mejor = ","
+    mejor_puntaje = (0, 0)
+
+    for separador in SEPARADORES:
+        anchos = _anchos(muestra, separador)
+        if not anchos:
+            continue
+
+        # El ancho más frecuente; ante un empate, el mayor. Sin el desempate
+        # el resultado depende del orden del conjunto y no es reproducible.
+        ancho_dominante = max(anchos, key=lambda ancho: (anchos.count(ancho), ancho))
+        if ancho_dominante < 2:
+            continue  # una sola columna: este separador no separa nada
+
+        puntaje = (anchos.count(ancho_dominante), ancho_dominante)
+        if puntaje > mejor_puntaje:
+            mejor_puntaje = puntaje
+            mejor = separador
+
+    return mejor
+
+
+def leer(contenido: bytes) -> tuple[list[str], list[list[str]]]:
     """Devuelve (encabezados, filas) a partir del contenido binario del archivo."""
-    if not contenido or not contenido.strip():
+    if not contenido.strip():
         raise ValueError("El archivo está vacío")
 
     texto = contenido.decode(detectar_codificacion(contenido))
@@ -908,7 +1411,25 @@ def leer(contenido):
     if not todas:
         raise ValueError("El archivo está vacío")
 
-    encabezados = [celda.strip() for celda in todas[0]]
+    # Muchos ERP anteponen un título o una fecha antes del encabezado real.
+    # Se reconoce porque queda como una línea suelta sin separadores entre
+    # filas que sí los tienen. Solo se saltean esas: cualquier otra
+    # diferencia de ancho es un encabezado legítimo con filas irregulares,
+    # y elegir por «ancho dominante» descartaría el encabezado verdadero
+    # apenas la mayoría de las filas omita la última columna.
+    primera = 0
+    if any(len(fila) > 1 for fila in todas):
+        while primera < len(todas) - 1 and len(todas[primera]) <= 1:
+            primera += 1
+
+    encabezados = [celda.strip() for celda in todas[primera]]
+
+    # Un encabezado que termina en separador deja una columna sin nombre.
+    while encabezados and not encabezados[-1]:
+        encabezados.pop()
+
+    if not encabezados:
+        raise ValueError("El archivo está vacío")
 
     vistos = set()
     for encabezado in encabezados:
@@ -919,8 +1440,11 @@ def leer(contenido):
 
     cantidad = len(encabezados)
     filas = []
-    for fila in todas[1:]:
-        completa = [celda.strip() for celda in fila[:cantidad]]
+    for fila in todas[primera + 1:]:
+        # Las filas cortas se completan; las largas se conservan enteras. Un
+        # campo de más suele delatar un archivo mal armado, y descartarlo acá
+        # perdería el dato en silencio. La importación lo reporta.
+        completa = [celda.strip() for celda in fila]
         completa += [""] * (cantidad - len(completa))
         filas.append(completa)
 
@@ -1128,6 +1652,143 @@ def test_saltea_filas_sin_sku(con, sesion_id):
     assert len(resultado["descartadas"]) == 1
 
 
+def test_una_unidad_desconocida_no_frena_la_importacion(con, sesion_id):
+    """La clave foránea abortaría el archivo entero: se ataja antes."""
+    contenido = "sku,detalle,um\n1,Tornillo,UN\n2,Tuerca,CAJA\n3,Clavo,KG\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle", "unidad": "um",
+    })
+
+    assert resultado["importados"] == 3
+    assert any("CAJA" in a["motivo"] for a in resultado["advertencias"])
+
+    unidades = {
+        fila["sku"]: fila["unidad"]
+        for fila in con.execute("SELECT sku, unidad FROM articulo")
+    }
+    assert unidades == {"1": "UN", "2": "UN", "3": "KG"}
+
+
+def test_un_sku_repetido_se_cuenta_una_sola_vez(con, sesion_id):
+    contenido = "sku,detalle\n1,Tornillo\n1,Tornillo corregido\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 1
+    assert any("más de una vez" in a["motivo"] for a in resultado["advertencias"])
+
+    fila = con.execute("SELECT descripcion FROM articulo").fetchone()
+    assert fila["descripcion"] == "Tornillo corregido"
+
+
+def test_un_sku_repetido_no_desordena_la_numeracion(con, sesion_id):
+    """id_orden define el recorrido: dos artículos no pueden compartir número."""
+    contenido = "sku,detalle\nA,Uno\nB,Dos\nA,Uno otra vez\nC,Tres\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 3
+
+    ordenes = {
+        fila["sku"]: fila["id_orden"]
+        for fila in con.execute("SELECT sku, id_orden FROM articulo")
+    }
+    assert ordenes == {"A": 1, "B": 2, "C": 3}
+
+
+def test_un_numero_de_orden_ilegible_no_pisa_a_los_del_archivo(con, sesion_id):
+    """El fallback tiene que quedar por encima de todos los números escritos."""
+    contenido = "nro,sku,detalle\nxx,A,Uno\n1,B,Dos\n2,C,Tres\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "id_orden": "nro", "sku": "sku", "descripcion": "detalle",
+    })
+
+    ordenes = {
+        fila["sku"]: fila["id_orden"]
+        for fila in con.execute("SELECT sku, id_orden FROM articulo")
+    }
+    assert ordenes["B"] == 1
+    assert ordenes["C"] == 2
+    assert ordenes["A"] == 3  # por encima del mayor que trae el archivo
+    assert len(set(ordenes.values())) == 3
+    assert any("Número de orden inválido" in a["motivo"]
+               for a in resultado["advertencias"])
+
+
+def test_avisa_si_el_archivo_repite_un_numero_de_orden(con, sesion_id):
+    contenido = "nro,sku,detalle\n1,A,Uno\n1,B,Dos\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "id_orden": "nro", "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 2
+    assert any("ya lo usa otro artículo" in a["motivo"]
+               for a in resultado["advertencias"])
+
+
+def test_avisa_cuando_falta_la_descripcion(con, sesion_id):
+    contenido = "sku,detalle\n1,\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 1
+    assert any("Sin descripción" in a["motivo"] for a in resultado["advertencias"])
+
+    fila = con.execute("SELECT descripcion FROM articulo").fetchone()
+    assert fila["descripcion"] == "1"
+
+
+def test_reimportar_actualiza_sin_duplicar(con, sesion_id):
+    primero = "sku,detalle,stock\nA,Tornillo,10\nB,Tuerca,5\n".encode("utf-8")
+    segundo = "sku,detalle,stock\nA,Tornillo hex,12\nB,Tuerca,5\n".encode("utf-8")
+    mapeo = {"sku": "sku", "descripcion": "detalle", "stock_sistema": "stock"}
+
+    importacion.importar(con, sesion_id, primero, mapeo)
+    importacion.importar(con, sesion_id, segundo, mapeo)
+
+    filas = list(con.execute(
+        "SELECT sku, descripcion, stock_sistema FROM articulo ORDER BY id_orden"
+    ))
+    assert len(filas) == 2
+    assert filas[0]["descripcion"] == "Tornillo hex"
+    assert filas[0]["stock_sistema"] == 12000
+
+    codigos = con.execute("SELECT COUNT(*) AS n FROM codigo_barras").fetchone()["n"]
+    assert codigos == 2
+
+
+def test_rechaza_una_unidad_por_defecto_inexistente(con, sesion_id):
+    contenido = "sku,detalle\n1,Tornillo\n".encode("utf-8")
+
+    with pytest.raises(ValueError, match="no existe"):
+        importacion.importar(
+            con, sesion_id, contenido,
+            {"sku": "sku", "descripcion": "detalle"},
+            unidad_por_defecto="INVENTADA",
+        )
+
+
+def test_reporta_las_filas_con_columnas_de_mas(con, sesion_id):
+    """Una columna de más suele delatar una comilla sin cerrar."""
+    contenido = "sku,detalle\n1,Tornillo\n2,Tuerca,SOBRA\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 2
+    assert any("más columnas" in a["motivo"] for a in resultado["advertencias"])
+
+
 def test_stock_invalido_queda_en_cero_y_se_reporta(con, sesion_id):
     contenido = "sku,detalle,stock\n1,Tornillo,mucho\n".encode("utf-8")
 
@@ -1165,8 +1826,6 @@ CAMPOS = [
 
 CAMPOS_OBLIGATORIOS = ["sku", "descripcion"]
 
-CAMPOS_TEXTO = ["tipo", "material", "sku", "descripcion", "grupo", "ubicacion"]
-
 
 def previsualizar(contenido, cantidad=5):
     """Encabezados y primeras filas, para armar el mapeo en pantalla."""
@@ -1198,112 +1857,213 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
     indice = {campo: encabezados.index(col) for campo, col in mapeo.items() if col}
     ahora = reloj.ahora()
 
-    importados = 0
-    codigos = 0
-    descartadas = []
-    advertencias = []
+    # La unidad tiene clave foránea: una desconocida abortaría la importación
+    # entera con un error de restricción, justo lo contrario de la regla de
+    # que una celda mala no frena el archivo. Se validan acá y las que no
+    # existen caen en la unidad por defecto, avisando.
+    unidades = {fila["codigo"] for fila in con.execute("SELECT codigo FROM unidad")}
+    if unidad_por_defecto not in unidades:
+        raise ValueError(f"La unidad por defecto «{unidad_por_defecto}» no existe")
 
-    for numero_fila, fila in enumerate(filas, start=2):
-        def valor(campo):
-            posicion = indice.get(campo)
-            return fila[posicion] if posicion is not None else ""
-
-        sku = valor("sku")
-        if not sku:
-            descartadas.append(
-                {"fila": numero_fila, "motivo": "Sin SKU"}
-            )
-            continue
-
-        descripcion = valor("descripcion") or sku
-
-        if "id_orden" in indice:
-            try:
-                id_orden = int(valor("id_orden"))
-            except ValueError:
-                id_orden = importados + 1
-                advertencias.append({
-                    "fila": numero_fila,
-                    "motivo": f"Número de orden inválido, se usó {id_orden}",
-                })
-        else:
-            id_orden = importados + 1
-
-        stock = 0
-        if "stock_sistema" in indice:
-            try:
-                stock = cantidades.a_milesimas(valor("stock_sistema"))
-            except ValueError:
-                advertencias.append({
-                    "fila": numero_fila,
-                    "motivo": f"Stock «{valor('stock_sistema')}» inválido, se usó 0",
-                })
-
-        costo = None
-        if "costo_unitario" in indice and valor("costo_unitario"):
-            try:
-                costo = cantidades.a_centavos(valor("costo_unitario"))
-            except ValueError:
-                advertencias.append({
-                    "fila": numero_fila,
-                    "motivo": f"Costo «{valor('costo_unitario')}» inválido, quedó vacío",
-                })
-
-        unidad = valor("unidad").upper() or unidad_por_defecto
-
-        con.execute(
-            """
-            INSERT INTO articulo (
-                sesion_id, id_orden, tipo, material, sku, descripcion, grupo,
-                ubicacion, unidad, stock_sistema, costo_unitario, origen, creado_en
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'importado', ?)
-            ON CONFLICT (sesion_id, sku) DO UPDATE SET
-                id_orden = excluded.id_orden,
-                tipo = excluded.tipo,
-                material = excluded.material,
-                descripcion = excluded.descripcion,
-                grupo = excluded.grupo,
-                ubicacion = excluded.ubicacion,
-                unidad = excluded.unidad,
-                stock_sistema = excluded.stock_sistema,
-                costo_unitario = excluded.costo_unitario
-            """,
-            (
-                sesion_id, id_orden, valor("tipo") or None, valor("material") or None,
-                sku, descripcion, valor("grupo") or None, valor("ubicacion") or None,
-                unidad, stock, costo, ahora,
-            ),
-        )
-
-        # No se usa lastrowid: en un upsert que actualiza en vez de insertar,
-        # SQLite deja el rowid del último INSERT exitoso, que puede ser de
-        # otra fila. El SELECT por (sesion_id, sku) siempre da el correcto.
-        articulo_id = con.execute(
-            "SELECT id FROM articulo WHERE sesion_id = ? AND sku = ?",
-            (sesion_id, sku),
-        ).fetchone()["id"]
-
-        codigo = valor("codigo_barras") or sku
-        ya_existe = con.execute(
-            "SELECT 1 FROM codigo_barras WHERE articulo_id = ? AND codigo = ?",
-            (articulo_id, codigo),
-        ).fetchone()
-        if not ya_existe:
-            con.execute(
-                "INSERT INTO codigo_barras (articulo_id, codigo) VALUES (?, ?)",
-                (articulo_id, codigo),
-            )
-            codigos += 1
-
-        importados += 1
-
-    con.commit()
-    return {
-        "importados": importados,
-        "codigos": codigos,
-        "descartadas": descartadas,
-        "advertencias": advertencias,
+    config = {
+        "indice": indice,
+        "encabezados": encabezados,
+        "unidad_por_defecto": unidad_por_defecto,
+        "unidades": unidades,
+        "ahora": ahora,
+        # Piso para los números de orden que haya que inventar: por encima de
+        # todos los que el archivo trae explícitos. Sin esto, una celda
+        # ilegible en la primera fila recibe el 1 y choca con el 1 explícito
+        # de la fila siguiente, dejando dos artículos con el mismo número.
+        "piso_orden": _mayor_orden_del_archivo(filas, indice),
     }
+    estado = {
+        "resultado": {
+            "importados": 0, "codigos": 0, "descartadas": [], "advertencias": [],
+        },
+        "vistos": {},   # sku -> id_orden ya asignado
+        "ordenes": set(),
+    }
+
+    # Toda la importación es una sola transacción: un maestro a medio cargar
+    # es peor que ninguno, porque el tablero lo muestra como si estuviera
+    # completo y los artículos que faltan aparecen como no contados.
+    with con:
+        for numero_fila, fila in enumerate(filas, start=2):
+            _cargar_fila(con, sesion_id, fila, numero_fila, config, estado)
+
+    return estado["resultado"]
+
+
+def _mayor_orden_del_archivo(filas, indice):
+    """El mayor número de orden que el archivo trae escrito, o 0."""
+    posicion = indice.get("id_orden")
+    if posicion is None:
+        return 0
+
+    mayor = 0
+    for fila in filas:
+        try:
+            mayor = max(mayor, int(fila[posicion]))
+        except (ValueError, IndexError):
+            continue
+    return mayor
+
+
+def _cargar_fila(con, sesion_id, fila, numero_fila, config, estado):
+    """Carga una fila del maestro, acumulando los avisos en `estado`."""
+    indice = config["indice"]
+    encabezados = config["encabezados"]
+    unidad_por_defecto = config["unidad_por_defecto"]
+    unidades = config["unidades"]
+    ahora = config["ahora"]
+
+    resultado = estado["resultado"]
+    vistos = estado["vistos"]
+    ordenes = estado["ordenes"]
+    descartadas = resultado["descartadas"]
+    advertencias = resultado["advertencias"]
+
+    def valor(campo):
+        posicion = indice.get(campo)
+        return fila[posicion] if posicion is not None else ""
+
+    if len(fila) > len(encabezados):
+        # Suele delatar una comilla sin cerrar o un separador dentro de un
+        # campo. Se avisa y se sigue: el mapeo usa las columnas por posición.
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": "Tiene más columnas que el encabezado",
+        })
+
+    sku = valor("sku")
+    if not sku:
+        descartadas.append({"fila": numero_fila, "motivo": "Sin SKU"})
+        return
+
+    repetido = sku in vistos
+    if repetido:
+        # El upsert deja la última, que es el comportamiento razonable, pero
+        # el archivo trae un problema que conviene mirar.
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": f"El SKU «{sku}» aparece más de una vez; queda el último",
+        })
+
+    descripcion = valor("descripcion")
+    if not descripcion:
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": "Sin descripción; se usó el SKU",
+        })
+        descripcion = sku
+
+    # El correlativo sale de los números ya asignados y del mayor que trae el
+    # archivo, no de la cantidad de importados: si no, una fila repetida
+    # vuelve a consumir un número y dos artículos distintos terminan con el
+    # mismo id_orden, que es el que define el orden de recorrido y de la
+    # planilla del operario.
+    siguiente_orden = max(max(ordenes, default=0), config["piso_orden"]) + 1
+
+    if "id_orden" in indice:
+        try:
+            id_orden = int(valor("id_orden"))
+        except ValueError:
+            id_orden = siguiente_orden
+            advertencias.append({
+                "fila": numero_fila,
+                "motivo": f"Número de orden inválido, se usó {id_orden}",
+            })
+    elif repetido:
+        id_orden = vistos[sku]  # conserva el que ya tenía
+    else:
+        id_orden = siguiente_orden
+
+    if id_orden in ordenes and not repetido:
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": f"El número de orden {id_orden} ya lo usa otro artículo",
+        })
+
+    stock = 0
+    if "stock_sistema" in indice:
+        try:
+            stock = cantidades.a_milesimas(valor("stock_sistema"))
+        except ValueError:
+            advertencias.append({
+                "fila": numero_fila,
+                "motivo": f"Stock «{valor('stock_sistema')}» inválido, se usó 0",
+            })
+
+    costo = None
+    if "costo_unitario" in indice and valor("costo_unitario"):
+        try:
+            costo = cantidades.a_centavos(valor("costo_unitario"))
+        except ValueError:
+            advertencias.append({
+                "fila": numero_fila,
+                "motivo": f"Costo «{valor('costo_unitario')}» inválido, quedó vacío",
+            })
+
+    unidad = valor("unidad").upper() or unidad_por_defecto
+    if unidad not in unidades:
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": f"La unidad «{unidad}» no está en el catálogo; "
+                      f"se usó {unidad_por_defecto}",
+        })
+        unidad = unidad_por_defecto
+
+    con.execute(
+        """
+        INSERT INTO articulo (
+            sesion_id, id_orden, tipo, material, sku, descripcion, grupo,
+            ubicacion, unidad, stock_sistema, costo_unitario, origen, creado_en
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'importado', ?)
+        ON CONFLICT (sesion_id, sku) DO UPDATE SET
+            id_orden = excluded.id_orden,
+            tipo = excluded.tipo,
+            material = excluded.material,
+            descripcion = excluded.descripcion,
+            grupo = excluded.grupo,
+            ubicacion = excluded.ubicacion,
+            unidad = excluded.unidad,
+            stock_sistema = excluded.stock_sistema,
+            costo_unitario = excluded.costo_unitario
+        """,
+        (
+            sesion_id, id_orden, valor("tipo") or None, valor("material") or None,
+            sku, descripcion, valor("grupo") or None, valor("ubicacion") or None,
+            unidad, stock, costo, ahora,
+        ),
+    )
+
+    # No se usa lastrowid: en un upsert que actualiza en vez de insertar,
+    # SQLite deja el rowid del último INSERT exitoso, que puede ser de
+    # otra fila. El SELECT por (sesion_id, sku) siempre da el correcto.
+    articulo_id = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = ?",
+        (sesion_id, sku),
+    ).fetchone()["id"]
+
+    codigo = valor("codigo_barras") or sku
+    ya_existe = con.execute(
+        "SELECT 1 FROM codigo_barras WHERE articulo_id = ? AND codigo = ?",
+        (articulo_id, codigo),
+    ).fetchone()
+    if not ya_existe:
+        con.execute(
+            "INSERT INTO codigo_barras (articulo_id, codigo) VALUES (?, ?)",
+            (articulo_id, codigo),
+        )
+        resultado["codigos"] += 1
+
+    if not repetido:
+        resultado["importados"] += 1
+    if repetido:
+        ordenes.discard(vistos[sku])
+    vistos[sku] = id_orden
+    ordenes.add(id_orden)
 ```
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
@@ -1401,6 +2161,57 @@ def test_listar_ordena_por_nombre(con):
     nombres = [o["nombre"] for o in operarios.listar(con)]
 
     assert nombres == ["Ana", "Zulema"]
+
+
+def test_dar_de_alta_a_alguien_desactivado_lo_reactiva(con):
+    """Sin esto, un clic equivocado dejaba el nombre bloqueado para siempre."""
+    juan = operarios.crear(con, "Juan")
+    operarios.desactivar(con, juan["id"])
+
+    revivido = operarios.crear(con, "Juan")
+
+    assert revivido["id"] == juan["id"]
+    assert revivido["activo"] == 1
+    assert operarios.por_token(con, revivido["token_dispositivo"]) is not None
+
+
+def test_reactivar_cambia_el_token(con):
+    """El celular que quedó desvinculado no tiene que volver a funcionar solo."""
+    juan = operarios.crear(con, "Juan")
+    token_viejo = juan["token_dispositivo"]
+    operarios.desactivar(con, juan["id"])
+
+    operarios.crear(con, "Juan")
+
+    assert operarios.por_token(con, token_viejo) is None
+
+
+def test_el_nombre_se_normaliza(con):
+    """«Juan» y «Juan » partirían el conteo de una misma persona en dos."""
+    operarios.crear(con, "Juan")
+
+    with pytest.raises(ValueError, match="Ya existe"):
+        operarios.crear(con, "  Juan  ")
+
+
+@pytest.mark.parametrize("nombre", ["", "   ", None, 123])
+def test_rechaza_nombres_invalidos(con, nombre):
+    with pytest.raises(ValueError, match="necesita un nombre"):
+        operarios.crear(con, nombre)
+
+
+def test_no_expone_el_pin(con):
+    """El PIN no tiene por qué viajar en cada respuesta del panel."""
+    juan = operarios.crear(con, "Juan", pin="1234")
+
+    assert "pin" not in juan
+    assert "pin" not in operarios.listar(con)[0]
+    assert "pin" not in operarios.por_token(con, juan["token_dispositivo"])
+
+
+def test_desactivar_a_alguien_que_no_existe_falla(con):
+    with pytest.raises(ValueError, match="No existe el operario"):
+        operarios.desactivar(con, 9999)
 ```
 
 - [ ] **Step 2: Correr el test y verificar que falla**
@@ -1420,50 +2231,95 @@ reutilizan en todos los inventarios.
 import secrets
 import sqlite3
 
+# Se enumeran las columnas en vez de usar «*» para que el PIN no viaje en
+# cada respuesta: el panel necesita el token, para armar el QR, pero nunca
+# el PIN.
+CAMPOS = "id, nombre, token_dispositivo, activo"
+
 
 def crear(con, nombre, pin=None):
-    token = secrets.token_urlsafe(32)
-    try:
-        cursor = con.execute(
-            "INSERT INTO operario (nombre, pin, token_dispositivo) VALUES (?, ?, ?)",
-            (nombre, pin, token),
-        )
-    except sqlite3.IntegrityError as error:
-        raise ValueError(f"Ya existe un operario llamado «{nombre}»") from error
+    """Da de alta un operario y le asigna su token de vinculación.
 
-    con.commit()
-    return _obtener(con, cursor.lastrowid)
+    Si el nombre corresponde a alguien desactivado, lo reactiva con un token
+    nuevo. Sin esto, desactivar a una persona dejaba su nombre bloqueado para
+    siempre y sin forma de volver a darla de alta. El token se renueva a
+    propósito: el celular que quedó desvinculado no tiene que revivir solo.
+    """
+    nombre = (nombre or "").strip() if isinstance(nombre, str) else ""
+    if not nombre:
+        raise ValueError("El operario necesita un nombre")
+
+    existente = con.execute(
+        "SELECT id, activo FROM operario WHERE nombre = ?", (nombre,)
+    ).fetchone()
+
+    if existente and existente["activo"]:
+        raise ValueError(f"Ya existe un operario llamado «{nombre}»")
+
+    token = secrets.token_urlsafe(32)
+
+    try:
+        with con:
+            if existente:
+                con.execute(
+                    "UPDATE operario SET activo = 1, pin = ?, token_dispositivo = ? "
+                    "WHERE id = ?",
+                    (pin, token, existente["id"]),
+                )
+                operario_id = existente["id"]
+            else:
+                cursor = con.execute(
+                    "INSERT INTO operario (nombre, pin, token_dispositivo) "
+                    "VALUES (?, ?, ?)",
+                    (nombre, pin, token),
+                )
+                operario_id = cursor.lastrowid
+    except sqlite3.IntegrityError as error:
+        # Solo puede pasar si otro hilo dio de alta el mismo nombre entre la
+        # consulta y la escritura. Cualquier otra violación se deja pasar tal
+        # cual: convertirla en «ya existe» mentiría sobre lo que ocurrió.
+        if "operario.nombre" in str(error):
+            raise ValueError(f"Ya existe un operario llamado «{nombre}»") from error
+        raise
+
+    return _obtener(con, operario_id)
 
 
 def _obtener(con, operario_id):
-    fila = con.execute("SELECT * FROM operario WHERE id = ?", (operario_id,)).fetchone()
+    fila = con.execute(
+        f"SELECT {CAMPOS} FROM operario WHERE id = ?", (operario_id,)
+    ).fetchone()
     return dict(fila) if fila else None
 
 
 def listar(con):
     filas = con.execute(
-        "SELECT * FROM operario WHERE activo = 1 ORDER BY nombre"
+        f"SELECT {CAMPOS} FROM operario WHERE activo = 1 ORDER BY nombre"
     ).fetchall()
     return [dict(fila) for fila in filas]
 
 
 def por_token(con, token):
     fila = con.execute(
-        "SELECT * FROM operario WHERE token_dispositivo = ? AND activo = 1",
+        f"SELECT {CAMPOS} FROM operario WHERE token_dispositivo = ? AND activo = 1",
         (token,),
     ).fetchone()
     return dict(fila) if fila else None
 
 
 def desactivar(con, operario_id):
-    con.execute("UPDATE operario SET activo = 0 WHERE id = ?", (operario_id,))
-    con.commit()
+    with con:
+        cursor = con.execute(
+            "UPDATE operario SET activo = 0 WHERE id = ?", (operario_id,)
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"No existe el operario {operario_id}")
 ```
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_operarios.py -v`
-Expected: PASS, 7 tests
+Expected: PASS, todos en verde
 
 - [ ] **Step 5: Commit**
 
@@ -1503,6 +2359,8 @@ Un `evento` es: `{"uuid": str, "codigo": str, "cantidad": int (milésimas), "tim
 Crear `servidor/tests/test_conteos.py`:
 
 ```python
+import sqlite3
+
 import pytest
 
 from app.repos import conteos, operarios, sesiones
@@ -1603,6 +2461,180 @@ def test_anular_un_uuid_inexistente_se_rechaza(con, escenario):
     assert len(resultado["rechazados"]) == 1
 
 
+@pytest.mark.parametrize("roto", [
+    {"codigo": None},
+    {"timestamp_dispositivo": None},
+    {"timestamp_dispositivo": "   "},
+    {"timestamp_dispositivo": 12345},
+    {"uuid": None},
+    {"cantidad": None},
+    {"cantidad": -1000},
+    # Los enteros de JSON no tienen tope; los de SQLite sí.
+    {"cantidad": 2 ** 63},
+    # Valores no escalares: explotarían recién al ligarlos a la consulta,
+    # como sqlite3.ProgrammingError, que no es ValueError.
+    {"uuid": ["u-2"]},
+    {"codigo": {"ean": "779"}},
+    {"anula_uuid": ["u-1"]},
+    {"ubicacion_real": ["A-01"]},
+    {"observaciones": {"nota": "rota"}},
+])
+def test_un_evento_mal_formado_no_frena_el_lote(con, escenario, roto):
+    """Sin esto el celular reintenta el mismo payload y la cola queda trabada."""
+    malo = evento("u-2")
+    malo.update(roto)
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), malo, evento("u-3")],
+    )
+
+    assert resultado["registrados"] == 2
+    assert len(resultado["rechazados"]) == 1
+
+
+def test_un_evento_que_ni_siquiera_es_un_diccionario_no_frena_el_lote(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), "esto no es un evento", evento("u-3")],
+    )
+
+    assert resultado["registrados"] == 2
+    assert len(resultado["rechazados"]) == 1
+
+
+def test_una_anulacion_que_llega_antes_es_reintentable(con, escenario):
+    """Los celulares sincronizan en cualquier orden: el evento no se descarta."""
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-9", anula_uuid="todavia-no-llego")],
+    )
+
+    assert resultado["rechazados"][0]["reintentable"] is True
+
+
+def test_un_error_transitorio_de_la_base_es_reintentable(con, escenario, monkeypatch):
+    """«database is locked» pasa cuando dos operarios sincronizan a la vez.
+
+    Marcarlo como definitivo haría que el celular descarte un conteo que el
+    operario sí hizo: una unidad que desaparece sin que nadie se entere.
+    """
+    def falla(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(conteos, "registrar", falla)
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"], [evento("u-1")]
+    )
+
+    assert resultado["rechazados"][0]["reintentable"] is True
+
+
+def test_una_anulacion_vacia_se_trata_como_ausente(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1", anula_uuid="")],
+    )
+
+    assert resultado["registrados"] == 1
+    assert resultado["rechazados"] == []
+
+
+def test_una_anulacion_no_se_puede_anular(con, escenario):
+    """Si no, el conteo original queda excluido por una fila que ya no vale y
+    el artículo vuelve a figurar sin contar: desaparecen unidades reales."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1"))
+    conteos.registrar(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        evento("u-2", cantidad=0, anula_uuid="u-1"),
+    )
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-3", cantidad=0, anula_uuid="u-2")],
+    )
+
+    assert resultado["registrados"] == 0
+    assert resultado["rechazados"][0]["reintentable"] is False
+
+
+def test_un_conteo_no_puede_anularse_a_si_mismo(con, escenario):
+    """La única fila que lo satisfaría es la que se está rechazando."""
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1", anula_uuid="u-1")],
+    )
+
+    assert resultado["registrados"] == 0
+    # Si saliera reintentable, el celular lo reenviaría para siempre.
+    assert resultado["rechazados"][0]["reintentable"] is False
+
+
+def test_un_codigo_desconocido_no_es_reintentable(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1", codigo="0000000000000")],
+    )
+
+    assert resultado["rechazados"][0]["reintentable"] is False
+
+
+def test_no_se_puede_anular_el_conteo_de_otro_articulo(con, escenario):
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1"))
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-2", codigo="7792222222222", anula_uuid="u-1")],
+    )
+
+    assert resultado["registrados"] == 0
+    assert len(resultado["rechazados"]) == 1
+
+
+def test_el_mismo_uuid_dos_veces_en_un_lote_se_registra_una_sola(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), evento("u-1")],
+    )
+
+    assert resultado["registrados"] == 1
+    assert resultado["duplicados"] == 1
+
+
+@pytest.mark.parametrize("cantidad", [24.5, "24000", True])
+def test_una_cantidad_que_no_es_entera_no_frena_el_lote(con, escenario, cantidad):
+    """El CHECK del esquema la rechazaría abortando todo el lote."""
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), evento("u-2", cantidad=cantidad), evento("u-3")],
+    )
+
+    assert resultado["registrados"] == 2
+    assert [r["uuid"] for r in resultado["rechazados"]] == ["u-2"]
+
+
+def test_no_se_puede_anular_un_conteo_de_otra_sesion(con, escenario):
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1"))
+    sesiones.cerrar(con, escenario["sesion_id"])
+
+    otra = sesiones.crear(con, "Otro cliente")
+    importacion.importar(
+        con, otra, "sku,detalle,ean\n10453,Tornillo hex,7791111111111\n".encode("utf-8"),
+        {"sku": "sku", "descripcion": "detalle", "codigo_barras": "ean"},
+    )
+
+    resultado = conteos.registrar_lote(
+        con, otra, escenario["juan"]["id"],
+        [evento("u-9", anula_uuid="u-1")],
+    )
+
+    assert resultado["registrados"] == 0
+    assert len(resultado["rechazados"]) == 1
+    # El uuid es único en toda la base: reintentarlo nunca va a funcionar.
+    assert resultado["rechazados"][0]["reintentable"] is False
+
+
 def test_guarda_ubicacion_real_y_observaciones(con, escenario):
     conteos.registrar(
         con, escenario["sesion_id"], escenario["juan"]["id"],
@@ -1666,6 +2698,8 @@ otra fila que anula la anterior. Eso vuelve la sincronización idempotente
 —reenviar es inofensivo— y deja el conteo auditable de punta a punta.
 """
 
+import sqlite3
+
 from app import reloj
 from app.repos import sesiones
 
@@ -1673,6 +2707,31 @@ CAMPOS_PUBLICOS = (
     "a.id, a.id_orden, a.tipo, a.material, a.sku, a.descripcion, "
     "a.grupo, a.ubicacion, a.unidad"
 )
+
+# Los eventos llegan del JSON del celular, así que puede venir cualquier cosa
+# en cualquier campo. Se validan los tipos completos y no solo la presencia:
+# un valor no escalar (una lista, un objeto) explota recién al ligarlo a la
+# consulta, como sqlite3.ProgrammingError, que no es ValueError y volaría el
+# lote entero.
+TEXTOS_REQUERIDOS = ("uuid", "codigo", "timestamp_dispositivo")
+TEXTOS_OPCIONALES = ("anula_uuid", "ubicacion_real", "observaciones")
+
+# El mayor entero que SQLite guarda. Los de JSON no tienen tope.
+MAXIMO_ENTERO = 2 ** 63 - 1
+
+
+class EventoInvalido(ValueError):
+    """Un evento que no se pudo registrar.
+
+    `reintentable` distingue el que podría funcionar más tarde —una anulación
+    que llegó antes que el conteo que anula, porque los celulares sincronizan
+    en cualquier orden— del que nunca va a funcionar. Sin esa distinción el
+    celular no sabe si conservar el evento o descartarlo.
+    """
+
+    def __init__(self, motivo, reintentable=False):
+        super().__init__(motivo)
+        self.reintentable = reintentable
 
 
 def buscar_por_codigo(con, sesion_id, codigo):
@@ -1687,6 +2746,7 @@ def buscar_por_codigo(con, sesion_id, codigo):
         FROM codigo_barras cb
         JOIN articulo a ON a.id = cb.articulo_id
         WHERE cb.codigo = ? AND a.sesion_id = ? AND a.fusionado_en IS NULL
+        ORDER BY a.id
         LIMIT 1
         """,
         (codigo, sesion_id),
@@ -1706,16 +2766,86 @@ def registrar(con, sesion_id, operario_id, evento):
     Reenviar un uuid ya recibido no es un error: es lo que hace el celular
     cuando no le llegó la confirmación.
     """
+    # Se verifica el tipo antes que nada: sobre algo que no es un diccionario,
+    # `.get` lanzaría AttributeError, que registrar_lote no atrapa, y el lote
+    # volaría igual. Además así el motivo del rechazo queda en castellano y no
+    # con el texto en inglés de la excepción.
+    if not isinstance(evento, dict):
+        raise EventoInvalido("El evento no tiene el formato esperado")
+
+    # Todo se valida antes de tocar la base. Una clave ausente sería KeyError
+    # y un valor no escalar sería sqlite3.ProgrammingError al ligarlo a la
+    # consulta: los dos volarían el lote entero y, como el celular reintenta
+    # el mismo payload, la cola quedaría trabada para siempre.
+    for campo in TEXTOS_REQUERIDOS:
+        valor = evento.get(campo)
+        if not isinstance(valor, str) or not valor.strip():
+            raise EventoInvalido(f"«{campo}» tiene que ser un texto con contenido")
+
+    for campo in TEXTOS_OPCIONALES:
+        valor = evento.get(campo)
+        if valor is not None and not isinstance(valor, str):
+            raise EventoInvalido(f"«{campo}» tiene que ser un texto")
+
     if _ya_registrado(con, evento["uuid"]):
         return "duplicado"
 
-    anula = evento.get("anula_uuid")
-    if anula and not _ya_registrado(con, anula):
-        raise ValueError(f"El conteo que se intenta anular no existe: {anula}")
+    cantidad = evento.get("cantidad")
+    if not isinstance(cantidad, int) or isinstance(cantidad, bool):
+        # La columna tiene CHECK typeof = integer, así que un decimal caería
+        # como IntegrityError y frenaría el lote entero.
+        raise EventoInvalido("La cantidad tiene que venir en milésimas, como entero")
+    if cantidad < 0:
+        # Ningún escaneo produce una cantidad negativa; las correcciones van
+        # por anulación.
+        raise EventoInvalido("La cantidad no puede ser negativa")
+    if cantidad > MAXIMO_ENTERO:
+        # Los enteros de JSON no tienen límite, pero los de SQLite sí: uno
+        # más grande explota como OverflowError al ligarlo, que no es
+        # ValueError ni sqlite3.Error, y volaría el lote entero.
+        raise EventoInvalido("La cantidad es demasiado grande")
 
     articulo = buscar_por_codigo(con, sesion_id, evento["codigo"])
     if articulo is None:
-        raise ValueError(f"Código desconocido: {evento['codigo']}")
+        raise EventoInvalido(f"Código desconocido: {evento['codigo']}")
+
+    # Un anula_uuid vacío es «sin anulación», no una anulación rota: si se
+    # dejara pasar, lo rechazaría la clave foránea y el motivo que llegaría al
+    # celular sería el texto en inglés de SQLite.
+    anula = evento.get("anula_uuid") or None
+    if anula == evento["uuid"]:
+        # Nunca va a poder cumplirse: la única fila que lo satisfaría es la
+        # que se está rechazando. Marcarlo reintentable lo dejaría dando
+        # vueltas para siempre.
+        raise EventoInvalido("Un conteo no puede anularse a sí mismo")
+    if anula:
+        original = con.execute(
+            "SELECT sesion_id, articulo_id, anula_uuid FROM conteo WHERE uuid = ?",
+            (anula,),
+        ).fetchone()
+
+        if original is None:
+            # Puede ser que el conteo original todavía no haya llegado: los
+            # celulares sincronizan en cualquier orden, así que conviene
+            # reintentarlo más tarde en vez de descartarlo.
+            raise EventoInvalido(
+                f"Todavía no llegó el conteo que se intenta anular: {anula}",
+                reintentable=True,
+            )
+        if original["sesion_id"] != sesion_id:
+            # El uuid es único en toda la base, así que un conteo de otro
+            # inventario nunca va a pasar a ser de este: reintentar no sirve.
+            raise EventoInvalido(
+                f"El conteo que se intenta anular es de otro inventario: {anula}"
+            )
+        if original["articulo_id"] != articulo["id"]:
+            raise EventoInvalido("La anulación no corresponde a ese artículo")
+        if original["anula_uuid"] is not None:
+            # Anular una anulación dejaría al conteo original excluido por una
+            # fila que ya no vale, y el artículo volvería a figurar sin contar:
+            # se perderían unidades que alguien sí contó. Para deshacer una
+            # anulación se carga el conteo de nuevo.
+            raise EventoInvalido("Una anulación no se puede anular")
 
     pasada = sesiones.pasada_abierta(con, sesion_id)
 
@@ -1729,7 +2859,7 @@ def registrar(con, sesion_id, operario_id, evento):
         """,
         (
             evento["uuid"], sesion_id, pasada["id"], articulo["id"],
-            evento["cantidad"], operario_id,
+            cantidad, operario_id,
             evento.get("ubicacion_real"), evento.get("observaciones"),
             evento["timestamp_dispositivo"], reloj.ahora(), anula,
         ),
@@ -1747,8 +2877,24 @@ def registrar_lote(con, sesion_id, operario_id, eventos):
     for evento in eventos:
         try:
             resultado = registrar(con, sesion_id, operario_id, evento)
-        except ValueError as error:
-            rechazados.append({"uuid": evento.get("uuid"), "motivo": str(error)})
+        except (ValueError, KeyError, TypeError, ArithmeticError, sqlite3.Error) as error:
+            # La tupla es amplia a propósito: un evento con una forma
+            # inesperada tiene que rechazarse solo, nunca frenar a los demás.
+            # Perder un lote entero le cuesta al operario media jornada.
+            reintentable = getattr(error, "reintentable", False)
+
+            if isinstance(error, sqlite3.OperationalError):
+                # «database is locked» y parientes son transitorios: pasan
+                # cuando dos operarios sincronizan a la vez, que es para lo
+                # que está el busy_timeout. Decirle al celular que no
+                # reintente sería descartar un conteo que sí se hizo.
+                reintentable = True
+
+            rechazados.append({
+                "uuid": evento.get("uuid") if isinstance(evento, dict) else None,
+                "motivo": str(error),
+                "reintentable": reintentable,
+            })
             continue
 
         if resultado == "registrado":
@@ -1784,7 +2930,7 @@ def de_operario(con, sesion_id, operario_id, limite=50):
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_conteos.py -v`
-Expected: PASS, 11 tests
+Expected: PASS, todos en verde
 
 - [ ] **Step 5: Commit**
 
@@ -1817,6 +2963,7 @@ dispositivo, sin stock ni costo, por el conteo a ciegas."
 - Produces:
   - `tablero.SIN_CONTAR`, `tablero.CONSOLIDADO`, `tablero.A_RECONTAR` — constantes de estado
   - `tablero.estado_de(dif: int, stock: int, pct: float, min_abs: int, hubo_conteo: bool) -> str`
+  - `tablero.parece_error_de_carga(contado: int, stock: int) -> str | None` — devuelve el patrón detectado (`"dígito de más"`, `"dígito faltante"`, `"dígitos permutados"`, `"dígito repetido"`) o `None`
   - `tablero.filas(con, sesion_id, filtros: dict | None = None) -> list[dict]`
   - `tablero.resumen(con, sesion_id) -> dict`
 
@@ -1875,6 +3022,39 @@ def test_sin_conteo_es_sin_contar():
     assert tablero.estado_de(0, 100000, 2.0, 1000, hubo_conteo=False) == tablero.SIN_CONTAR
 
 
+@pytest.mark.parametrize("contado, stock, esperado", [
+    (240000, 24000, "dígito de más"),      # 240 en vez de 24
+    (2000,   24000, "dígito faltante"),    # 2 en vez de 24
+    (2400000, 24000, "dígito de más"),     # 2400 en vez de 24
+    (12000,  120000, "dígito faltante"),   # 12 en vez de 120
+    (42000,  24000, "dígitos permutados"), # 42 en vez de 24
+    (55000,  5000,  "dígito repetido"),    # 55 en vez de 5
+    (23000,  24000, None),                 # diferencia común, no tiene forma de tipeo
+    (0,      24000, None),                 # faltante total: es un hallazgo, no un error
+    (24000,  24000, None),                 # sin diferencia
+    (0,      0,     None),                 # ambos en cero: nada que comparar
+])
+def test_parece_error_de_carga(contado, stock, esperado):
+    assert tablero.parece_error_de_carga(contado, stock) == esperado
+
+
+def test_marca_error_de_carga_solo_a_los_que_hay_que_recontar(con, escenario):
+    contar(con, escenario, "C", 100000, "u-1")  # el sistema dice 10, se cargaron 100
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "C")
+
+    assert fila["estado"] == tablero.A_RECONTAR
+    assert fila["posible_error_carga"] == "dígito de más"
+
+
+def test_los_consolidados_no_se_marcan(con, escenario):
+    contar(con, escenario, "A", 100000, "u-1")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["posible_error_carga"] is None
+
+
 def test_filas_traen_todos_los_articulos(con, escenario):
     filas = tablero.filas(con, escenario["sesion_id"])
 
@@ -1904,8 +3084,10 @@ def test_conteos_del_mismo_sku_se_suman(con, escenario):
 
 def test_conteo_anulado_no_suma(con, escenario):
     contar(con, escenario, "A", 60000, "u-1")
+    # La fila que anula lleva cantidad propia a propósito: con cero, un error
+    # que sumara la anulación en vez de descartarla pasaría inadvertido.
     conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
-        "uuid": "u-2", "codigo": "A", "cantidad": 0,
+        "uuid": "u-2", "codigo": "A", "cantidad": 7000,
         "timestamp_dispositivo": "2026-08-10T10:05:00Z", "anula_uuid": "u-1",
     })
     contar(con, escenario, "A", 100000, "u-3")
@@ -1913,6 +3095,90 @@ def test_conteo_anulado_no_suma(con, escenario):
     fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
 
     assert fila["ultimo_conteo"] == 100000
+
+
+def abrir_conteo_2(con, sesion_id):
+    """Cierra la pasada abierta y abre la siguiente.
+
+    Los conteos sucesivos se implementan en un plan posterior, pero el cálculo
+    del valor vigente ya tiene que estar bien: si no, el defecto aparece recién
+    cuando alguien manda a recontar, y para entonces el número está mal en la
+    reunión con el cliente.
+    """
+    con.execute(
+        "UPDATE pasada SET estado = 'cerrada', fecha_cierre = ? "
+        "WHERE sesion_id = ? AND estado = 'abierta'",
+        ("2026-08-10T12:00:00Z", sesion_id),
+    )
+    con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion_id, "2026-08-10T12:00:00Z"),
+    )
+    con.commit()
+
+
+def test_el_conteo_nuevo_reemplaza_al_anterior_no_se_suma(con, escenario):
+    """48 en el Conteo 1 y 50 en el Conteo 2 dan 50, no 98."""
+    contar(con, escenario, "A", 48000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 50000, "u-2")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["ultimo_conteo"] == 50000
+
+
+def test_dentro_de_una_pasada_los_conteos_siguen_sumando(con, escenario):
+    contar(con, escenario, "A", 30000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 20000, "u-2")
+    contar(con, escenario, "A", 30000, "u-3")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["ultimo_conteo"] == 50000
+
+
+def test_un_articulo_fuera_del_reconteo_conserva_su_valor(con, escenario):
+    contar(con, escenario, "B", 45000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 100000, "u-2")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "B")
+
+    assert fila["ultimo_conteo"] == 45000
+
+
+def test_anular_el_reconteo_devuelve_el_valor_de_la_pasada_anterior(con, escenario):
+    """No puede caer a SIN CONTAR: el conteo de la pasada 1 sigue siendo válido."""
+    contar(con, escenario, "A", 48000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 50000, "u-2")
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-3", "codigo": "A", "cantidad": 0,
+        "timestamp_dispositivo": "2026-08-10T13:00:00Z", "anula_uuid": "u-2",
+    })
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["ultimo_conteo"] == 48000
+    assert fila["estado"] == tablero.A_RECONTAR
+
+
+def test_la_ubicacion_real_es_la_ultima_correccion(con, escenario):
+    """Concatenarlas todas dejaba la celda ilegible y mostraba las anuladas."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-1", "codigo": "A", "cantidad": 40000,
+        "timestamp_dispositivo": "2026-08-10T10:00:00Z", "ubicacion_real": "P-9",
+    })
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-2", "codigo": "A", "cantidad": 60000,
+        "timestamp_dispositivo": "2026-08-10T11:00:00Z", "ubicacion_real": "P-7",
+    })
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["ubicacion_real"] == "P-7"
 
 
 def test_diferencia_fuera_de_tolerancia(con, escenario):
@@ -1958,6 +3224,56 @@ def test_resumen_cuenta_avance(con, escenario):
     assert resumen["avance_pct"] == pytest.approx(66.7, abs=0.1)
 
 
+@pytest.fixture
+def escenario_con_costo(con):
+    """Un maestro con costo, para lo que el escenario común no cubre."""
+    sesion_id = sesiones.crear(con, "Cliente con costos")
+    contenido = (
+        "sku,detalle,stock,costo\n"
+        "A,Tornillo,100,25\n"
+        "B,Tuerca,50,10\n"
+    ).encode("utf-8")
+    importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+        "stock_sistema": "stock", "costo_unitario": "costo",
+    })
+    juan = operarios.crear(con, "Juan")
+    return {"sesion_id": sesion_id, "juan": juan}
+
+
+def test_valoriza_la_diferencia(con, escenario_con_costo):
+    """Milésimas por centavos: el resultado queda en centavos."""
+    contar(con, escenario_con_costo, "A", 98000, "u-1")  # faltan 2 a $25
+
+    fila = next(
+        f for f in tablero.filas(con, escenario_con_costo["sesion_id"])
+        if f["sku"] == "A"
+    )
+
+    assert fila["dif"] == -2000
+    assert fila["dif_valorizada"] == -5000  # -$50,00 en centavos
+
+
+def test_el_resumen_separa_desvio_neto_y_absoluto(con, escenario_con_costo):
+    """El neto puede dar cerca de cero con el depósito hecho un desastre."""
+    contar(con, escenario_con_costo, "A", 98000, "u-1")   # -2 x $25 = -$50
+    contar(con, escenario_con_costo, "B", 55000, "u-2")   # +5 x $10 = +$50
+
+    resumen = tablero.resumen(con, escenario_con_costo["sesion_id"])
+
+    assert resumen["desvio_neto"] == 0
+    assert resumen["desvio_absoluto"] == 10000  # $100,00
+
+
+def test_sin_costo_no_hay_valorizacion(con, escenario):
+    contar(con, escenario, "C", 5000, "u-1")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "C")
+
+    assert fila["dif"] == -5000
+    assert fila["dif_valorizada"] is None
+
+
 def test_resumen_de_sesion_vacia_no_divide_por_cero(con):
     sesion_id = sesiones.crear(con, "Sin maestro")
 
@@ -1998,37 +3314,115 @@ def estado_de(dif, stock, pct, min_abs, hubo_conteo):
     return CONSOLIDADO if abs(dif) <= limite else A_RECONTAR
 
 
-def _consulta_base():
-    """Artículos con su total contado, sin las filas anuladas.
+def parece_error_de_carga(contado, stock):
+    """Detecta diferencias con forma de error de tipeo.
 
-    Una anulación es una fila que apunta a otra por anula_uuid. Se excluyen
-    las dos: la anulación (que no suma) y la anulada.
+    Es una marca para revisar primero, no una corrección: la cantidad puede
+    estar bien y la diferencia ser real. Pero da una lista corta de
+    candidatos antes de mandar medio depósito a recontar.
+
+    En la app no se puede avisar de esto sin romper el conteo a ciegas —
+    habría que conocer el stock del sistema—, así que vive solo acá.
+    """
+    if contado is None or contado == stock or stock == 0 or contado == 0:
+        return None
+
+    dc = str(abs(contado))
+    ds = str(abs(stock))
+
+    # Las cantidades vienen en milésimas: los ceros de la escala no son
+    # dígitos que alguien haya tecleado. Se compara el núcleo, que es lo que
+    # se marcó en la pantalla.
+    nucleo_c = dc.rstrip("0")
+    nucleo_s = ds.rstrip("0")
+
+    # 240 por 24: el número quedó multiplicado por una potencia de diez
+    # porque se tecleó un cero de más. Y 12 por 120, que es el mismo desvío
+    # para el otro lado: acá también importa la dirección, porque lo que el
+    # tablero informa es qué buscar cuando se va a recontar.
+    if nucleo_c == nucleo_s and len(dc) != len(ds):
+        return "dígito de más" if len(dc) > len(ds) else "dígito faltante"
+
+    # 5 tecleado dos veces queda 55: lo cargado es todo el mismo dígito y es
+    # más largo que el del sistema.
+    if (
+        len(set(nucleo_c)) == 1
+        and nucleo_c[0] == nucleo_s[0]
+        and len(nucleo_c) > len(nucleo_s)
+    ):
+        return "dígito repetido"
+
+    # 42 por 24: los mismos dígitos en otro orden.
+    if len(nucleo_c) == len(nucleo_s) and sorted(nucleo_c) == sorted(nucleo_s):
+        return "dígitos permutados"
+
+    # 2 por 24: se soltó la tecla antes de tiempo y falta el último dígito.
+    # Se distingue de «dígito de más» a propósito: el tablero es donde alguien
+    # decide qué ir a recontar, y decirle que sobra un dígito cuando falta lo
+    # manda a mirar para el lado equivocado.
+    corto, largo = sorted((nucleo_c, nucleo_s), key=len)
+    if len(largo) - len(corto) == 1 and largo.startswith(corto):
+        return "dígito de más" if nucleo_c == largo else "dígito faltante"
+
+    return None
+
+
+def _consulta_base():
+    """Artículos con el valor vigente de su última pasada contada.
+
+    Dos reglas viven en esta consulta.
+
+    Las anulaciones se descartan de a pares: una anulación es una fila que
+    apunta a otra por anula_uuid, y se excluyen las dos, la que anula —que no
+    suma— y la anulada.
+
+    Y el total es el de la pasada de número más alto en la que el artículo
+    fue contado, no la suma de todas. Si en el Conteo 1 se registraron 48 y
+    en el Conteo 2 se cuentan 50, el valor vigente es 50: sumar daría 98, que
+    no significa nada. Un artículo que no entró en la última pasada conserva
+    el valor de la última en la que sí se contó.
     """
     return """
+        WITH vigentes AS (
+            -- El rowid se arrastra con nombre propio: una CTE no tiene rowid
+            -- implícito y «SELECT c.*» no lo incluye, así que sin esto el
+            -- desempate por orden de llegada no tiene con qué resolverse.
+            SELECT c.*, c.rowid AS orden_llegada, p.numero AS pasada_numero
+            FROM conteo c
+            JOIN pasada p ON p.id = c.pasada_id
+            WHERE c.anula_uuid IS NULL
+              AND c.uuid NOT IN (
+                  SELECT anula_uuid FROM conteo WHERE anula_uuid IS NOT NULL
+              )
+        ),
+        ultima_pasada AS (
+            SELECT articulo_id, MAX(pasada_numero) AS numero
+            FROM vigentes
+            GROUP BY articulo_id
+        )
         SELECT
             a.id, a.id_orden, a.tipo, a.material, a.sku, a.descripcion,
             a.grupo, a.ubicacion, a.unidad, a.stock_sistema, a.costo_unitario,
             a.origen,
             (
-                SELECT GROUP_CONCAT(c2.ubicacion_real)
-                FROM conteo c2
-                WHERE c2.articulo_id = a.id AND c2.ubicacion_real IS NOT NULL
+                SELECT v2.ubicacion_real
+                FROM vigentes v2
+                WHERE v2.articulo_id = a.id AND v2.ubicacion_real IS NOT NULL
+                ORDER BY v2.timestamp_servidor DESC, v2.orden_llegada DESC
+                LIMIT 1
             ) AS ubicacion_real,
             (
-                SELECT GROUP_CONCAT(c3.observaciones, ' | ')
-                FROM conteo c3
-                WHERE c3.articulo_id = a.id AND c3.observaciones IS NOT NULL
+                SELECT GROUP_CONCAT(v3.observaciones, ' | ')
+                FROM vigentes v3
+                WHERE v3.articulo_id = a.id AND v3.observaciones IS NOT NULL
             ) AS observaciones,
-            SUM(c.cantidad) AS total,
-            COUNT(c.uuid) AS cantidad_conteos,
-            MAX(c.timestamp_servidor) AS fecha
+            SUM(v.cantidad) AS total,
+            COUNT(v.uuid) AS cantidad_conteos,
+            MAX(v.timestamp_servidor) AS fecha
         FROM articulo a
-        LEFT JOIN conteo c
-            ON c.articulo_id = a.id
-            AND c.anula_uuid IS NULL
-            AND c.uuid NOT IN (
-                SELECT anula_uuid FROM conteo WHERE anula_uuid IS NOT NULL
-            )
+        LEFT JOIN ultima_pasada u ON u.articulo_id = a.id
+        LEFT JOIN vigentes v
+            ON v.articulo_id = a.id AND v.pasada_numero = u.numero
         WHERE a.sesion_id = ? AND a.fusionado_en IS NULL
         GROUP BY a.id
         ORDER BY a.id_orden
@@ -2047,6 +3441,18 @@ def _armar_fila(fila, sesion):
         # centavos al dividir por mil.
         dif_valorizada = dif * costo // 1000
 
+    estado = estado_de(
+        dif or 0, fila["stock_sistema"],
+        sesion["tolerancia_pct"], sesion["tolerancia_min_abs"],
+        hubo_conteo,
+    )
+
+    # Solo tiene sentido revisar el tipeo de lo que quedó fuera de tolerancia.
+    posible_error = (
+        parece_error_de_carga(total, fila["stock_sistema"])
+        if estado == A_RECONTAR else None
+    )
+
     return {
         "id": fila["id"],
         "id_orden": fila["id_orden"],
@@ -2063,11 +3469,8 @@ def _armar_fila(fila, sesion):
         "ultimo_conteo": total,
         "dif": dif,
         "dif_valorizada": dif_valorizada,
-        "estado": estado_de(
-            dif or 0, fila["stock_sistema"],
-            sesion["tolerancia_pct"], sesion["tolerancia_min_abs"],
-            hubo_conteo,
-        ),
+        "estado": estado,
+        "posible_error_carga": posible_error,
         "fecha": fila["fecha"],
         "observaciones": fila["observaciones"],
         "origen": fila["origen"],
@@ -2079,6 +3482,9 @@ def _pasa_filtros(fila, filtros):
         esperado = filtros.get(campo)
         if esperado and fila[campo] != esperado:
             return False
+
+    if filtros.get("solo_errores_carga") and not fila["posible_error_carga"]:
+        return False
 
     texto = (filtros.get("texto") or "").strip().lower()
     if texto:
@@ -2121,6 +3527,7 @@ def resumen(con, sesion_id):
         "consolidados": sum(1 for f in todas if f["estado"] == CONSOLIDADO),
         "a_recontar": sum(1 for f in todas if f["estado"] == A_RECONTAR),
         "altas_rapidas": sum(1 for f in todas if f["origen"] == "alta_rapida"),
+        "posibles_errores_carga": sum(1 for f in todas if f["posible_error_carga"]),
         "avance_pct": round(contados * 100 / total, 1) if total else 0,
         "desvio_neto": desvio_neto,
         "desvio_absoluto": desvio_absoluto,
@@ -2186,7 +3593,7 @@ def escenario(con):
     contenido = (
         "sku,detalle,grupo,ubic,um,stock,costo\n"
         "A,Tornillo,Buloneria,P-1,UN,100,25\n"
-        "B,Cable,Electricidad,P-2,MT,50,\n"
+        "B,Cañería de bronce,Electricidad,P-2,MT,50,\n"
     ).encode("utf-8")
     importacion.importar(con, sesion_id, contenido, {
         "sku": "sku", "descripcion": "detalle", "grupo": "grupo",
@@ -2270,6 +3677,76 @@ def test_detalle_tiene_una_fila_por_escaneo(con, escenario):
     assert filas[0]["pasada"] == "Conteo 1"
     assert filas[0]["ubicacion_real"] == "P-9"
     assert filas[0]["observaciones"] == "Estaba en otro estante"
+
+
+def test_detalle_tiene_las_columnas_del_spec(con, escenario):
+    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+
+    assert list(filas[0].keys()) == [
+        "fecha", "fecha_sincronizacion", "pasada", "operario", "sku",
+        "descripcion", "unidad", "cantidad", "ubicacion", "ubicacion_real",
+        "observaciones", "anulado",
+    ]
+
+
+def test_la_fecha_del_detalle_es_la_del_conteo_no_la_de_la_sincronizacion(
+    con, escenario
+):
+    """Los celulares sincronizan en lote: una mañana entera compartiría instante."""
+    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+
+    assert filas[0]["fecha"] == "2026-08-10T10:00:00Z"
+    assert filas[0]["fecha_sincronizacion"] != filas[0]["fecha"]
+
+
+def test_el_detalle_marca_las_dos_filas_de_una_anulacion(con, escenario):
+    """La que anula y la anulada: si falta una, el total no cierra al leerlo."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-2", "codigo": "B", "cantidad": 50000,
+        "timestamp_dispositivo": "2026-08-10T10:10:00Z",
+    })
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-3", "codigo": "B", "cantidad": 0,
+        "timestamp_dispositivo": "2026-08-10T10:20:00Z", "anula_uuid": "u-2",
+    })
+
+    marcas = {
+        f["observaciones"] or f["cantidad"]: f["anulado"]
+        for f in leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+    }
+
+    assert marcas["50"] == "SI"   # la anulada
+    assert marcas["0"] == "SI"    # la que anula
+    assert marcas["Estaba en otro estante"] == ""  # un escaneo vivo
+
+
+def test_el_detalle_respeta_los_mismos_filtros_que_el_resumen(con, escenario):
+    """Dos archivos que describen poblaciones distintas se leen mal juntos."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-2", "codigo": "B", "cantidad": 50000,
+        "timestamp_dispositivo": "2026-08-10T10:10:00Z",
+    })
+
+    filas = leer_csv(
+        exportacion.detalle(con, escenario["sesion_id"], {"grupo": "Electricidad"})
+    )
+
+    assert [f["sku"] for f in filas] == ["B"]
+
+
+def test_el_resumen_filtrado_devuelve_lo_que_corresponde(con, escenario):
+    filas = leer_csv(exportacion.resumen_por_sku(
+        con, escenario["sesion_id"], {"grupo": "Buloneria"}
+    ))
+
+    assert [f["sku"] for f in filas] == ["A"]
+
+
+def test_los_acentos_sobreviven(con, escenario):
+    """El BOM lo pone quien sirve el archivo, pero el texto tiene que llegar."""
+    texto = exportacion.resumen_por_sku(con, escenario["sesion_id"])
+
+    assert "Cañería" in texto
 ```
 
 - [ ] **Step 2: Correr el test y verificar que falla**
@@ -2285,6 +3762,11 @@ Expected: FAIL con `ModuleNotFoundError: No module named 'app.servicios.exportac
 Se usa punto y coma como separador y coma decimal, que es lo que espera
 Excel en configuración regional argentina. Con coma como separador, Excel
 parte las cantidades decimales en dos columnas.
+
+Falta la tercera pata del mismo requisito y no se resuelve acá: **quien
+sirva estos archivos tiene que codificarlos como `utf-8-sig`**, con marca
+de orden de bytes. Sin ella, el Excel de un Windows en español lee el
+archivo como cp1252 y las descripciones con acentos llegan ilegibles.
 """
 
 import csv
@@ -2302,8 +3784,8 @@ COLUMNAS_RESUMEN = [
 ]
 
 COLUMNAS_DETALLE = [
-    "fecha", "pasada", "operario", "sku", "descripcion", "unidad",
-    "cantidad", "ubicacion", "ubicacion_real", "observaciones", "anulado",
+    "fecha", "fecha_sincronizacion", "pasada", "operario", "sku", "descripcion",
+    "unidad", "cantidad", "ubicacion", "ubicacion_real", "observaciones", "anulado",
 ]
 
 
@@ -2312,11 +3794,7 @@ def _milesimas(valor):
 
 
 def _centavos(valor):
-    if valor is None:
-        return ""
-    signo = "-" if valor < 0 else ""
-    entero, resto = divmod(abs(valor), 100)
-    return f"{signo}{entero},{resto:02d}"
+    return cantidades.a_texto_importe(valor)
 
 
 def _escribir(columnas, filas):
@@ -2355,7 +3833,15 @@ def resumen_por_sku(con, sesion_id, filtros=None):
     return _escribir(COLUMNAS_RESUMEN, filas)
 
 
-def detalle(con, sesion_id):
+def detalle(con, sesion_id, filtros=None):
+    """El detalle escaneo por escaneo.
+
+    Acepta los mismos filtros que el resumen: si no, exportar un resumen de
+    un grupo junto a un detalle del depósito entero deja dos archivos que
+    dicen cosas distintas sin que ninguno aclare cuál es cuál.
+    """
+    articulos = {fila["id"] for fila in tablero.filas(con, sesion_id, filtros)}
+
     anulados = {
         fila["anula_uuid"]
         for fila in con.execute(
@@ -2366,7 +3852,8 @@ def detalle(con, sesion_id):
     crudas = con.execute(
         """
         SELECT c.uuid, c.cantidad, c.ubicacion_real, c.observaciones,
-               c.timestamp_servidor, c.anula_uuid,
+               c.timestamp_dispositivo, c.timestamp_servidor, c.anula_uuid,
+               a.id AS articulo_id,
                a.sku, a.descripcion, a.unidad, a.ubicacion,
                o.nombre AS operario, p.numero AS pasada_numero
         FROM conteo c
@@ -2381,9 +3868,16 @@ def detalle(con, sesion_id):
 
     filas = []
     for fila in crudas:
+        if fila["articulo_id"] not in articulos:
+            continue
+
         es_anulacion = fila["anula_uuid"] is not None
         filas.append({
-            "fecha": fila["timestamp_servidor"],
+            # La fecha del conteo es la del dispositivo, no la del servidor:
+            # los celulares sincronizan tarde y en lote, así que una mañana
+            # entera de trabajo comparte el mismo instante de sincronización.
+            "fecha": fila["timestamp_dispositivo"],
+            "fecha_sincronizacion": fila["timestamp_servidor"],
             "pasada": sesiones.etiqueta_pasada(fila["pasada_numero"]),
             "operario": fila["operario"],
             "sku": fila["sku"],
@@ -2401,7 +3895,7 @@ def detalle(con, sesion_id):
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_exportacion.py -v`
-Expected: PASS, 7 tests
+Expected: PASS, todos en verde
 
 - [ ] **Step 5: Correr toda la suite**
 
@@ -2730,11 +4224,13 @@ def ver_tablero(
     request: Request,
     tipo: str = "", material: str = "", grupo: str = "",
     ubicacion: str = "", estado: str = "", texto: str = "",
+    solo_errores_carga: bool = False,
 ):
     con = _con(request)
     filtros = {
         "tipo": tipo, "material": material, "grupo": grupo,
         "ubicacion": ubicacion, "estado": estado, "texto": texto,
+        "solo_errores_carga": solo_errores_carga,
     }
     return {
         "filas": tablero.filas(con, sesion_id, filtros),
@@ -3043,6 +4539,10 @@ Expected: FAIL — la carpeta `panel/` no existe
         </select>
         <select id="filtro-grupo"><option value="">Todos los grupos</option></select>
         <select id="filtro-ubicacion"><option value="">Todas las ubicaciones</option></select>
+        <label class="casilla">
+          <input id="filtro-errores-carga" type="checkbox">
+          Solo posibles errores de carga
+        </label>
         <button id="limpiar-filtros" class="secundario">Limpiar filtros</button>
         <a id="exportar-resumen" class="boton secundario">Exportar resumen</a>
         <a id="exportar-detalle" class="boton secundario">Exportar detalle</a>
@@ -3258,6 +4758,28 @@ thead th {
   font-weight: 600;
 }
 
+.marca {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--borde);
+  font-size: 0.78rem;
+  color: var(--tenue);
+}
+
+.casilla {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--borde);
+  border-radius: 5px;
+  padding: 0.4rem 0.7rem;
+  background: var(--panel);
+}
+
+.casilla input { padding: 0; }
+
 .estado-consolidado { background: var(--verde-fondo); color: var(--verde); }
 .estado-a-recontar { background: var(--rojo-fondo); color: var(--rojo); }
 .estado-sin-contar { background: var(--gris-fondo); color: var(--tenue); }
@@ -3287,7 +4809,9 @@ thead th {
 // inservible.
 const estado = {
   sesion: null,
-  filtros: { texto: "", estado: "", grupo: "", ubicacion: "" },
+  filtros: {
+    texto: "", estado: "", grupo: "", ubicacion: "", solo_errores_carga: false,
+  },
 };
 
 const ESTADOS = {
@@ -3325,6 +4849,7 @@ function dibujarMetricas(resumen) {
     ["Contados", `${resumen.contados} / ${resumen.articulos}`],
     ["Consolidados", resumen.consolidados],
     ["A recontar", resumen.a_recontar],
+    ["Posible error de carga", resumen.posibles_errores_carga],
     ["Altas rápidas", resumen.altas_rapidas],
   ];
   $("#metricas").innerHTML = tarjetas
@@ -3350,7 +4875,12 @@ function dibujarFilas(filas) {
       <td class="num">${milesimasATexto(fila.stock_sistema)}</td>
       <td class="num">${milesimasATexto(fila.ultimo_conteo)}</td>
       <td class="num">${milesimasATexto(fila.dif)}</td>
-      <td><span class="estado ${ESTADOS[fila.estado]}">${fila.estado}</span></td>
+      <td>
+        <span class="estado ${ESTADOS[fila.estado]}">${fila.estado}</span>
+        ${fila.posible_error_carga
+          ? `<span class="marca" title="Revisar antes de recontar: ${fila.posible_error_carga}">⌨ ${fila.posible_error_carga}</span>`
+          : ""}
+      </td>
       <td>${(fila.fecha || "").replace("T", " ").replace("Z", "")}</td>
       <td>${fila.observaciones || ""}</td>
     </tr>`).join("");
@@ -3527,9 +5057,17 @@ function conectarEventos() {
     });
   });
 
+  $("#filtro-errores-carga").addEventListener("change", (evento) => {
+    estado.filtros.solo_errores_carga = evento.target.checked;
+    refrescarTablero();
+  });
+
   $("#limpiar-filtros").addEventListener("click", () => {
-    estado.filtros = { texto: "", estado: "", grupo: "", ubicacion: "" };
+    estado.filtros = {
+      texto: "", estado: "", grupo: "", ubicacion: "", solo_errores_carga: false,
+    };
     $("#filtro-texto").value = "";
+    $("#filtro-errores-carga").checked = false;
     ["estado", "grupo", "ubicacion"].forEach((campo) => {
       $(`#filtro-${campo}`).value = "";
     });

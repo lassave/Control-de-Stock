@@ -261,6 +261,20 @@ Cuando un SKU recibe conteos de **dos operarios distintos en la misma pasada**, 
 
 Desde la marca se llega al historial del artículo, que muestra quién cargó qué y cuándo.
 
+### Alerta de cantidades sospechosas
+
+El error más común del conteo es de tipeo: cargar 240 en lugar de 24, o 55 en lugar de 5. En la app no se puede avisar sin romper el conteo a ciegas —para detectarlo habría que conocer el stock del sistema—, pero en el panel sí.
+
+Sobre los artículos que quedaron **A RECONTAR**, el tablero marca los que tienen forma de error de carga:
+
+| Patrón | Ejemplo |
+|---|---|
+| **Dígito de más o de menos** | El sistema dice 24 y se contaron 240 o 2 |
+| **Dígitos permutados** | El sistema dice 24 y se contaron 42 |
+| **Dígito repetido** | El sistema dice 5 y se contaron 55 |
+
+Es una marca para revisar, no una corrección: la cantidad puede ser correcta y la diferencia real. Pero da una lista corta de candidatos a mirar primero, antes de mandar medio depósito a recontar. Desde la marca se llega al historial del artículo, que muestra quién cargó ese número y cuándo.
+
 ### Trazabilidad
 
 De cualquier número del tablero se tiene que poder llegar a su origen. Se apoya en dos mecanismos distintos, según qué se esté rastreando.
@@ -551,7 +565,7 @@ unidad | stock_sistema | ultimo_conteo | dif | dif_valorizada | estado | fecha |
 
 - Métricas superiores: % contado, SKUs contados / totales, unidades contadas, SKUs consolidados, SKUs a recontar, **desvío neto y desvío absoluto valorizados**, altas rápidas pendientes, correcciones de ubicación, SKUs contados por más de un operario.
 - Orden por `dif_valorizada` para atacar primero las diferencias que más pesan en dinero.
-- Filtros combinables por `tipo`, `material`, `grupo`, `ubicacion`, estado (`SIN CONTAR` / `CONSOLIDADO` / `A RECONTAR`), marcas (ubicación corregida / ubicación nueva / alta rápida / fuera de asignación / contado por más de uno) y operario.
+- Filtros combinables por `tipo`, `material`, `grupo`, `ubicacion`, estado (`SIN CONTAR` / `CONSOLIDADO` / `A RECONTAR`), marcas (ubicación corregida / ubicación nueva / alta rápida / fuera de asignación / contado por más de uno / posible error de carga) y operario.
 - Avance por grupo y por ubicación, para saber dónde falta gente.
 - Detección de artículos contados en una ubicación distinta a la esperada.
 - Ordenamiento por cualquier columna.
@@ -626,3 +640,4 @@ Deliberadamente excluido:
 - **Integración automática con el ERP.** El intercambio es por CSV en ambos sentidos.
 - **Multi-cliente simultáneo en el servidor.** Una sesión abierta a la vez.
 - **Botón "+1"** para carga rápida de unidades. Descartado: las cantidades se ingresan siempre por teclado numérico.
+- **Fecha de corte y registro de movimientos durante el conteo.** Evaluado y descartado: el intercambio con el ERP se coordina por fuera del sistema.

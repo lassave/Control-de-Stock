@@ -1,0 +1,196 @@
+:root {
+  --fondo: #f5f6f8;
+  --panel: #ffffff;
+  --borde: #d7dbe0;
+  --texto: #1c2126;
+  --tenue: #5c6873;
+  --acento: #1f5fa9;
+  --verde: #1b7a3d;
+  --verde-fondo: #e6f4ea;
+  --rojo: #b3261e;
+  --rojo-fondo: #fce8e6;
+  --gris-fondo: #eceff1;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--fondo);
+  color: var(--texto);
+  font-size: 15px;
+}
+
+.barra {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--borde);
+}
+
+.barra h1 { font-size: 1.1rem; margin: 0; }
+.sesion-actual { color: var(--tenue); }
+
+.pestanas {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0 1.25rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--borde);
+}
+
+.pestanas button {
+  border: 0;
+  background: none;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: var(--tenue);
+  border-bottom: 3px solid transparent;
+}
+
+.pestanas button.activa { color: var(--acento); border-bottom-color: var(--acento); }
+
+main { padding: 1.25rem; }
+.vista.oculta, .oculta { display: none; }
+
+.metricas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.metrica {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+
+.metrica .valor { font-size: 1.6rem; font-weight: 600; }
+.metrica .rotulo { color: var(--tenue); font-size: 0.85rem; }
+
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  align-items: center;
+}
+
+input, select, button, .boton {
+  font: inherit;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--borde);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--texto);
+}
+
+button, .boton {
+  cursor: pointer;
+  background: var(--acento);
+  color: #fff;
+  border-color: var(--acento);
+  text-decoration: none;
+}
+
+button.secundario, .boton.secundario {
+  background: var(--panel);
+  color: var(--texto);
+  border-color: var(--borde);
+}
+
+.tabla-envoltorio {
+  overflow: auto;
+  max-height: calc(100vh - 320px);
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+}
+
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+
+th, td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--borde);
+  text-align: left;
+  white-space: nowrap;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+  box-shadow: inset 0 -1px 0 var(--borde);
+}
+
+.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.estado {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.marca {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--borde);
+  font-size: 0.78rem;
+  color: var(--tenue);
+}
+
+.casilla {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--borde);
+  border-radius: 5px;
+  padding: 0.4rem 0.7rem;
+  background: var(--panel);
+}
+
+.casilla input { padding: 0; }
+
+.estado-consolidado { background: var(--verde-fondo); color: var(--verde); }
+.estado-a-recontar { background: var(--rojo-fondo); color: var(--rojo); }
+.estado-sin-contar { background: var(--gris-fondo); color: var(--tenue); }
+
+.lista { list-style: none; padding: 0; }
+
+.lista li {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.4rem;
+}
+
+.token {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  max-width: 46rem;
+}
+
+.token input {
+  flex: 1;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--tenue);
+}
+
+.ayuda { color: var(--tenue); max-width: 60ch; }
+.mapeo { margin-top: 1rem; }
+.error { color: var(--rojo); }
+.aviso { color: var(--tenue); }

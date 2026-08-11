@@ -29,6 +29,9 @@ local.properties
 build/
 .cxx/
 
+# Espacio de trabajo de los agentes (bitácora, briefs, reportes)
+.superpowers/
+
 # Editores y sistema
 .idea/
 .vscode/
