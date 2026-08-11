@@ -108,6 +108,9 @@ def test_anular_un_uuid_inexistente_se_rechaza(con, escenario):
     {"uuid": None},
     {"cantidad": None},
     {"cantidad": -1000},
+    # Los enteros de JSON no tienen tope; los de SQLite sí.
+    {"cantidad": 2 ** 63},
+    {"anula_uuid": "u-2"},  # se anula a sí mismo: nunca podría cumplirse
     # Valores no escalares: explotarían recién al ligarlos a la consulta,
     # como sqlite3.ProgrammingError, que no es ValueError.
     {"uuid": ["u-2"]},
