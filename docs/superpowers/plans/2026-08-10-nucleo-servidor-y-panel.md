@@ -3292,9 +3292,11 @@ def parece_error_de_carga(contado, stock):
     nucleo_s = ds.rstrip("0")
 
     # 240 por 24: el número quedó multiplicado por una potencia de diez
-    # porque se tecleó un cero de más.
+    # porque se tecleó un cero de más. Y 12 por 120, que es el mismo desvío
+    # para el otro lado: acá también importa la dirección, porque lo que el
+    # tablero informa es qué buscar cuando se va a recontar.
     if nucleo_c == nucleo_s and len(dc) != len(ds):
-        return "dígito de más"
+        return "dígito de más" if len(dc) > len(ds) else "dígito faltante"
 
     # 5 tecleado dos veces queda 55: lo cargado es todo el mismo dígito y es
     # más largo que el del sistema.
@@ -3337,7 +3339,10 @@ def _consulta_base():
     """
     return """
         WITH vigentes AS (
-            SELECT c.*, p.numero AS pasada_numero
+            -- El rowid se arrastra con nombre propio: una CTE no tiene rowid
+            -- implícito y «SELECT c.*» no lo incluye, así que sin esto el
+            -- desempate por orden de llegada no tiene con qué resolverse.
+            SELECT c.*, c.rowid AS orden_llegada, p.numero AS pasada_numero
             FROM conteo c
             JOIN pasada p ON p.id = c.pasada_id
             WHERE c.anula_uuid IS NULL
@@ -3358,7 +3363,7 @@ def _consulta_base():
                 SELECT v2.ubicacion_real
                 FROM vigentes v2
                 WHERE v2.articulo_id = a.id AND v2.ubicacion_real IS NOT NULL
-                ORDER BY v2.timestamp_servidor DESC, v2.rowid DESC
+                ORDER BY v2.timestamp_servidor DESC, v2.orden_llegada DESC
                 LIMIT 1
             ) AS ubicacion_real,
             (
