@@ -98,6 +98,37 @@ def test_anular_un_uuid_inexistente_se_rechaza(con, escenario):
     assert len(resultado["rechazados"]) == 1
 
 
+@pytest.mark.parametrize("cantidad", [24.5, "24000", None, True])
+def test_una_cantidad_que_no_es_entera_no_frena_el_lote(con, escenario, cantidad):
+    """El CHECK del esquema la rechazaría abortando todo el lote."""
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), evento("u-2", cantidad=cantidad), evento("u-3")],
+    )
+
+    assert resultado["registrados"] == 2
+    assert [r["uuid"] for r in resultado["rechazados"]] == ["u-2"]
+
+
+def test_no_se_puede_anular_un_conteo_de_otra_sesion(con, escenario):
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1"))
+    sesiones.cerrar(con, escenario["sesion_id"])
+
+    otra = sesiones.crear(con, "Otro cliente")
+    importacion.importar(
+        con, otra, "sku,detalle,ean\n10453,Tornillo hex,7791111111111\n".encode("utf-8"),
+        {"sku": "sku", "descripcion": "detalle", "codigo_barras": "ean"},
+    )
+
+    resultado = conteos.registrar_lote(
+        con, otra, escenario["juan"]["id"],
+        [evento("u-9", anula_uuid="u-1")],
+    )
+
+    assert resultado["registrados"] == 0
+    assert len(resultado["rechazados"]) == 1
+
+
 def test_guarda_ubicacion_real_y_observaciones(con, escenario):
     conteos.registrar(
         con, escenario["sesion_id"], escenario["juan"]["id"],

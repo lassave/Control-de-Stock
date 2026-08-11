@@ -48,9 +48,22 @@ def registrar(con, sesion_id, operario_id, evento):
     if _ya_registrado(con, evento["uuid"]):
         return "duplicado"
 
+    cantidad = evento["cantidad"]
+    if not isinstance(cantidad, int) or isinstance(cantidad, bool):
+        # La columna tiene CHECK typeof = integer, así que un decimal caería
+        # como IntegrityError y frenaría el lote entero. Se ataja acá, como
+        # ValueError, para que solo se rechace este evento.
+        raise ValueError("La cantidad tiene que venir en milésimas, como entero")
+
     anula = evento.get("anula_uuid")
-    if anula and not _ya_registrado(con, anula):
-        raise ValueError(f"El conteo que se intenta anular no existe: {anula}")
+    if anula:
+        original = con.execute(
+            "SELECT sesion_id FROM conteo WHERE uuid = ?", (anula,)
+        ).fetchone()
+        # Se valida la sesión y no solo la existencia: un conteo de otro
+        # inventario no se puede anular desde este.
+        if original is None or original["sesion_id"] != sesion_id:
+            raise ValueError(f"El conteo que se intenta anular no existe: {anula}")
 
     articulo = buscar_por_codigo(con, sesion_id, evento["codigo"])
     if articulo is None:
@@ -68,7 +81,7 @@ def registrar(con, sesion_id, operario_id, evento):
         """,
         (
             evento["uuid"], sesion_id, pasada["id"], articulo["id"],
-            evento["cantidad"], operario_id,
+            cantidad, operario_id,
             evento.get("ubicacion_real"), evento.get("observaciones"),
             evento["timestamp_dispositivo"], reloj.ahora(), anula,
         ),
