@@ -98,7 +98,80 @@ def test_anular_un_uuid_inexistente_se_rechaza(con, escenario):
     assert len(resultado["rechazados"]) == 1
 
 
-@pytest.mark.parametrize("cantidad", [24.5, "24000", None, True])
+@pytest.mark.parametrize("roto", [
+    {"codigo": None},
+    {"timestamp_dispositivo": None},
+    {"timestamp_dispositivo": "   "},
+    {"uuid": None},
+    {"cantidad": None},
+    {"cantidad": -1000},
+])
+def test_un_evento_mal_formado_no_frena_el_lote(con, escenario, roto):
+    """Sin esto el celular reintenta el mismo payload y la cola queda trabada."""
+    malo = evento("u-2")
+    malo.update(roto)
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), malo, evento("u-3")],
+    )
+
+    assert resultado["registrados"] == 2
+    assert len(resultado["rechazados"]) == 1
+
+
+def test_un_evento_que_ni_siquiera_es_un_diccionario_no_frena_el_lote(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), "esto no es un evento", evento("u-3")],
+    )
+
+    assert resultado["registrados"] == 2
+    assert len(resultado["rechazados"]) == 1
+
+
+def test_una_anulacion_que_llega_antes_es_reintentable(con, escenario):
+    """Los celulares sincronizan en cualquier orden: el evento no se descarta."""
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-9", anula_uuid="todavia-no-llego")],
+    )
+
+    assert resultado["rechazados"][0]["reintentable"] is True
+
+
+def test_un_codigo_desconocido_no_es_reintentable(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1", codigo="0000000000000")],
+    )
+
+    assert resultado["rechazados"][0]["reintentable"] is False
+
+
+def test_no_se_puede_anular_el_conteo_de_otro_articulo(con, escenario):
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1"))
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-2", codigo="7792222222222", anula_uuid="u-1")],
+    )
+
+    assert resultado["registrados"] == 0
+    assert len(resultado["rechazados"]) == 1
+
+
+def test_el_mismo_uuid_dos_veces_en_un_lote_se_registra_una_sola(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), evento("u-1")],
+    )
+
+    assert resultado["registrados"] == 1
+    assert resultado["duplicados"] == 1
+
+
+@pytest.mark.parametrize("cantidad", [24.5, "24000", True])
 def test_una_cantidad_que_no_es_entera_no_frena_el_lote(con, escenario, cantidad):
     """El CHECK del esquema la rechazaría abortando todo el lote."""
     resultado = conteos.registrar_lote(
