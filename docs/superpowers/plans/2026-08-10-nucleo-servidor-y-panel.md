@@ -2458,7 +2458,6 @@ def test_anular_un_uuid_inexistente_se_rechaza(con, escenario):
     {"cantidad": -1000},
     # Los enteros de JSON no tienen tope; los de SQLite sí.
     {"cantidad": 2 ** 63},
-    {"anula_uuid": "u-2"},  # se anula a sí mismo: nunca podría cumplirse
     # Valores no escalares: explotarían recién al ligarlos a la consulta,
     # como sqlite3.ProgrammingError, que no es ValueError.
     {"uuid": ["u-2"]},
@@ -2527,6 +2526,18 @@ def test_una_anulacion_vacia_se_trata_como_ausente(con, escenario):
 
     assert resultado["registrados"] == 1
     assert resultado["rechazados"] == []
+
+
+def test_un_conteo_no_puede_anularse_a_si_mismo(con, escenario):
+    """La única fila que lo satisfaría es la que se está rechazando."""
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1", anula_uuid="u-1")],
+    )
+
+    assert resultado["registrados"] == 0
+    # Si saliera reintentable, el celular lo reenviaría para siempre.
+    assert resultado["rechazados"][0]["reintentable"] is False
 
 
 def test_un_codigo_desconocido_no_es_reintentable(con, escenario):
