@@ -109,8 +109,10 @@ def test_conteos_del_mismo_sku_se_suman(con, escenario):
 
 def test_conteo_anulado_no_suma(con, escenario):
     contar(con, escenario, "A", 60000, "u-1")
+    # La fila que anula lleva cantidad propia a propósito: con cero, un error
+    # que sumara la anulación en vez de descartarla pasaría inadvertido.
     conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
-        "uuid": "u-2", "codigo": "A", "cantidad": 0,
+        "uuid": "u-2", "codigo": "A", "cantidad": 7000,
         "timestamp_dispositivo": "2026-08-10T10:05:00Z", "anula_uuid": "u-1",
     })
     contar(con, escenario, "A", 100000, "u-3")
@@ -161,6 +163,56 @@ def test_resumen_cuenta_avance(con, escenario):
     assert resumen["consolidados"] == 1
     assert resumen["a_recontar"] == 1
     assert resumen["avance_pct"] == pytest.approx(66.7, abs=0.1)
+
+
+@pytest.fixture
+def escenario_con_costo(con):
+    """Un maestro con costo, para lo que el escenario común no cubre."""
+    sesion_id = sesiones.crear(con, "Cliente con costos")
+    contenido = (
+        "sku,detalle,stock,costo\n"
+        "A,Tornillo,100,25\n"
+        "B,Tuerca,50,10\n"
+    ).encode("utf-8")
+    importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+        "stock_sistema": "stock", "costo_unitario": "costo",
+    })
+    juan = operarios.crear(con, "Juan")
+    return {"sesion_id": sesion_id, "juan": juan}
+
+
+def test_valoriza_la_diferencia(con, escenario_con_costo):
+    """Milésimas por centavos: el resultado queda en centavos."""
+    contar(con, escenario_con_costo, "A", 98000, "u-1")  # faltan 2 a $25
+
+    fila = next(
+        f for f in tablero.filas(con, escenario_con_costo["sesion_id"])
+        if f["sku"] == "A"
+    )
+
+    assert fila["dif"] == -2000
+    assert fila["dif_valorizada"] == -5000  # -$50,00 en centavos
+
+
+def test_el_resumen_separa_desvio_neto_y_absoluto(con, escenario_con_costo):
+    """El neto puede dar cerca de cero con el depósito hecho un desastre."""
+    contar(con, escenario_con_costo, "A", 98000, "u-1")   # -2 x $25 = -$50
+    contar(con, escenario_con_costo, "B", 55000, "u-2")   # +5 x $10 = +$50
+
+    resumen = tablero.resumen(con, escenario_con_costo["sesion_id"])
+
+    assert resumen["desvio_neto"] == 0
+    assert resumen["desvio_absoluto"] == 10000  # $100,00
+
+
+def test_sin_costo_no_hay_valorizacion(con, escenario):
+    contar(con, escenario, "C", 5000, "u-1")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "C")
+
+    assert fila["dif"] == -5000
+    assert fila["dif_valorizada"] is None
 
 
 def test_resumen_de_sesion_vacia_no_divide_por_cero(con):
