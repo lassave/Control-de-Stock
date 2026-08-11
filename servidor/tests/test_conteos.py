@@ -180,6 +180,24 @@ def test_una_anulacion_vacia_se_trata_como_ausente(con, escenario):
     assert resultado["rechazados"] == []
 
 
+def test_una_anulacion_no_se_puede_anular(con, escenario):
+    """Si no, el conteo original queda excluido por una fila que ya no vale y
+    el artículo vuelve a figurar sin contar: desaparecen unidades reales."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1"))
+    conteos.registrar(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        evento("u-2", cantidad=0, anula_uuid="u-1"),
+    )
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-3", cantidad=0, anula_uuid="u-2")],
+    )
+
+    assert resultado["registrados"] == 0
+    assert resultado["rechazados"][0]["reintentable"] is False
+
+
 def test_un_conteo_no_puede_anularse_a_si_mismo(con, escenario):
     """La única fila que lo satisfaría es la que se está rechazando."""
     resultado = conteos.registrar_lote(

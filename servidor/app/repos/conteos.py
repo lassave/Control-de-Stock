@@ -127,7 +127,8 @@ def registrar(con, sesion_id, operario_id, evento):
         raise EventoInvalido("Un conteo no puede anularse a sí mismo")
     if anula:
         original = con.execute(
-            "SELECT sesion_id, articulo_id FROM conteo WHERE uuid = ?", (anula,)
+            "SELECT sesion_id, articulo_id, anula_uuid FROM conteo WHERE uuid = ?",
+            (anula,),
         ).fetchone()
 
         if original is None:
@@ -146,6 +147,12 @@ def registrar(con, sesion_id, operario_id, evento):
             )
         if original["articulo_id"] != articulo["id"]:
             raise EventoInvalido("La anulación no corresponde a ese artículo")
+        if original["anula_uuid"] is not None:
+            # Anular una anulación dejaría al conteo original excluido por una
+            # fila que ya no vale, y el artículo volvería a figurar sin contar:
+            # se perderían unidades que alguien sí contó. Para deshacer una
+            # anulación se carga el conteo de nuevo.
+            raise EventoInvalido("Una anulación no se puede anular")
 
     pasada = sesiones.pasada_abierta(con, sesion_id)
 
