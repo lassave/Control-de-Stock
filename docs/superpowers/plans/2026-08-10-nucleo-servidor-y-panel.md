@@ -3045,8 +3045,10 @@ def test_conteos_del_mismo_sku_se_suman(con, escenario):
 
 def test_conteo_anulado_no_suma(con, escenario):
     contar(con, escenario, "A", 60000, "u-1")
+    # La fila que anula lleva cantidad propia a propósito: con cero, un error
+    # que sumara la anulación en vez de descartarla pasaría inadvertido.
     conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
-        "uuid": "u-2", "codigo": "A", "cantidad": 0,
+        "uuid": "u-2", "codigo": "A", "cantidad": 7000,
         "timestamp_dispositivo": "2026-08-10T10:05:00Z", "anula_uuid": "u-1",
     })
     contar(con, escenario, "A", 100000, "u-3")
@@ -3097,6 +3099,56 @@ def test_resumen_cuenta_avance(con, escenario):
     assert resumen["consolidados"] == 1
     assert resumen["a_recontar"] == 1
     assert resumen["avance_pct"] == pytest.approx(66.7, abs=0.1)
+
+
+@pytest.fixture
+def escenario_con_costo(con):
+    """Un maestro con costo, para lo que el escenario común no cubre."""
+    sesion_id = sesiones.crear(con, "Cliente con costos")
+    contenido = (
+        "sku,detalle,stock,costo\n"
+        "A,Tornillo,100,25\n"
+        "B,Tuerca,50,10\n"
+    ).encode("utf-8")
+    importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle",
+        "stock_sistema": "stock", "costo_unitario": "costo",
+    })
+    juan = operarios.crear(con, "Juan")
+    return {"sesion_id": sesion_id, "juan": juan}
+
+
+def test_valoriza_la_diferencia(con, escenario_con_costo):
+    """Milésimas por centavos: el resultado queda en centavos."""
+    contar(con, escenario_con_costo, "A", 98000, "u-1")  # faltan 2 a $25
+
+    fila = next(
+        f for f in tablero.filas(con, escenario_con_costo["sesion_id"])
+        if f["sku"] == "A"
+    )
+
+    assert fila["dif"] == -2000
+    assert fila["dif_valorizada"] == -5000  # -$50,00 en centavos
+
+
+def test_el_resumen_separa_desvio_neto_y_absoluto(con, escenario_con_costo):
+    """El neto puede dar cerca de cero con el depósito hecho un desastre."""
+    contar(con, escenario_con_costo, "A", 98000, "u-1")   # -2 x $25 = -$50
+    contar(con, escenario_con_costo, "B", 55000, "u-2")   # +5 x $10 = +$50
+
+    resumen = tablero.resumen(con, escenario_con_costo["sesion_id"])
+
+    assert resumen["desvio_neto"] == 0
+    assert resumen["desvio_absoluto"] == 10000  # $100,00
+
+
+def test_sin_costo_no_hay_valorizacion(con, escenario):
+    contar(con, escenario, "C", 5000, "u-1")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "C")
+
+    assert fila["dif"] == -5000
+    assert fila["dif_valorizada"] is None
 
 
 def test_resumen_de_sesion_vacia_no_divide_por_cero(con):
@@ -3155,18 +3207,34 @@ def parece_error_de_carga(contado, stock):
     dc = str(abs(contado))
     ds = str(abs(stock))
 
-    # 240 por 24, o 2 por 24: el número quedó multiplicado o dividido por
-    # una potencia de diez porque se tecleó un dígito de más o de menos.
-    if dc.rstrip("0").lstrip("0") == ds.rstrip("0").lstrip("0") and len(dc) != len(ds):
+    # Las cantidades vienen en milésimas: los ceros de la escala no son
+    # dígitos que alguien haya tecleado. Se compara el núcleo, que es lo que
+    # se marcó en la pantalla.
+    nucleo_c = dc.rstrip("0")
+    nucleo_s = ds.rstrip("0")
+
+    # 240 por 24: el número quedó multiplicado por una potencia de diez
+    # porque se tecleó un cero de más.
+    if nucleo_c == nucleo_s and len(dc) != len(ds):
         return "dígito de más"
 
-    # 5 tecleado dos veces queda 55.
-    if len(set(dc)) == 1 and dc[0] == ds.lstrip("0")[:1] and len(dc) != len(ds):
+    # 5 tecleado dos veces queda 55: lo cargado es todo el mismo dígito y es
+    # más largo que el del sistema.
+    if (
+        len(set(nucleo_c)) == 1
+        and nucleo_c[0] == nucleo_s[0]
+        and len(nucleo_c) > len(nucleo_s)
+    ):
         return "dígito repetido"
 
     # 42 por 24: los mismos dígitos en otro orden.
-    if len(dc) == len(ds) and sorted(dc) == sorted(ds):
+    if len(nucleo_c) == len(nucleo_s) and sorted(nucleo_c) == sorted(nucleo_s):
         return "dígitos permutados"
+
+    # 2 por 24: se soltó la tecla antes de tiempo y falta el último dígito.
+    corto, largo = sorted((nucleo_c, nucleo_s), key=len)
+    if len(largo) - len(corto) == 1 and largo.startswith(corto):
+        return "dígito de más"
 
     return None
 
