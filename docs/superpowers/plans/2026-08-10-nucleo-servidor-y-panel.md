@@ -2456,6 +2456,9 @@ def test_anular_un_uuid_inexistente_se_rechaza(con, escenario):
     {"uuid": None},
     {"cantidad": None},
     {"cantidad": -1000},
+    # Los enteros de JSON no tienen tope; los de SQLite sí.
+    {"cantidad": 2 ** 63},
+    {"anula_uuid": "u-2"},  # se anula a sí mismo: nunca podría cumplirse
     # Valores no escalares: explotarían recién al ligarlos a la consulta,
     # como sqlite3.ProgrammingError, que no es ValueError.
     {"uuid": ["u-2"]},
@@ -2671,6 +2674,9 @@ CAMPOS_PUBLICOS = (
 TEXTOS_REQUERIDOS = ("uuid", "codigo", "timestamp_dispositivo")
 TEXTOS_OPCIONALES = ("anula_uuid", "ubicacion_real", "observaciones")
 
+# El mayor entero que SQLite guarda. Los de JSON no tienen tope.
+MAXIMO_ENTERO = 2 ** 63 - 1
+
 
 class EventoInvalido(ValueError):
     """Un evento que no se pudo registrar.
@@ -2751,6 +2757,11 @@ def registrar(con, sesion_id, operario_id, evento):
         # Ningún escaneo produce una cantidad negativa; las correcciones van
         # por anulación.
         raise EventoInvalido("La cantidad no puede ser negativa")
+    if cantidad > MAXIMO_ENTERO:
+        # Los enteros de JSON no tienen límite, pero los de SQLite sí: uno
+        # más grande explota como OverflowError al ligarlo, que no es
+        # ValueError ni sqlite3.Error, y volaría el lote entero.
+        raise EventoInvalido("La cantidad es demasiado grande")
 
     articulo = buscar_por_codigo(con, sesion_id, evento["codigo"])
     if articulo is None:
@@ -2760,6 +2771,11 @@ def registrar(con, sesion_id, operario_id, evento):
     # dejara pasar, lo rechazaría la clave foránea y el motivo que llegaría al
     # celular sería el texto en inglés de SQLite.
     anula = evento.get("anula_uuid") or None
+    if anula == evento["uuid"]:
+        # Nunca va a poder cumplirse: la única fila que lo satisfaría es la
+        # que se está rechazando. Marcarlo reintentable lo dejaría dando
+        # vueltas para siempre.
+        raise EventoInvalido("Un conteo no puede anularse a sí mismo")
     if anula:
         original = con.execute(
             "SELECT sesion_id, articulo_id FROM conteo WHERE uuid = ?", (anula,)
@@ -2812,7 +2828,7 @@ def registrar_lote(con, sesion_id, operario_id, eventos):
     for evento in eventos:
         try:
             resultado = registrar(con, sesion_id, operario_id, evento)
-        except (ValueError, KeyError, TypeError, sqlite3.Error) as error:
+        except (ValueError, KeyError, TypeError, ArithmeticError, sqlite3.Error) as error:
             # La tupla es amplia a propósito: un evento con una forma
             # inesperada tiene que rechazarse solo, nunca frenar a los demás.
             # Perder un lote entero le cuesta al operario media jornada.
