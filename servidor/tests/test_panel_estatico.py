@@ -93,6 +93,13 @@ def test_el_panel_muestra_el_token_de_cada_operario():
     assert "token_dispositivo" in contenido
 
 
+def test_el_panel_muestra_el_qr_de_vinculacion():
+    """Sin el QR hay que transcribir a mano 43 caracteres y la IP del lugar."""
+    contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "/qr" in contenido
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node no está instalado")
 def test_el_javascript_del_panel_parsea():
     """Un error de sintaxis deja el panel en blanco y ningún otro test lo ve.

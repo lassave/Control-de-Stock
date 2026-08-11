@@ -190,6 +190,22 @@ thead th {
   color: var(--tenue);
 }
 
+.operario {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.qr {
+  width: 148px;
+  height: 148px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: #fff;
+}
+
 .ayuda { color: var(--tenue); max-width: 60ch; }
 .mapeo { margin-top: 1rem; }
 .error { color: var(--rojo); }

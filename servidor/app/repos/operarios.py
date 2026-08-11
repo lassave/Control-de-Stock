@@ -58,10 +58,10 @@ def crear(con, nombre, pin=None):
             raise ValueError(f"Ya existe un operario llamado «{nombre}»") from error
         raise
 
-    return _obtener(con, operario_id)
+    return obtener(con, operario_id)
 
 
-def _obtener(con, operario_id):
+def obtener(con, operario_id):
     fila = con.execute(
         f"SELECT {CAMPOS} FROM operario WHERE id = ?", (operario_id,)
     ).fetchone()

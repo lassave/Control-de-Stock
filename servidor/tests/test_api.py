@@ -312,3 +312,26 @@ def test_cerrar_sesion_permite_abrir_otra(cliente, sesion):
     respuesta = cliente.post("/api/sesiones", json={"nombre": "Otra"})
 
     assert respuesta.status_code == 200
+
+
+def test_el_qr_del_operario_se_sirve_como_svg(cliente):
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.get(f"/api/operarios/{operario['id']}/qr")
+
+    assert respuesta.status_code == 200
+    assert "image/svg+xml" in respuesta.headers["content-type"]
+    assert "<svg" in respuesta.text
+
+
+def test_el_qr_no_apunta_a_loopback(cliente):
+    """El celular tiene que llegar por la red, no a sí mismo."""
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.get(f"/api/operarios/{operario['id']}/qr")
+
+    assert "127.0.0.1" not in respuesta.text
+
+
+def test_el_qr_de_un_operario_inexistente_devuelve_404(cliente):
+    assert cliente.get("/api/operarios/999/qr").status_code == 404

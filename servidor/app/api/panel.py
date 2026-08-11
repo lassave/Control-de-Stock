@@ -5,8 +5,9 @@ import json
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
+from app import red
 from app.repos import operarios, sesiones
-from app.servicios import exportacion, importacion, tablero
+from app.servicios import exportacion, importacion, tablero, vinculacion
 
 router = APIRouter(prefix="/api")
 
@@ -165,6 +166,25 @@ async def crear_operario(request: Request):
         return operarios.crear(_con(request), cuerpo["nombre"], cuerpo.get("pin"))
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.get("/operarios/{operario_id}/qr")
+def qr_de_operario(operario_id: int, request: Request):
+    """El QR con el que se vincula un celular: dirección del servidor y token.
+
+    La dirección sale de la IP de la red local y no del pedido: el panel se
+    abre en 127.0.0.1, y ese QR mandaría al celular a sí mismo.
+    """
+    operario = operarios.obtener(_con(request), operario_id)
+    if operario is None:
+        raise HTTPException(
+            status_code=404, detail=f"No existe el operario {operario_id}"
+        )
+
+    url = vinculacion.armar_url(red.ip_local(), request.url.port or 8000)
+    texto = vinculacion.contenido(url, operario["token_dispositivo"])
+
+    return Response(content=vinculacion.svg(texto), media_type="image/svg+xml")
 
 
 @router.get("/sesiones/{sesion_id}/exportar/{tipo_exportacion}")

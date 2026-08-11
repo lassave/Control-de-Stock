@@ -2,13 +2,14 @@ import ipaddress
 from pathlib import Path
 
 import iniciar
+from app import red
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 ARRANQUE = RAIZ / "Iniciar servidor.bat"
 
 
 def test_ip_local_es_una_ip_valida():
-    ip = iniciar.ip_local()
+    ip = red.ip_local()
 
     direccion = ipaddress.ip_address(ip)
     assert direccion.version == 4
@@ -16,18 +17,18 @@ def test_ip_local_es_una_ip_valida():
 
 def test_ip_local_no_es_loopback():
     """Si devolviera 127.0.0.1, los celulares no podrían llegar al servidor."""
-    ip = iniciar.ip_local()
+    ip = red.ip_local()
 
     assert not ipaddress.ip_address(ip).is_loopback
 
 
-def test_el_encabezado_muestra_las_dos_direcciones(capsys):
-    """La ventana negra es toda la interfaz que tiene quien levanta el servidor."""
+def test_el_arranque_y_la_api_muestran_la_misma_direccion(capsys):
+    """Dos implementaciones de la IP terminarían mostrando direcciones distintas."""
     iniciar.mostrar_encabezado()
 
     salida = capsys.readouterr().out
+    assert f"http://{red.ip_local()}:{iniciar.PUERTO}" in salida
     assert f"http://{iniciar.LOCAL}:{iniciar.PUERTO}" in salida
-    assert f"http://{iniciar.ip_local()}:{iniciar.PUERTO}" in salida
 
 
 def test_la_direccion_local_no_depende_de_resolver_un_nombre():
