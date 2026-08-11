@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from app.repos import conteos, operarios, sesiones
@@ -146,6 +148,34 @@ def test_una_anulacion_que_llega_antes_es_reintentable(con, escenario):
     )
 
     assert resultado["rechazados"][0]["reintentable"] is True
+
+
+def test_un_error_transitorio_de_la_base_es_reintentable(con, escenario, monkeypatch):
+    """«database is locked» pasa cuando dos operarios sincronizan a la vez.
+
+    Marcarlo como definitivo haría que el celular descarte un conteo que el
+    operario sí hizo: una unidad que desaparece sin que nadie se entere.
+    """
+    def falla(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(conteos, "registrar", falla)
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"], [evento("u-1")]
+    )
+
+    assert resultado["rechazados"][0]["reintentable"] is True
+
+
+def test_una_anulacion_vacia_se_trata_como_ausente(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1", anula_uuid="")],
+    )
+
+    assert resultado["registrados"] == 1
+    assert resultado["rechazados"] == []
 
 
 def test_un_codigo_desconocido_no_es_reintentable(con, escenario):

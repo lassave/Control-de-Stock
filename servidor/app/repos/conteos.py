@@ -108,7 +108,10 @@ def registrar(con, sesion_id, operario_id, evento):
     if articulo is None:
         raise EventoInvalido(f"Código desconocido: {evento['codigo']}")
 
-    anula = evento.get("anula_uuid")
+    # Un anula_uuid vacío es «sin anulación», no una anulación rota: si se
+    # dejara pasar, lo rechazaría la clave foránea y el motivo que llegaría al
+    # celular sería el texto en inglés de SQLite.
+    anula = evento.get("anula_uuid") or None
     if anula:
         original = con.execute(
             "SELECT sesion_id, articulo_id FROM conteo WHERE uuid = ?", (anula,)
@@ -165,10 +168,19 @@ def registrar_lote(con, sesion_id, operario_id, eventos):
             # La tupla es amplia a propósito: un evento con una forma
             # inesperada tiene que rechazarse solo, nunca frenar a los demás.
             # Perder un lote entero le cuesta al operario media jornada.
+            reintentable = getattr(error, "reintentable", False)
+
+            if isinstance(error, sqlite3.OperationalError):
+                # «database is locked» y parientes son transitorios: pasan
+                # cuando dos operarios sincronizan a la vez, que es para lo
+                # que está el busy_timeout. Decirle al celular que no
+                # reintente sería descartar un conteo que sí se hizo.
+                reintentable = True
+
             rechazados.append({
                 "uuid": evento.get("uuid") if isinstance(evento, dict) else None,
                 "motivo": str(error),
-                "reintentable": getattr(error, "reintentable", False),
+                "reintentable": reintentable,
             })
             continue
 
