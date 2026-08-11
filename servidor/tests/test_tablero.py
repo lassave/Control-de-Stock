@@ -50,8 +50,9 @@ def test_sin_conteo_es_sin_contar():
 
 @pytest.mark.parametrize("contado, stock, esperado", [
     (240000, 24000, "dígito de más"),      # 240 en vez de 24
-    (2000,   24000, "dígito de más"),      # 2 en vez de 24
+    (2000,   24000, "dígito faltante"),    # 2 en vez de 24
     (2400000, 24000, "dígito de más"),     # 2400 en vez de 24
+    (12000,  120000, "dígito faltante"),   # 12 en vez de 120
     (42000,  24000, "dígitos permutados"), # 42 en vez de 24
     (55000,  5000,  "dígito repetido"),    # 55 en vez de 5
     (23000,  24000, None),                 # diferencia común, no tiene forma de tipeo
@@ -120,6 +121,58 @@ def test_conteo_anulado_no_suma(con, escenario):
     fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
 
     assert fila["ultimo_conteo"] == 100000
+
+
+def abrir_conteo_2(con, sesion_id):
+    """Cierra la pasada abierta y abre la siguiente.
+
+    Los conteos sucesivos se implementan en un plan posterior, pero el cálculo
+    del valor vigente ya tiene que estar bien: si no, el defecto aparece recién
+    cuando alguien manda a recontar, y para entonces el número está mal en la
+    reunión con el cliente.
+    """
+    con.execute(
+        "UPDATE pasada SET estado = 'cerrada', fecha_cierre = ? "
+        "WHERE sesion_id = ? AND estado = 'abierta'",
+        ("2026-08-10T12:00:00Z", sesion_id),
+    )
+    con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion_id, "2026-08-10T12:00:00Z"),
+    )
+    con.commit()
+
+
+def test_el_conteo_nuevo_reemplaza_al_anterior_no_se_suma(con, escenario):
+    """48 en el Conteo 1 y 50 en el Conteo 2 dan 50, no 98."""
+    contar(con, escenario, "A", 48000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 50000, "u-2")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["ultimo_conteo"] == 50000
+
+
+def test_dentro_de_una_pasada_los_conteos_siguen_sumando(con, escenario):
+    contar(con, escenario, "A", 30000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 20000, "u-2")
+    contar(con, escenario, "A", 30000, "u-3")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["ultimo_conteo"] == 50000
+
+
+def test_un_articulo_fuera_del_reconteo_conserva_su_valor(con, escenario):
+    contar(con, escenario, "B", 45000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 100000, "u-2")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "B")
+
+    assert fila["ultimo_conteo"] == 45000
 
 
 def test_diferencia_fuera_de_tolerancia(con, escenario):
