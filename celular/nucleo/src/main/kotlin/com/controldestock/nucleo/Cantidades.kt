@@ -31,18 +31,28 @@ object Cantidades {
 
         // Redondeo y no truncamiento: truncar sesgaría todas las cantidades a
         // la baja de forma sistemática.
-        return valor.multiply(BigDecimal(MILESIMAS))
+        val milesimas = valor.multiply(BigDecimal(MILESIMAS))
             .setScale(0, RoundingMode.HALF_UP)
-            .toInt()
+
+        // Un valor que no entra en el entero se daría vuelta en silencio y
+        // saldría un negativo. Un número inventado es peor que un error:
+        // pasa por una cantidad real.
+        return try {
+            milesimas.intValueExact()
+        } catch (error: ArithmeticException) {
+            throw IllegalArgumentException("La cantidad es demasiado grande: «$texto»", error)
+        }
     }
 
     fun aTexto(milesimas: Int): String {
         val signo = if (milesimas < 0) "-" else ""
-        val absoluto = Math.abs(milesimas)
+        // En Long porque el negativo más chico no tiene positivo que le
+        // corresponda: `Math.abs` sobre un Int lo devolvería negativo.
+        val absoluto = Math.abs(milesimas.toLong())
         val entero = absoluto / MILESIMAS
         val resto = absoluto % MILESIMAS
 
-        if (resto == 0) return "$signo$entero"
+        if (resto == 0L) return "$signo$entero"
 
         val decimales = resto.toString().padStart(3, '0').trimEnd('0')
         return "$signo$entero,$decimales"

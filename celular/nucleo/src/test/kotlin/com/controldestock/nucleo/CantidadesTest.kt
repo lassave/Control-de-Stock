@@ -64,6 +64,30 @@ class CantidadesTest {
     }
 
     @Test
+    fun `rechaza cantidades que no entran en un entero`() {
+        // Sin el límite, «3000000» se da vuelta y devuelve un negativo. Un
+        // número inventado es peor que un error: pasa por una cantidad real.
+        val desbordan = listOf("2147483,648", "3000000", "-3000000", "9999999999")
+
+        for (texto in desbordan) {
+            try {
+                Cantidades.aMilesimas(texto)
+                throw AssertionError("«$texto» tendría que haber sido rechazado")
+            } catch (esperado: IllegalArgumentException) {
+                assertTrue(esperado.message!!.isNotEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun `convierte los extremos del rango sin darse vuelta`() {
+        assertEquals(2147483647, Cantidades.aMilesimas("2147483,647"))
+        assertEquals(-2147483648, Cantidades.aMilesimas("-2147483,648"))
+        assertEquals("2147483,647", Cantidades.aTexto(2147483647))
+        assertEquals("-2147483,648", Cantidades.aTexto(-2147483648))
+    }
+
+    @Test
     fun `convierte milesimas a texto`() {
         val casos = mapOf(
             24000 to "24",
