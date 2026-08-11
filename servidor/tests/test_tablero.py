@@ -175,6 +175,38 @@ def test_un_articulo_fuera_del_reconteo_conserva_su_valor(con, escenario):
     assert fila["ultimo_conteo"] == 45000
 
 
+def test_anular_el_reconteo_devuelve_el_valor_de_la_pasada_anterior(con, escenario):
+    """No puede caer a SIN CONTAR: el conteo de la pasada 1 sigue siendo válido."""
+    contar(con, escenario, "A", 48000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 50000, "u-2")
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-3", "codigo": "A", "cantidad": 0,
+        "timestamp_dispositivo": "2026-08-10T13:00:00Z", "anula_uuid": "u-2",
+    })
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["ultimo_conteo"] == 48000
+    assert fila["estado"] == tablero.A_RECONTAR
+
+
+def test_la_ubicacion_real_es_la_ultima_correccion(con, escenario):
+    """Concatenarlas todas dejaba la celda ilegible y mostraba las anuladas."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-1", "codigo": "A", "cantidad": 40000,
+        "timestamp_dispositivo": "2026-08-10T10:00:00Z", "ubicacion_real": "P-9",
+    })
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-2", "codigo": "A", "cantidad": 60000,
+        "timestamp_dispositivo": "2026-08-10T11:00:00Z", "ubicacion_real": "P-7",
+    })
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["ubicacion_real"] == "P-7"
+
+
 def test_diferencia_fuera_de_tolerancia(con, escenario):
     contar(con, escenario, "C", 5000, "u-1")  # sistema dice 10
 
