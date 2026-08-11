@@ -2446,6 +2446,37 @@ def test_anular_un_uuid_inexistente_se_rechaza(con, escenario):
     assert len(resultado["rechazados"]) == 1
 
 
+@pytest.mark.parametrize("cantidad", [24.5, "24000", None, True])
+def test_una_cantidad_que_no_es_entera_no_frena_el_lote(con, escenario, cantidad):
+    """El CHECK del esquema la rechazaría abortando todo el lote."""
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), evento("u-2", cantidad=cantidad), evento("u-3")],
+    )
+
+    assert resultado["registrados"] == 2
+    assert [r["uuid"] for r in resultado["rechazados"]] == ["u-2"]
+
+
+def test_no_se_puede_anular_un_conteo_de_otra_sesion(con, escenario):
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1"))
+    sesiones.cerrar(con, escenario["sesion_id"])
+
+    otra = sesiones.crear(con, "Otro cliente")
+    importacion.importar(
+        con, otra, "sku,detalle,ean\n10453,Tornillo hex,7791111111111\n".encode("utf-8"),
+        {"sku": "sku", "descripcion": "detalle", "codigo_barras": "ean"},
+    )
+
+    resultado = conteos.registrar_lote(
+        con, otra, escenario["juan"]["id"],
+        [evento("u-9", anula_uuid="u-1")],
+    )
+
+    assert resultado["registrados"] == 0
+    assert len(resultado["rechazados"]) == 1
+
+
 def test_guarda_ubicacion_real_y_observaciones(con, escenario):
     conteos.registrar(
         con, escenario["sesion_id"], escenario["juan"]["id"],
@@ -2552,9 +2583,22 @@ def registrar(con, sesion_id, operario_id, evento):
     if _ya_registrado(con, evento["uuid"]):
         return "duplicado"
 
+    cantidad = evento["cantidad"]
+    if not isinstance(cantidad, int) or isinstance(cantidad, bool):
+        # La columna tiene CHECK typeof = integer, así que un decimal caería
+        # como IntegrityError y frenaría el lote entero. Se ataja acá, como
+        # ValueError, para que solo se rechace este evento.
+        raise ValueError("La cantidad tiene que venir en milésimas, como entero")
+
     anula = evento.get("anula_uuid")
-    if anula and not _ya_registrado(con, anula):
-        raise ValueError(f"El conteo que se intenta anular no existe: {anula}")
+    if anula:
+        original = con.execute(
+            "SELECT sesion_id FROM conteo WHERE uuid = ?", (anula,)
+        ).fetchone()
+        # Se valida la sesión y no solo la existencia: un conteo de otro
+        # inventario no se puede anular desde este.
+        if original is None or original["sesion_id"] != sesion_id:
+            raise ValueError(f"El conteo que se intenta anular no existe: {anula}")
 
     articulo = buscar_por_codigo(con, sesion_id, evento["codigo"])
     if articulo is None:
@@ -2572,7 +2616,7 @@ def registrar(con, sesion_id, operario_id, evento):
         """,
         (
             evento["uuid"], sesion_id, pasada["id"], articulo["id"],
-            evento["cantidad"], operario_id,
+            cantidad, operario_id,
             evento.get("ubicacion_real"), evento.get("observaciones"),
             evento["timestamp_dispositivo"], reloj.ahora(), anula,
         ),
