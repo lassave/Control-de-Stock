@@ -7,7 +7,7 @@ dispositivo, ni siquiera oculto en la pantalla.
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from app.repos import conteos, operarios, sesiones
+from app.repos import articulos, conteos, operarios, sesiones
 
 router = APIRouter(prefix="/api/dispositivo")
 
@@ -39,7 +39,7 @@ def vincular(request: Request, x_token: str = Header(default="")):
 def descargar_maestro(request: Request, x_token: str = Header(default="")):
     con, _, sesion = _contexto(request, x_token)
 
-    articulos = con.execute(
+    filas_articulos = con.execute(
         """
         SELECT a.id, a.id_orden, a.tipo, a.material, a.sku, a.descripcion,
                a.grupo, a.ubicacion, a.unidad
@@ -64,10 +64,29 @@ def descargar_maestro(request: Request, x_token: str = Header(default="")):
 
     return {
         "sesion_id": sesion["id"],
-        "articulos": [dict(fila) for fila in articulos],
+        "articulos": [dict(fila) for fila in filas_articulos],
         "codigos": [dict(fila) for fila in codigos],
         "unidades": [dict(fila) for fila in unidades],
     }
+
+
+@router.post("/articulos")
+async def dar_de_alta(request: Request, x_token: str = Header(default="")):
+    """Alta rápida de un código que no está en el maestro.
+
+    Necesita red, a diferencia del conteo: el identificador lo asigna el
+    servidor. La app avisa cuando no hay señal en vez de guardar un alta a
+    ciegas que después podría chocar con otra igual.
+    """
+    con, operario, sesion = _contexto(request, x_token)
+    cuerpo = await request.json()
+
+    try:
+        return articulos.crear_alta_rapida(
+            con, sesion["id"], operario["id"], cuerpo
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @router.post("/conteos")

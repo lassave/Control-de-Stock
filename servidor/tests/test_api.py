@@ -335,3 +335,74 @@ def test_el_qr_no_apunta_a_loopback(cliente):
 
 def test_el_qr_de_un_operario_inexistente_devuelve_404(cliente):
     assert cliente.get("/api/operarios/999/qr").status_code == 404
+
+
+def alta_rapida(cliente, token, **datos):
+    cuerpo = {
+        "codigo": "999", "descripcion": "Caño de bronce",
+        "unidad": "UN", "ubicacion": "P-9",
+    }
+    cuerpo.update(datos)
+    return cliente.post(
+        "/api/dispositivo/articulos", headers={"X-Token": token}, json=cuerpo
+    )
+
+
+def test_alta_rapida_crea_el_articulo(cliente, sesion):
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = alta_rapida(cliente, operario["token_dispositivo"])
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["descripcion"] == "Caño de bronce"
+
+
+def test_lo_dado_de_alta_se_puede_contar_enseguida(cliente, sesion):
+    """Es el punto del alta rápida: destrabar el conteo, no anotar para después."""
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    encabezados = {"X-Token": operario["token_dispositivo"]}
+    alta_rapida(cliente, operario["token_dispositivo"], codigo="7790001001234")
+
+    respuesta = cliente.post("/api/dispositivo/conteos", headers=encabezados, json={
+        "conteos": [{"uuid": "u-9", "codigo": "7790001001234", "cantidad": 3000,
+                     "timestamp_dispositivo": "2026-08-11T10:00:00Z"}],
+    })
+
+    assert respuesta.json()["registrados"] == 1
+
+
+def test_el_alta_rapida_no_expone_stock_ni_costo(cliente, sesion):
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    cuerpo = alta_rapida(cliente, operario["token_dispositivo"]).json()
+
+    assert "stock_sistema" not in cuerpo
+    assert "costo_unitario" not in cuerpo
+
+
+def test_el_alta_rapida_sin_token_devuelve_401(cliente, sesion):
+    assert alta_rapida(cliente, "inventado").status_code == 401
+
+
+def test_el_alta_rapida_con_datos_invalidos_devuelve_400(cliente, sesion):
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = alta_rapida(cliente, operario["token_dispositivo"], descripcion="")
+
+    assert respuesta.status_code == 400
+    assert "descripción" in respuesta.json()["detail"]
+
+
+def test_el_alta_rapida_aparece_en_el_tablero(cliente, sesion):
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    alta_rapida(cliente, operario["token_dispositivo"])
+
+    filas = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"]
+
+    nuevo = next(f for f in filas if f["descripcion"] == "Caño de bronce")
+    assert nuevo["origen"] == "alta_rapida"
