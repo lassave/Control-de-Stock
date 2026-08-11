@@ -2670,6 +2670,13 @@ def registrar(con, sesion_id, operario_id, evento):
     Reenviar un uuid ya recibido no es un error: es lo que hace el celular
     cuando no le llegó la confirmación.
     """
+    # Se verifica el tipo antes que nada: sobre algo que no es un diccionario,
+    # `.get` lanzaría AttributeError, que registrar_lote no atrapa, y el lote
+    # volaría igual. Además así el motivo del rechazo queda en castellano y no
+    # con el texto en inglés de la excepción.
+    if not isinstance(evento, dict):
+        raise EventoInvalido("El evento no tiene el formato esperado")
+
     # Todo lo que falte se valida antes de tocar la base. Cualquier acceso
     # directo a una clave ausente sería un KeyError, que registrar_lote no
     # atrapa: volaría el lote entero y, como el celular reintenta el mismo
