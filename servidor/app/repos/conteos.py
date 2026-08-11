@@ -5,6 +5,8 @@ otra fila que anula la anterior. Eso vuelve la sincronización idempotente
 —reenviar es inofensivo— y deja el conteo auditable de punta a punta.
 """
 
+import sqlite3
+
 from app import reloj
 from app.repos import sesiones
 
@@ -13,7 +15,13 @@ CAMPOS_PUBLICOS = (
     "a.grupo, a.ubicacion, a.unidad"
 )
 
-CAMPOS_REQUERIDOS = ("uuid", "codigo", "cantidad", "timestamp_dispositivo")
+# Los eventos llegan del JSON del celular, así que puede venir cualquier cosa
+# en cualquier campo. Se validan los tipos completos y no solo la presencia:
+# un valor no escalar (una lista, un objeto) explota recién al ligarlo a la
+# consulta, como sqlite3.ProgrammingError, que no es ValueError y volaría el
+# lote entero.
+TEXTOS_REQUERIDOS = ("uuid", "codigo", "timestamp_dispositivo")
+TEXTOS_OPCIONALES = ("anula_uuid", "ubicacion_real", "observaciones")
 
 
 class EventoInvalido(ValueError):
@@ -62,28 +70,31 @@ def registrar(con, sesion_id, operario_id, evento):
     Reenviar un uuid ya recibido no es un error: es lo que hace el celular
     cuando no le llegó la confirmación.
     """
-    # Se chequea la forma antes que los campos: sobre algo que no es un
-    # diccionario, `.get` levanta AttributeError, que registrar_lote no
-    # atrapa, y el lote entero se caería por un solo elemento mal formado.
+    # Se verifica el tipo antes que nada: sobre algo que no es un diccionario,
+    # `.get` lanzaría AttributeError, que registrar_lote no atrapa, y el lote
+    # volaría igual. Además así el motivo del rechazo queda en castellano y no
+    # con el texto en inglés de la excepción.
     if not isinstance(evento, dict):
-        raise EventoInvalido("El evento no es un diccionario")
+        raise EventoInvalido("El evento no tiene el formato esperado")
 
-    # Todo lo que falte se valida antes de tocar la base. Cualquier acceso
-    # directo a una clave ausente sería un KeyError, que registrar_lote no
-    # atrapa: volaría el lote entero y, como el celular reintenta el mismo
-    # payload, la cola quedaría trabada para siempre.
-    for campo in CAMPOS_REQUERIDOS:
-        if evento.get(campo) is None:
-            raise EventoInvalido(f"Al evento le falta «{campo}»")
+    # Todo se valida antes de tocar la base. Una clave ausente sería KeyError
+    # y un valor no escalar sería sqlite3.ProgrammingError al ligarlo a la
+    # consulta: los dos volarían el lote entero y, como el celular reintenta
+    # el mismo payload, la cola quedaría trabada para siempre.
+    for campo in TEXTOS_REQUERIDOS:
+        valor = evento.get(campo)
+        if not isinstance(valor, str) or not valor.strip():
+            raise EventoInvalido(f"«{campo}» tiene que ser un texto con contenido")
 
-    if not isinstance(evento["timestamp_dispositivo"], str) or \
-            not evento["timestamp_dispositivo"].strip():
-        raise EventoInvalido("La fecha del dispositivo llegó vacía")
+    for campo in TEXTOS_OPCIONALES:
+        valor = evento.get(campo)
+        if valor is not None and not isinstance(valor, str):
+            raise EventoInvalido(f"«{campo}» tiene que ser un texto")
 
     if _ya_registrado(con, evento["uuid"]):
         return "duplicado"
 
-    cantidad = evento["cantidad"]
+    cantidad = evento.get("cantidad")
     if not isinstance(cantidad, int) or isinstance(cantidad, bool):
         # La columna tiene CHECK typeof = integer, así que un decimal caería
         # como IntegrityError y frenaría el lote entero.
@@ -102,14 +113,20 @@ def registrar(con, sesion_id, operario_id, evento):
         original = con.execute(
             "SELECT sesion_id, articulo_id FROM conteo WHERE uuid = ?", (anula,)
         ).fetchone()
-        # Se valida la sesión y no solo la existencia: un conteo de otro
-        # inventario no se puede anular desde este.
-        if original is None or original["sesion_id"] != sesion_id:
+
+        if original is None:
             # Puede ser que el conteo original todavía no haya llegado: los
-            # celulares sincronizan en cualquier orden.
+            # celulares sincronizan en cualquier orden, así que conviene
+            # reintentarlo más tarde en vez de descartarlo.
             raise EventoInvalido(
-                f"El conteo que se intenta anular no existe: {anula}",
+                f"Todavía no llegó el conteo que se intenta anular: {anula}",
                 reintentable=True,
+            )
+        if original["sesion_id"] != sesion_id:
+            # El uuid es único en toda la base, así que un conteo de otro
+            # inventario nunca va a pasar a ser de este: reintentar no sirve.
+            raise EventoInvalido(
+                f"El conteo que se intenta anular es de otro inventario: {anula}"
             )
         if original["articulo_id"] != articulo["id"]:
             raise EventoInvalido("La anulación no corresponde a ese artículo")
@@ -144,9 +161,10 @@ def registrar_lote(con, sesion_id, operario_id, eventos):
     for evento in eventos:
         try:
             resultado = registrar(con, sesion_id, operario_id, evento)
-        except (ValueError, KeyError, TypeError) as error:
-            # KeyError y TypeError como red de seguridad: un evento con una
-            # forma inesperada se rechaza solo, nunca frena a los demás.
+        except (ValueError, KeyError, TypeError, sqlite3.Error) as error:
+            # La tupla es amplia a propósito: un evento con una forma
+            # inesperada tiene que rechazarse solo, nunca frenar a los demás.
+            # Perder un lote entero le cuesta al operario media jornada.
             rechazados.append({
                 "uuid": evento.get("uuid") if isinstance(evento, dict) else None,
                 "motivo": str(error),

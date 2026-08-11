@@ -102,9 +102,17 @@ def test_anular_un_uuid_inexistente_se_rechaza(con, escenario):
     {"codigo": None},
     {"timestamp_dispositivo": None},
     {"timestamp_dispositivo": "   "},
+    {"timestamp_dispositivo": 12345},
     {"uuid": None},
     {"cantidad": None},
     {"cantidad": -1000},
+    # Valores no escalares: explotarían recién al ligarlos a la consulta,
+    # como sqlite3.ProgrammingError, que no es ValueError.
+    {"uuid": ["u-2"]},
+    {"codigo": {"ean": "779"}},
+    {"anula_uuid": ["u-1"]},
+    {"ubicacion_real": ["A-01"]},
+    {"observaciones": {"nota": "rota"}},
 ])
 def test_un_evento_mal_formado_no_frena_el_lote(con, escenario, roto):
     """Sin esto el celular reintenta el mismo payload y la cola queda trabada."""
@@ -200,6 +208,8 @@ def test_no_se_puede_anular_un_conteo_de_otra_sesion(con, escenario):
 
     assert resultado["registrados"] == 0
     assert len(resultado["rechazados"]) == 1
+    # El uuid es único en toda la base: reintentarlo nunca va a funcionar.
+    assert resultado["rechazados"][0]["reintentable"] is False
 
 
 def test_guarda_ubicacion_real_y_observaciones(con, escenario):
