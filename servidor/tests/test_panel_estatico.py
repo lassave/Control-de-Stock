@@ -82,6 +82,17 @@ def test_los_datos_del_servidor_se_escapan_antes_de_ir_al_html():
     assert crudas == [], f"Interpolaciones sin escapar: {crudas}"
 
 
+def test_el_panel_muestra_el_token_de_cada_operario():
+    """Es lo único con lo que se vincula un celular: sin verlo no hay conteo.
+
+    La API lo devuelve desde el primer día, pero si el panel no lo muestra
+    hay que abrir la base a mano para poner en marcha un dispositivo.
+    """
+    contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "token_dispositivo" in contenido
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node no está instalado")
 def test_el_javascript_del_panel_parsea():
     """Un error de sintaxis deja el panel en blanco y ningún otro test lo ve.

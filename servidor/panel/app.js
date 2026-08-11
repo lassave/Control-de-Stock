@@ -308,11 +308,42 @@ async function confirmarImportacion() {
 
 // --- Operarios -------------------------------------------------------------
 
+function dibujarOperario(operario) {
+  // El token es lo único con lo que se vincula un celular. Va en un campo
+  // de solo lectura para poder seleccionarlo y copiarlo: son 43 caracteres
+  // al azar y copiarlos a ojo es garantía de error.
+  return `
+    <li>
+      <strong>${esc(operario.nombre)}</strong>
+      <div class="token">
+        <input readonly value="${esc(operario.token_dispositivo)}"
+               aria-label="Token de ${esc(operario.nombre)}">
+        <button class="secundario" data-copiar="${esc(operario.token_dispositivo)}">
+          Copiar
+        </button>
+      </div>
+    </li>`;
+}
+
 async function cargarOperarios() {
   const lista = await pedir("/api/operarios");
-  $("#lista-operarios").innerHTML = lista.map((operario) =>
-    `<li><strong>${esc(operario.nombre)}</strong></li>`).join("")
+  $("#lista-operarios").innerHTML = lista.map(dibujarOperario).join("")
     || "<li>Todavía no hay operarios.</li>";
+}
+
+async function copiarToken(boton) {
+  const token = boton.dataset.copiar;
+  try {
+    // El portapapeles del navegador solo existe en contextos seguros, y el
+    // panel también se abre por IP (http://192.168.x.x). El campo de al lado
+    // queda siempre como salida: se selecciona y se copia a mano.
+    await navigator.clipboard.writeText(token);
+    boton.textContent = "Copiado";
+  } catch (error) {
+    boton.previousElementSibling.select();
+    boton.textContent = "Copiá con Ctrl+C";
+  }
+  setTimeout(() => { boton.textContent = "Copiar"; }, 2500);
 }
 
 // --- Arranque --------------------------------------------------------------
@@ -363,6 +394,10 @@ function conectarEventos() {
   });
 
   $("#confirmar-importacion").addEventListener("click", confirmarImportacion);
+
+  $("#lista-operarios").addEventListener("click", (evento) => {
+    if (evento.target.dataset.copiar) copiarToken(evento.target);
+  });
 
   $("#form-operario").addEventListener("submit", async (evento) => {
     evento.preventDefault();

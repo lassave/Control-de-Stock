@@ -176,6 +176,20 @@ thead th {
   margin-bottom: 0.4rem;
 }
 
+.token {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  max-width: 46rem;
+}
+
+.token input {
+  flex: 1;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--tenue);
+}
+
 .ayuda { color: var(--tenue); max-width: 60ch; }
 .mapeo { margin-top: 1rem; }
 .error { color: var(--rojo); }
