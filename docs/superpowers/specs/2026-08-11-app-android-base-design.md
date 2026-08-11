@@ -268,6 +268,19 @@ conteo de un mismo producto en dos filas del tablero.
 La respuesta **no incluye `stock_sistema` ni `costo_unitario`**, como todo
 lo que sale por los endpoints de dispositivo.
 
+La respuesta trae además **`creado: true | false`**. Sin ese campo, la app no
+tiene forma de distinguir «se dio de alta» de «ese código ya estaba», que es
+justo lo que necesita para avisarle al operario que el producto que escaneó
+resultó ser uno del maestro con otra descripción. Cada cliente inventaría su
+heurística —comparar la descripción que mandó contra la que volvió— y esa
+falla cuando el operario escribió lo mismo.
+
+El alta es **idempotente**: si dos operarios escanean la misma etiqueta
+desconocida a la vez, el segundo recibe el artículo del primero con
+`creado: false`, en vez de un error. La excepción es el alta **sin** código:
+ahí no hay identidad compartida —dos productos sin etiqueta no son el mismo
+producto— así que el segundo recibe su propio `AR-<n>` con `creado: true`.
+
 ### Distribución del APK
 
 `GET /app.apk` sirve el archivo si está presente junto al servidor, y el
