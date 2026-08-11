@@ -205,6 +205,38 @@ def test_un_sku_repetido_no_desordena_la_numeracion(con, sesion_id):
     assert ordenes == {"A": 1, "B": 2, "C": 3}
 
 
+def test_un_numero_de_orden_ilegible_no_pisa_a_los_del_archivo(con, sesion_id):
+    """El fallback tiene que quedar por encima de todos los números escritos."""
+    contenido = "nro,sku,detalle\nxx,A,Uno\n1,B,Dos\n2,C,Tres\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "id_orden": "nro", "sku": "sku", "descripcion": "detalle",
+    })
+
+    ordenes = {
+        fila["sku"]: fila["id_orden"]
+        for fila in con.execute("SELECT sku, id_orden FROM articulo")
+    }
+    assert ordenes["B"] == 1
+    assert ordenes["C"] == 2
+    assert ordenes["A"] == 3  # por encima del mayor que trae el archivo
+    assert len(set(ordenes.values())) == 3
+    assert any("Número de orden inválido" in a["motivo"]
+               for a in resultado["advertencias"])
+
+
+def test_avisa_si_el_archivo_repite_un_numero_de_orden(con, sesion_id):
+    contenido = "nro,sku,detalle\n1,A,Uno\n1,B,Dos\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "id_orden": "nro", "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 2
+    assert any("ya lo usa otro artículo" in a["motivo"]
+               for a in resultado["advertencias"])
+
+
 def test_avisa_cuando_falta_la_descripcion(con, sesion_id):
     contenido = "sku,detalle\n1,\n".encode("utf-8")
 
