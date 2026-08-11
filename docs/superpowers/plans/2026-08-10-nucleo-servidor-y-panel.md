@@ -1688,6 +1688,38 @@ def test_un_sku_repetido_no_desordena_la_numeracion(con, sesion_id):
     assert ordenes == {"A": 1, "B": 2, "C": 3}
 
 
+def test_un_numero_de_orden_ilegible_no_pisa_a_los_del_archivo(con, sesion_id):
+    """El fallback tiene que quedar por encima de todos los números escritos."""
+    contenido = "nro,sku,detalle\nxx,A,Uno\n1,B,Dos\n2,C,Tres\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "id_orden": "nro", "sku": "sku", "descripcion": "detalle",
+    })
+
+    ordenes = {
+        fila["sku"]: fila["id_orden"]
+        for fila in con.execute("SELECT sku, id_orden FROM articulo")
+    }
+    assert ordenes["B"] == 1
+    assert ordenes["C"] == 2
+    assert ordenes["A"] == 3  # por encima del mayor que trae el archivo
+    assert len(set(ordenes.values())) == 3
+    assert any("Número de orden inválido" in a["motivo"]
+               for a in resultado["advertencias"])
+
+
+def test_avisa_si_el_archivo_repite_un_numero_de_orden(con, sesion_id):
+    contenido = "nro,sku,detalle\n1,A,Uno\n1,B,Dos\n".encode("utf-8")
+
+    resultado = importacion.importar(con, sesion_id, contenido, {
+        "id_orden": "nro", "sku": "sku", "descripcion": "detalle",
+    })
+
+    assert resultado["importados"] == 2
+    assert any("ya lo usa otro artículo" in a["motivo"]
+               for a in resultado["advertencias"])
+
+
 def test_avisa_cuando_falta_la_descripcion(con, sesion_id):
     contenido = "sku,detalle\n1,\n".encode("utf-8")
 
@@ -1820,29 +1852,62 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
     if unidad_por_defecto not in unidades:
         raise ValueError(f"La unidad por defecto «{unidad_por_defecto}» no existe")
 
-    resultado = {
-        "importados": 0, "codigos": 0, "descartadas": [], "advertencias": [],
+    config = {
+        "indice": indice,
+        "encabezados": encabezados,
+        "unidad_por_defecto": unidad_por_defecto,
+        "unidades": unidades,
+        "ahora": ahora,
+        # Piso para los números de orden que haya que inventar: por encima de
+        # todos los que el archivo trae explícitos. Sin esto, una celda
+        # ilegible en la primera fila recibe el 1 y choca con el 1 explícito
+        # de la fila siguiente, dejando dos artículos con el mismo número.
+        "piso_orden": _mayor_orden_del_archivo(filas, indice),
     }
-    vistos = {}  # sku -> id_orden ya asignado
+    estado = {
+        "resultado": {
+            "importados": 0, "codigos": 0, "descartadas": [], "advertencias": [],
+        },
+        "vistos": {},   # sku -> id_orden ya asignado
+        "ordenes": set(),
+    }
 
     # Toda la importación es una sola transacción: un maestro a medio cargar
     # es peor que ninguno, porque el tablero lo muestra como si estuviera
     # completo y los artículos que faltan aparecen como no contados.
     with con:
         for numero_fila, fila in enumerate(filas, start=2):
-            _cargar_fila(
-                con, sesion_id, fila, numero_fila, indice, encabezados,
-                unidad_por_defecto, unidades, ahora, resultado, vistos,
-            )
+            _cargar_fila(con, sesion_id, fila, numero_fila, config, estado)
 
-    return resultado
+    return estado["resultado"]
 
 
-def _cargar_fila(
-    con, sesion_id, fila, numero_fila, indice, encabezados,
-    unidad_por_defecto, unidades, ahora, resultado, vistos,
-):
-    """Carga una fila del maestro, acumulando los avisos en `resultado`."""
+def _mayor_orden_del_archivo(filas, indice):
+    """El mayor número de orden que el archivo trae escrito, o 0."""
+    posicion = indice.get("id_orden")
+    if posicion is None:
+        return 0
+
+    mayor = 0
+    for fila in filas:
+        try:
+            mayor = max(mayor, int(fila[posicion]))
+        except (ValueError, IndexError):
+            continue
+    return mayor
+
+
+def _cargar_fila(con, sesion_id, fila, numero_fila, config, estado):
+    """Carga una fila del maestro, acumulando los avisos en `estado`."""
+    indice = config["indice"]
+    encabezados = config["encabezados"]
+    unidad_por_defecto = config["unidad_por_defecto"]
+    unidades = config["unidades"]
+    ahora = config["ahora"]
+
+    resultado = estado["resultado"]
+    vistos = estado["vistos"]
+    ordenes = estado["ordenes"]
     descartadas = resultado["descartadas"]
     advertencias = resultado["advertencias"]
 
@@ -1880,11 +1945,12 @@ def _cargar_fila(
         })
         descripcion = sku
 
-    # El correlativo se calcula sobre los números ya asignados, no sobre la
-    # cantidad de importados: si no, una fila repetida vuelve a consumir un
-    # número y dos artículos distintos terminan con el mismo id_orden, que es
-    # el que define el orden de recorrido y de la planilla.
-    siguiente_orden = max(vistos.values(), default=0) + 1
+    # El correlativo sale de los números ya asignados y del mayor que trae el
+    # archivo, no de la cantidad de importados: si no, una fila repetida
+    # vuelve a consumir un número y dos artículos distintos terminan con el
+    # mismo id_orden, que es el que define el orden de recorrido y de la
+    # planilla del operario.
+    siguiente_orden = max(max(ordenes, default=0), config["piso_orden"]) + 1
 
     if "id_orden" in indice:
         try:
@@ -1899,6 +1965,12 @@ def _cargar_fila(
         id_orden = vistos[sku]  # conserva el que ya tenía
     else:
         id_orden = siguiente_orden
+
+    if id_orden in ordenes and not repetido:
+        advertencias.append({
+            "fila": numero_fila,
+            "motivo": f"El número de orden {id_orden} ya lo usa otro artículo",
+        })
 
     stock = 0
     if "stock_sistema" in indice:
@@ -1975,7 +2047,10 @@ def _cargar_fila(
 
     if not repetido:
         resultado["importados"] += 1
+    if repetido:
+        ordenes.discard(vistos[sku])
     vistos[sku] = id_orden
+    ordenes.add(id_orden)
 ```
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
