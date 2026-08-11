@@ -311,24 +311,43 @@ async function confirmarImportacion() {
 function dibujarOperario(operario) {
   // El token es lo único con lo que se vincula un celular. Va en un campo
   // de solo lectura para poder seleccionarlo y copiarlo: son 43 caracteres
-  // al azar y copiarlos a ojo es garantía de error.
+  // al azar y copiarlos a ojo es garantía de error. El QR lo evita del
+  // todo, y además le pasa al celular la dirección del servidor.
   return `
-    <li>
-      <strong>${esc(operario.nombre)}</strong>
-      <div class="token">
-        <input readonly value="${esc(operario.token_dispositivo)}"
-               aria-label="Token de ${esc(operario.nombre)}">
-        <button class="secundario" data-copiar="${esc(operario.token_dispositivo)}">
-          Copiar
-        </button>
+    <li class="operario">
+      <div>
+        <strong>${esc(operario.nombre)}</strong>
+        <div class="token">
+          <input readonly value="${esc(operario.token_dispositivo)}"
+                 aria-label="Token de ${esc(operario.nombre)}">
+          <button class="secundario" data-copiar="${esc(operario.token_dispositivo)}">
+            Copiar
+          </button>
+        </div>
+        <p class="ayuda">Escaneá este código desde la app para vincular el celular.</p>
       </div>
+      <img class="qr" src="/api/operarios/${esc(operario.id)}/qr"
+           alt="Código QR de vinculación de ${esc(operario.nombre)}">
     </li>`;
+}
+
+async function cargarInstalacion() {
+  const estado = await pedir("/api/instalacion");
+  $("#instalacion").classList.toggle("oculta", !estado.disponible);
+  // El `src` va acá y no en el HTML. Un `src` fijo se descarga aunque el
+  // bloque esté escondido, y el navegador no reintenta: si el APK se copia
+  // con el panel abierto, el bloque se desesconde con el QR roto y hay que
+  // apretar F5. Poniéndolo recién cuando hay APK, aparece siempre entero.
+  if (estado.disponible) {
+    $("#qr-instalacion").src = "/api/instalacion/qr";
+  }
 }
 
 async function cargarOperarios() {
   const lista = await pedir("/api/operarios");
   $("#lista-operarios").innerHTML = lista.map(dibujarOperario).join("")
     || "<li>Todavía no hay operarios.</li>";
+  await cargarInstalacion();
 }
 
 async function copiarToken(boton) {

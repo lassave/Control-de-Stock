@@ -32,6 +32,21 @@ Dejá la ventana negra abierta mientras dure el conteo.
 El conteo es a ciegas: ninguna respuesta al celular incluye el stock del
 sistema ni el costo.
 
+## Instalar la app en los celulares
+
+Copiá el APK compilado a `servidor/app.apk`. Con el archivo ahí, la solapa
+**Operarios** muestra un código QR para descargarlo: se escanea con la cámara
+del celular y se instala. La primera vez, Android pide permiso para instalar
+desde esta fuente.
+
+Si el archivo no está, el panel no muestra nada — no hay nada que descargar.
+No hace falta reiniciar el servidor al copiarlo: alcanza con recargar la
+página.
+
+Cada operario tiene además **su propio QR** en esa misma solapa, con el que se
+vincula su celular. Lleva adentro la dirección del servidor y su token, así no
+hay que tipear ninguno de los dos.
+
 ## La base de datos
 
 Todo vive en `servidor/inventario.db`. Copiar ese archivo respalda el

@@ -1,8 +1,8 @@
 """Arranque del servidor con la dirección visible para los celulares."""
 
-import socket
-
 import uvicorn
+
+from app.red import ip_local
 
 PUERTO = 8000
 
@@ -10,24 +10,6 @@ PUERTO = 8000
 # el servidor escucha en IPv4. La dirección numérica abre siempre, y esta
 # línea es lo único que tiene quien levanta el servidor para llegar al panel.
 LOCAL = "127.0.0.1"
-
-
-def ip_local():
-    """La IP de esta máquina en la red local.
-
-    Abrir un socket UDP hacia una dirección externa no envía nada, pero
-    obliga al sistema a elegir la interfaz de salida. Es la forma
-    confiable de saber con qué IP nos ven los celulares cuando hay varias
-    placas de red (WiFi, Ethernet, VPN).
-    """
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        sock.connect(("8.8.8.8", 80))
-        return sock.getsockname()[0]
-    except OSError:
-        return socket.gethostbyname(socket.gethostname())
-    finally:
-        sock.close()
 
 
 def mostrar_encabezado():

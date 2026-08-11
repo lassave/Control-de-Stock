@@ -55,7 +55,10 @@ body {
 .pestanas button.activa { color: var(--acento); border-bottom-color: var(--acento); }
 
 main { padding: 1.25rem; }
-.vista.oculta, .oculta { display: none; }
+/* Los bloques que además definen su propio `display` necesitan nombrarse
+   acá: tienen la misma especificidad que `.oculta` y, al estar más abajo en
+   la hoja, ganarían por orden y quedarían siempre visibles. */
+.vista.oculta, .instalacion.oculta, .oculta { display: none; }
 
 .metricas {
   display: grid;
@@ -188,6 +191,35 @@ thead th {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.85rem;
   color: var(--tenue);
+}
+
+.operario {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.instalacion {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.qr {
+  width: 148px;
+  height: 148px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: #fff;
 }
 
 .ayuda { color: var(--tenue); max-width: 60ch; }

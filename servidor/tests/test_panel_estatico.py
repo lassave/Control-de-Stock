@@ -93,6 +93,13 @@ def test_el_panel_muestra_el_token_de_cada_operario():
     assert "token_dispositivo" in contenido
 
 
+def test_el_panel_muestra_el_qr_de_vinculacion():
+    """Sin el QR hay que transcribir a mano 43 caracteres y la IP del lugar."""
+    contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "/qr" in contenido
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node no está instalado")
 def test_el_javascript_del_panel_parsea():
     """Un error de sintaxis deja el panel en blanco y ningún otro test lo ve.
@@ -114,3 +121,90 @@ def test_exportar_arrastra_los_filtros_del_tablero():
 
     assert "exportar/resumen?" in contenido
     assert "exportar/detalle?" in contenido
+
+
+def _cuerpo_de(js, nombre):
+    """El código entre las llaves de una función, contando el anidamiento.
+
+    Buscar el nombre en el archivo entero no alcanza: una función definida
+    y nunca llamada aparece igual.
+    """
+    apertura = js.index("{", js.index(f"function {nombre}("))
+    profundidad = 0
+    for posicion in range(apertura, len(js)):
+        if js[posicion] == "{":
+            profundidad += 1
+        elif js[posicion] == "}":
+            profundidad -= 1
+            if profundidad == 0:
+                return js[apertura + 1:posicion]
+    raise AssertionError(f"«{nombre}» no cierra sus llaves")
+
+
+def test_el_panel_esconde_la_instalacion_si_no_hay_apk():
+    """Ofrecer una descarga que devuelve 404 es peor que no ofrecer nada."""
+    contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "/api/instalacion" in contenido
+    assert "estado.disponible" in contenido
+    # Las dos de arriba quedan verdes con el toggle invertido —el bloque
+    # aparecería justo cuando NO hay APK— y también si nadie llama a
+    # `cargarInstalacion`, con lo que no aparecería nunca.
+    assert "!estado.disponible" in contenido
+    assert "cargarInstalacion" in _cuerpo_de(contenido, "cargarOperarios")
+
+
+ETIQUETA_IMG = re.compile(r"<img[^>]*>")
+
+
+def test_el_qr_de_instalacion_se_pide_recien_cuando_hay_apk():
+    """Un `src` fijo se baja igual con el bloque escondido, y no se reintenta.
+
+    Puesta en marcha real: se abre el panel sin APK y la imagen 404ea; se
+    copia el APK; se da de alta un operario y el bloque se desesconde en
+    caliente, pero con el QR roto y sin ninguna explicación. Hay que apretar
+    F5 para verlo. Es también el 404 en la consola en cada carga sin APK.
+    """
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+    bloque = html.split('id="instalacion"', 1)[1].split("</section>", 1)[0]
+    imagen = ETIQUETA_IMG.search(bloque).group(0)
+
+    assert "src=" not in imagen, f"el QR de instalación tiene src fijo: {imagen}"
+    assert "/api/instalacion/qr" in _cuerpo_de(
+        (RUTA_PANEL / "app.js").read_text(encoding="utf-8"), "cargarInstalacion"
+    )
+
+
+REGLA_CSS = re.compile(r"([^{}]+)\{([^{}]*)\}")
+
+
+def _clases_que_el_panel_esconde():
+    """Las clases de los elementos que arrancan o quedan con `oculta`."""
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+    clases = set()
+    for atributo in re.findall(r'class="([^"]+)"', html):
+        nombres = atributo.split()
+        if "oculta" in nombres:
+            clases.update(nombres)
+    return clases - {"oculta"}
+
+
+def test_esconder_con_oculta_le_gana_a_las_reglas_de_cada_bloque():
+    """Un bloque que define su propio `display` anula a `.oculta` en silencio.
+
+    Las dos reglas tienen la misma especificidad, así que gana la última de
+    la hoja. Le pasó al bloque de instalación: el JavaScript le ponía
+    `oculta` y seguía en pantalla, ofreciendo una descarga que no existe.
+    Ningún otro test lo ve, solo se nota abriendo el panel.
+    """
+    reglas = REGLA_CSS.findall((RUTA_PANEL / "estilos.css").read_text(encoding="utf-8"))
+    posicion = next(i for i, (selector, _) in enumerate(reglas) if ".oculta" in selector)
+    escondibles = _clases_que_el_panel_esconde()
+
+    for selector, declaraciones in reglas[posicion + 1:]:
+        clase = selector.strip().lstrip(".")
+        if clase in escondibles and "display" in declaraciones:
+            assert f".{clase}.oculta" in reglas[posicion][0], (
+                f"«{clase}» define display después de `.oculta`: "
+                "esconderlo no va a tener efecto"
+            )

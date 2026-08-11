@@ -1,18 +1,26 @@
 """Endpoints que consume el panel web."""
 
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
+from app import red
 from app.repos import operarios, sesiones
-from app.servicios import exportacion, importacion, tablero
+from app.servicios import exportacion, importacion, tablero, vinculacion
 
 router = APIRouter(prefix="/api")
 
 # Marca de orden de bytes. Sin ella, el Excel de un Windows en español lee
 # el CSV como cp1252 y las descripciones con acentos llegan ilegibles.
 BOM = "﻿"
+
+# El APK se deja junto al servidor cuando hay una versión compilada. No está
+# en git: es un binario que se regenera, y el repositorio no es su lugar.
+RUTA_APK = Path(__file__).parent.parent.parent / "app.apk"
+
+MEDIA_APK = "application/vnd.android.package-archive"
 
 
 def _con(request):
@@ -167,6 +175,25 @@ async def crear_operario(request: Request):
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+@router.get("/operarios/{operario_id}/qr")
+def qr_de_operario(operario_id: int, request: Request):
+    """El QR con el que se vincula un celular: dirección del servidor y token.
+
+    La dirección sale de la IP de la red local y no del pedido: el panel se
+    abre en 127.0.0.1, y ese QR mandaría al celular a sí mismo.
+    """
+    operario = operarios.obtener(_con(request), operario_id)
+    if operario is None:
+        raise HTTPException(
+            status_code=404, detail=f"No existe el operario {operario_id}"
+        )
+
+    url = vinculacion.armar_url(red.ip_local(), request.url.port or 8000)
+    texto = vinculacion.contenido(url, operario["token_dispositivo"])
+
+    return Response(content=vinculacion.svg(texto), media_type="image/svg+xml")
+
+
 @router.get("/sesiones/{sesion_id}/exportar/{tipo_exportacion}")
 def exportar(
     sesion_id: int,
@@ -207,4 +234,30 @@ def exportar(
             "Content-Disposition":
                 f'attachment; filename="{tipo_exportacion}-{sesion_id}.csv"'
         },
+    )
+
+
+def _url_de_instalacion(request):
+    base = vinculacion.armar_url(red.ip_local(), request.url.port or 8000)
+    return f"{base}/app.apk"
+
+
+@router.get("/instalacion")
+def estado_de_instalacion(request: Request):
+    """Si hay APK para instalar y desde qué dirección se baja."""
+    if not RUTA_APK.exists():
+        return {"disponible": False, "url": ""}
+    return {"disponible": True, "url": _url_de_instalacion(request)}
+
+
+@router.get("/instalacion/qr")
+def qr_de_instalacion(request: Request):
+    if not RUTA_APK.exists():
+        raise HTTPException(
+            status_code=404, detail="Todavía no hay una app para instalar"
+        )
+
+    return Response(
+        content=vinculacion.svg(_url_de_instalacion(request)),
+        media_type="image/svg+xml",
     )
