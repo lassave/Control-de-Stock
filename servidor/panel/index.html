@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Control de Stock</title>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <header class="barra">
+    <h1>Control de Stock</h1>
+    <div id="sesion-actual" class="sesion-actual"></div>
+  </header>
+
+  <nav class="pestanas">
+    <button data-vista="tablero" class="activa">Tablero</button>
+    <button data-vista="maestro">Importar maestro</button>
+    <button data-vista="operarios">Operarios</button>
+    <button data-vista="sesiones">Sesiones</button>
+  </nav>
+
+  <main>
+    <section id="vista-tablero" class="vista">
+      <div id="metricas" class="metricas"></div>
+
+      <div class="filtros">
+        <input id="filtro-texto" type="search" placeholder="Buscar por SKU o descripción">
+        <select id="filtro-estado">
+          <option value="">Todos los estados</option>
+          <option value="SIN CONTAR">Sin contar</option>
+          <option value="CONSOLIDADO">Consolidado</option>
+          <option value="A RECONTAR">A recontar</option>
+        </select>
+        <select id="filtro-grupo"><option value="">Todos los grupos</option></select>
+        <select id="filtro-ubicacion"><option value="">Todas las ubicaciones</option></select>
+        <label class="casilla">
+          <input id="filtro-errores-carga" type="checkbox">
+          Solo posibles errores de carga
+        </label>
+        <button id="limpiar-filtros" class="secundario">Limpiar filtros</button>
+        <a id="exportar-resumen" class="boton secundario">Exportar resumen</a>
+        <a id="exportar-detalle" class="boton secundario">Exportar detalle</a>
+      </div>
+
+      <div class="tabla-envoltorio" id="envoltorio-tabla">
+        <table id="tabla">
+          <thead>
+            <tr>
+              <th>#</th><th>Tipo</th><th>Material</th><th>SKU</th>
+              <th>Descripción</th><th>Grupo</th><th>Ubicación</th>
+              <th>Ub. real</th><th>Un.</th>
+              <th class="num">Sistema</th><th class="num">Último conteo</th>
+              <th class="num">Dif.</th><th>Estado</th><th>Fecha</th><th>Observaciones</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="vista-maestro" class="vista oculta">
+      <h2>Importar maestro</h2>
+      <p class="ayuda">
+        Elegí el CSV que exporta el sistema de gestión. Después indicá qué
+        columna del archivo corresponde a cada campo.
+      </p>
+      <input id="archivo" type="file" accept=".csv,.txt">
+      <div id="mapeo" class="mapeo oculta">
+        <table id="tabla-mapeo"><tbody></tbody></table>
+        <label>
+          Unidad por defecto
+          <select id="unidad-defecto">
+            <option>UN</option><option>KG</option><option>LT</option>
+            <option>MT</option><option>CJ</option><option>PACK</option>
+          </select>
+        </label>
+        <h3>Vista previa</h3>
+        <div class="tabla-envoltorio">
+          <table id="tabla-vista-previa"></table>
+        </div>
+        <button id="confirmar-importacion">Importar</button>
+      </div>
+      <div id="resultado-importacion"></div>
+    </section>
+
+    <section id="vista-operarios" class="vista oculta">
+      <h2>Operarios</h2>
+      <form id="form-operario">
+        <input id="nombre-operario" placeholder="Nombre y apellido" required>
+        <button>Agregar</button>
+      </form>
+      <ul id="lista-operarios" class="lista"></ul>
+    </section>
+
+    <section id="vista-sesiones" class="vista oculta">
+      <h2>Sesiones</h2>
+      <form id="form-sesion">
+        <input id="nombre-sesion" placeholder="Cliente y fecha" required>
+        <button>Crear sesión</button>
+      </form>
+      <ul id="lista-sesiones" class="lista"></ul>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
