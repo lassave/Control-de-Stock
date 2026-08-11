@@ -406,3 +406,66 @@ def test_el_alta_rapida_aparece_en_el_tablero(cliente, sesion):
 
     nuevo = next(f for f in filas if f["descripcion"] == "Caño de bronce")
     assert nuevo["origen"] == "alta_rapida"
+
+
+APK_FALSO = b"PK\x03\x04 esto hace de APK en los tests"
+
+
+def test_sin_apk_la_descarga_devuelve_404(cliente):
+    assert cliente.get("/app.apk").status_code == 404
+
+
+def test_sin_apk_la_instalacion_se_informa_como_no_disponible(cliente):
+    """El panel no puede ofrecer una descarga que va a fallar."""
+    respuesta = cliente.get("/api/instalacion")
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["disponible"] is False
+
+
+def test_con_apk_presente_se_descarga(cliente, tmp_path, monkeypatch):
+    from app.api import panel as modulo_panel
+
+    apk = tmp_path / "app.apk"
+    apk.write_bytes(APK_FALSO)
+    monkeypatch.setattr(modulo_panel, "RUTA_APK", apk)
+
+    respuesta = cliente.get("/app.apk")
+
+    assert respuesta.status_code == 200
+    assert respuesta.content == APK_FALSO
+    assert "android.package-archive" in respuesta.headers["content-type"]
+
+
+def test_con_apk_presente_la_instalacion_informa_la_direccion_de_red(
+    cliente, tmp_path, monkeypatch
+):
+    """El QR lo escanea un celular: 127.0.0.1 lo mandaría a sí mismo."""
+    from app.api import panel as modulo_panel
+
+    apk = tmp_path / "app.apk"
+    apk.write_bytes(APK_FALSO)
+    monkeypatch.setattr(modulo_panel, "RUTA_APK", apk)
+
+    cuerpo = cliente.get("/api/instalacion").json()
+
+    assert cuerpo["disponible"] is True
+    assert cuerpo["url"].endswith("/app.apk")
+    assert "127.0.0.1" not in cuerpo["url"]
+
+
+def test_el_qr_de_instalacion_es_svg(cliente, tmp_path, monkeypatch):
+    from app.api import panel as modulo_panel
+
+    apk = tmp_path / "app.apk"
+    apk.write_bytes(APK_FALSO)
+    monkeypatch.setattr(modulo_panel, "RUTA_APK", apk)
+
+    respuesta = cliente.get("/api/instalacion/qr")
+
+    assert respuesta.status_code == 200
+    assert "image/svg+xml" in respuesta.headers["content-type"]
+
+
+def test_el_qr_de_instalacion_sin_apk_devuelve_404(cliente):
+    assert cliente.get("/api/instalacion/qr").status_code == 404

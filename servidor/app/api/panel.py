@@ -1,6 +1,7 @@
 """Endpoints que consume el panel web."""
 
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
@@ -14,6 +15,12 @@ router = APIRouter(prefix="/api")
 # Marca de orden de bytes. Sin ella, el Excel de un Windows en español lee
 # el CSV como cp1252 y las descripciones con acentos llegan ilegibles.
 BOM = "﻿"
+
+# El APK se deja junto al servidor cuando hay una versión compilada. No está
+# en git: es un binario que se regenera, y el repositorio no es su lugar.
+RUTA_APK = Path(__file__).parent.parent.parent / "app.apk"
+
+MEDIA_APK = "application/vnd.android.package-archive"
 
 
 def _con(request):
@@ -227,4 +234,30 @@ def exportar(
             "Content-Disposition":
                 f'attachment; filename="{tipo_exportacion}-{sesion_id}.csv"'
         },
+    )
+
+
+def _url_de_instalacion(request):
+    base = vinculacion.armar_url(red.ip_local(), request.url.port or 8000)
+    return f"{base}/app.apk"
+
+
+@router.get("/instalacion")
+def estado_de_instalacion(request: Request):
+    """Si hay APK para instalar y desde qué dirección se baja."""
+    if not RUTA_APK.exists():
+        return {"disponible": False, "url": ""}
+    return {"disponible": True, "url": _url_de_instalacion(request)}
+
+
+@router.get("/instalacion/qr")
+def qr_de_instalacion(request: Request):
+    if not RUTA_APK.exists():
+        raise HTTPException(
+            status_code=404, detail="Todavía no hay una app para instalar"
+        )
+
+    return Response(
+        content=vinculacion.svg(_url_de_instalacion(request)),
+        media_type="image/svg+xml",
     )

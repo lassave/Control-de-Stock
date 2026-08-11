@@ -121,3 +121,46 @@ def test_exportar_arrastra_los_filtros_del_tablero():
 
     assert "exportar/resumen?" in contenido
     assert "exportar/detalle?" in contenido
+
+
+def test_el_panel_esconde_la_instalacion_si_no_hay_apk():
+    """Ofrecer una descarga que devuelve 404 es peor que no ofrecer nada."""
+    contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "/api/instalacion" in contenido
+    assert "estado.disponible" in contenido
+
+
+REGLA_CSS = re.compile(r"([^{}]+)\{([^{}]*)\}")
+
+
+def _clases_que_el_panel_esconde():
+    """Las clases de los elementos que arrancan o quedan con `oculta`."""
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+    clases = set()
+    for atributo in re.findall(r'class="([^"]+)"', html):
+        nombres = atributo.split()
+        if "oculta" in nombres:
+            clases.update(nombres)
+    return clases - {"oculta"}
+
+
+def test_esconder_con_oculta_le_gana_a_las_reglas_de_cada_bloque():
+    """Un bloque que define su propio `display` anula a `.oculta` en silencio.
+
+    Las dos reglas tienen la misma especificidad, así que gana la última de
+    la hoja. Le pasó al bloque de instalación: el JavaScript le ponía
+    `oculta` y seguía en pantalla, ofreciendo una descarga que no existe.
+    Ningún otro test lo ve, solo se nota abriendo el panel.
+    """
+    reglas = REGLA_CSS.findall((RUTA_PANEL / "estilos.css").read_text(encoding="utf-8"))
+    posicion = next(i for i, (selector, _) in enumerate(reglas) if ".oculta" in selector)
+    escondibles = _clases_que_el_panel_esconde()
+
+    for selector, declaraciones in reglas[posicion + 1:]:
+        clase = selector.strip().lstrip(".")
+        if clase in escondibles and "display" in declaraciones:
+            assert f".{clase}.oculta" in reglas[posicion][0], (
+                f"«{clase}» define display después de `.oculta`: "
+                "esconderlo no va a tener efecto"
+            )

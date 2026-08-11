@@ -331,10 +331,16 @@ function dibujarOperario(operario) {
     </li>`;
 }
 
+async function cargarInstalacion() {
+  const estado = await pedir("/api/instalacion");
+  $("#instalacion").classList.toggle("oculta", !estado.disponible);
+}
+
 async function cargarOperarios() {
   const lista = await pedir("/api/operarios");
   $("#lista-operarios").innerHTML = lista.map(dibujarOperario).join("")
     || "<li>Todavía no hay operarios.</li>";
+  await cargarInstalacion();
 }
 
 async function copiarToken(boton) {
