@@ -138,11 +138,23 @@ def test_rechaza_una_descripcion_vacia(con, escenario):
 def test_rechaza_una_descripcion_que_no_es_texto(con, escenario):
     """El cuerpo llega del JSON del celular: puede venir cualquier cosa.
 
-    Un número caería como error del servidor y el operario vería «se rompió»
-    en vez de qué le falta al alta.
+    El mensaje distingue el tipo equivocado de la falta: con «necesita una
+    descripción», el operario que escribió una se queda mirando la pantalla
+    sin entender qué le reclama.
     """
-    with pytest.raises(ValueError, match="descripción"):
+    with pytest.raises(ValueError, match="descripción.*texto"):
         crear(con, escenario, descripcion=123)
+
+
+def test_rechaza_un_codigo_que_no_es_texto(con, escenario):
+    """Un EAN serializado como número JSON es lo natural, y no puede perderse.
+
+    Descartarlo en silencio daría de alta el artículo sin código asociado: el
+    escaneo siguiente de la misma etiqueta no lo encontraría y crearía otro, y
+    así uno por escaneo.
+    """
+    with pytest.raises(ValueError, match="código.*texto"):
+        crear(con, escenario, codigo=7790001001234)
 
 
 def test_rechaza_una_unidad_que_no_existe(con, escenario):

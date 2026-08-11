@@ -12,6 +12,16 @@ CAMPOS_PUBLICOS = (
     "id, id_orden, tipo, material, sku, descripcion, grupo, ubicacion, unidad"
 )
 
+# Cómo se nombra cada campo cuando hay que explicarle al operario qué está
+# mal: el mensaje lo lee alguien parado frente a la mercadería, no quien
+# escribió el JSON.
+ETIQUETAS = {
+    "codigo": "código",
+    "descripcion": "descripción",
+    "unidad": "unidad",
+    "ubicacion": "ubicación",
+}
+
 
 def _publico(con, articulo_id):
     fila = con.execute(
@@ -21,14 +31,24 @@ def _publico(con, articulo_id):
 
 
 def _texto(datos, campo):
-    """El campo como texto limpio, o vacío si vino cualquier otra cosa.
+    """El campo como texto limpio. Ausente es vacío; de otro tipo, se rechaza.
 
-    El cuerpo del alta llega del JSON del celular: un número donde va la
-    descripción explotaría al recortarlo y saldría como error del servidor,
-    en vez de decirle al operario qué le falta al alta.
+    El cuerpo del alta llega del JSON del celular, así que puede venir
+    cualquier cosa en cualquier campo: un código de barras serializado como
+    número, que es lo natural para un EAN, explotaría al recortarlo y saldría
+    como error del servidor.
+
+    Se rechaza en vez de descartarlo porque tomarlo como vacío es peor que el
+    error: el artículo se daría de alta con un SKU generado y sin el código
+    asociado, el escaneo siguiente de la misma etiqueta no lo encontraría y
+    crearía otro, uno por escaneo, que es justo lo que este módulo evita.
     """
     valor = datos.get(campo)
-    return valor.strip() if isinstance(valor, str) else ""
+    if valor is None:
+        return ""
+    if not isinstance(valor, str):
+        raise ValueError(f"«{ETIQUETAS[campo]}» tiene que venir como texto")
+    return valor.strip()
 
 
 def _asociar_codigo(con, articulo_id, codigo):
