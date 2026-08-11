@@ -2446,7 +2446,80 @@ def test_anular_un_uuid_inexistente_se_rechaza(con, escenario):
     assert len(resultado["rechazados"]) == 1
 
 
-@pytest.mark.parametrize("cantidad", [24.5, "24000", None, True])
+@pytest.mark.parametrize("roto", [
+    {"codigo": None},
+    {"timestamp_dispositivo": None},
+    {"timestamp_dispositivo": "   "},
+    {"uuid": None},
+    {"cantidad": None},
+    {"cantidad": -1000},
+])
+def test_un_evento_mal_formado_no_frena_el_lote(con, escenario, roto):
+    """Sin esto el celular reintenta el mismo payload y la cola queda trabada."""
+    malo = evento("u-2")
+    malo.update(roto)
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), malo, evento("u-3")],
+    )
+
+    assert resultado["registrados"] == 2
+    assert len(resultado["rechazados"]) == 1
+
+
+def test_un_evento_que_ni_siquiera_es_un_diccionario_no_frena_el_lote(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), "esto no es un evento", evento("u-3")],
+    )
+
+    assert resultado["registrados"] == 2
+    assert len(resultado["rechazados"]) == 1
+
+
+def test_una_anulacion_que_llega_antes_es_reintentable(con, escenario):
+    """Los celulares sincronizan en cualquier orden: el evento no se descarta."""
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-9", anula_uuid="todavia-no-llego")],
+    )
+
+    assert resultado["rechazados"][0]["reintentable"] is True
+
+
+def test_un_codigo_desconocido_no_es_reintentable(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1", codigo="0000000000000")],
+    )
+
+    assert resultado["rechazados"][0]["reintentable"] is False
+
+
+def test_no_se_puede_anular_el_conteo_de_otro_articulo(con, escenario):
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1"))
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-2", codigo="7792222222222", anula_uuid="u-1")],
+    )
+
+    assert resultado["registrados"] == 0
+    assert len(resultado["rechazados"]) == 1
+
+
+def test_el_mismo_uuid_dos_veces_en_un_lote_se_registra_una_sola(con, escenario):
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-1"), evento("u-1")],
+    )
+
+    assert resultado["registrados"] == 1
+    assert resultado["duplicados"] == 1
+
+
+@pytest.mark.parametrize("cantidad", [24.5, "24000", True])
 def test_una_cantidad_que_no_es_entera_no_frena_el_lote(con, escenario, cantidad):
     """El CHECK del esquema la rechazaría abortando todo el lote."""
     resultado = conteos.registrar_lote(
@@ -2548,6 +2621,22 @@ CAMPOS_PUBLICOS = (
     "a.grupo, a.ubicacion, a.unidad"
 )
 
+CAMPOS_REQUERIDOS = ("uuid", "codigo", "cantidad", "timestamp_dispositivo")
+
+
+class EventoInvalido(ValueError):
+    """Un evento que no se pudo registrar.
+
+    `reintentable` distingue el que podría funcionar más tarde —una anulación
+    que llegó antes que el conteo que anula, porque los celulares sincronizan
+    en cualquier orden— del que nunca va a funcionar. Sin esa distinción el
+    celular no sabe si conservar el evento o descartarlo.
+    """
+
+    def __init__(self, motivo, reintentable=False):
+        super().__init__(motivo)
+        self.reintentable = reintentable
+
 
 def buscar_por_codigo(con, sesion_id, codigo):
     """Busca el artículo por código de barras.
@@ -2561,6 +2650,7 @@ def buscar_por_codigo(con, sesion_id, codigo):
         FROM codigo_barras cb
         JOIN articulo a ON a.id = cb.articulo_id
         WHERE cb.codigo = ? AND a.sesion_id = ? AND a.fusionado_en IS NULL
+        ORDER BY a.id
         LIMIT 1
         """,
         (codigo, sesion_id),
@@ -2580,29 +2670,51 @@ def registrar(con, sesion_id, operario_id, evento):
     Reenviar un uuid ya recibido no es un error: es lo que hace el celular
     cuando no le llegó la confirmación.
     """
+    # Todo lo que falte se valida antes de tocar la base. Cualquier acceso
+    # directo a una clave ausente sería un KeyError, que registrar_lote no
+    # atrapa: volaría el lote entero y, como el celular reintenta el mismo
+    # payload, la cola quedaría trabada para siempre.
+    for campo in CAMPOS_REQUERIDOS:
+        if evento.get(campo) is None:
+            raise EventoInvalido(f"Al evento le falta «{campo}»")
+
+    if not isinstance(evento["timestamp_dispositivo"], str) or \
+            not evento["timestamp_dispositivo"].strip():
+        raise EventoInvalido("La fecha del dispositivo llegó vacía")
+
     if _ya_registrado(con, evento["uuid"]):
         return "duplicado"
 
     cantidad = evento["cantidad"]
     if not isinstance(cantidad, int) or isinstance(cantidad, bool):
         # La columna tiene CHECK typeof = integer, así que un decimal caería
-        # como IntegrityError y frenaría el lote entero. Se ataja acá, como
-        # ValueError, para que solo se rechace este evento.
-        raise ValueError("La cantidad tiene que venir en milésimas, como entero")
+        # como IntegrityError y frenaría el lote entero.
+        raise EventoInvalido("La cantidad tiene que venir en milésimas, como entero")
+    if cantidad < 0:
+        # Ningún escaneo produce una cantidad negativa; las correcciones van
+        # por anulación.
+        raise EventoInvalido("La cantidad no puede ser negativa")
+
+    articulo = buscar_por_codigo(con, sesion_id, evento["codigo"])
+    if articulo is None:
+        raise EventoInvalido(f"Código desconocido: {evento['codigo']}")
 
     anula = evento.get("anula_uuid")
     if anula:
         original = con.execute(
-            "SELECT sesion_id FROM conteo WHERE uuid = ?", (anula,)
+            "SELECT sesion_id, articulo_id FROM conteo WHERE uuid = ?", (anula,)
         ).fetchone()
         # Se valida la sesión y no solo la existencia: un conteo de otro
         # inventario no se puede anular desde este.
         if original is None or original["sesion_id"] != sesion_id:
-            raise ValueError(f"El conteo que se intenta anular no existe: {anula}")
-
-    articulo = buscar_por_codigo(con, sesion_id, evento["codigo"])
-    if articulo is None:
-        raise ValueError(f"Código desconocido: {evento['codigo']}")
+            # Puede ser que el conteo original todavía no haya llegado: los
+            # celulares sincronizan en cualquier orden.
+            raise EventoInvalido(
+                f"El conteo que se intenta anular no existe: {anula}",
+                reintentable=True,
+            )
+        if original["articulo_id"] != articulo["id"]:
+            raise EventoInvalido("La anulación no corresponde a ese artículo")
 
     pasada = sesiones.pasada_abierta(con, sesion_id)
 
@@ -2634,8 +2746,14 @@ def registrar_lote(con, sesion_id, operario_id, eventos):
     for evento in eventos:
         try:
             resultado = registrar(con, sesion_id, operario_id, evento)
-        except ValueError as error:
-            rechazados.append({"uuid": evento.get("uuid"), "motivo": str(error)})
+        except (ValueError, KeyError, TypeError) as error:
+            # KeyError y TypeError como red de seguridad: un evento con una
+            # forma inesperada se rechaza solo, nunca frena a los demás.
+            rechazados.append({
+                "uuid": evento.get("uuid") if isinstance(evento, dict) else None,
+                "motivo": str(error),
+                "reintentable": getattr(error, "reintentable", False),
+            })
             continue
 
         if resultado == "registrado":
