@@ -100,6 +100,21 @@ def a_centavos(texto: str) -> int:
     return _a_escalado(texto, CENTAVOS)
 
 
+def a_texto_importe(centavos: int | None) -> str:
+    """Convierte centavos a texto con dos decimales. 12345 -> '123,45'.
+
+    Vive acá, junto a `a_centavos`, para que la conversión de importes tenga
+    una sola implementación: la exportación y el panel muestran plata los dos.
+    A diferencia de `a_texto`, nunca recorta los decimales: un importe de
+    '10' a secas se lee como diez pesos y no como diez con cero centavos.
+    """
+    if centavos is None:
+        return ""
+    signo = "-" if centavos < 0 else ""
+    entero, resto = divmod(abs(centavos), CENTAVOS)
+    return f"{signo}{entero},{resto:02d}"
+
+
 def a_texto(milesimas: int) -> str:
     """Convierte milésimas a texto con coma decimal. 3500 -> '3,5'."""
     signo = "-" if milesimas < 0 else ""

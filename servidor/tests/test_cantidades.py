@@ -89,3 +89,16 @@ def test_suma_de_decimales_es_exacta():
 def test_a_centavos():
     assert cantidades.a_centavos("1.234,56") == 123456
     assert cantidades.a_centavos("10") == 1000
+
+
+@pytest.mark.parametrize("centavos, esperado", [
+    (12345, "123,45"),
+    (1000, "10,00"),
+    (5, "0,05"),
+    (0, "0,00"),
+    (-5000, "-50,00"),
+    (None, ""),
+])
+def test_a_texto_importe(centavos, esperado):
+    """La plata sale siempre con dos decimales: '10' a secas se lee como diez pesos."""
+    assert cantidades.a_texto_importe(centavos) == esperado

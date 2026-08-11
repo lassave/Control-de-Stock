@@ -20,8 +20,9 @@ COLUMNAS_RESUMEN = [
 ]
 
 COLUMNAS_DETALLE = [
-    "fecha", "pasada", "operario", "sku", "descripcion", "unidad",
-    "cantidad", "ubicacion", "ubicacion_real", "observaciones", "anulado",
+    "fecha", "fecha_sincronizacion", "pasada", "operario", "sku",
+    "descripcion", "unidad", "cantidad", "ubicacion", "ubicacion_real",
+    "observaciones", "anulado",
 ]
 
 
@@ -30,11 +31,7 @@ def _milesimas(valor):
 
 
 def _centavos(valor):
-    if valor is None:
-        return ""
-    signo = "-" if valor < 0 else ""
-    entero, resto = divmod(abs(valor), 100)
-    return f"{signo}{entero},{resto:02d}"
+    return cantidades.a_texto_importe(valor)
 
 
 def _escribir(columnas, filas):
@@ -73,19 +70,27 @@ def resumen_por_sku(con, sesion_id, filtros=None):
     return _escribir(COLUMNAS_RESUMEN, filas)
 
 
-def detalle(con, sesion_id):
+def detalle(con, sesion_id, filtros=None):
+    """Una fila por escaneo. Acepta los mismos filtros que el resumen.
+
+    Los dos archivos se leen juntos, y uno filtrado junto a otro completo
+    invita a conclusiones falsas: el detalle mostraría escaneos de artículos
+    que en el resumen no figuran.
+    """
     anulados = {
         fila["anula_uuid"]
         for fila in con.execute(
-            "SELECT anula_uuid FROM conteo WHERE anula_uuid IS NOT NULL"
+            "SELECT anula_uuid FROM conteo "
+            "WHERE sesion_id = ? AND anula_uuid IS NOT NULL",
+            (sesion_id,),
         )
     }
 
     crudas = con.execute(
         """
         SELECT c.uuid, c.cantidad, c.ubicacion_real, c.observaciones,
-               c.timestamp_servidor, c.anula_uuid,
-               a.sku, a.descripcion, a.unidad, a.ubicacion,
+               c.timestamp_dispositivo, c.timestamp_servidor, c.anula_uuid,
+               a.id AS articulo_id, a.sku, a.descripcion, a.unidad, a.ubicacion,
                o.nombre AS operario, p.numero AS pasada_numero
         FROM conteo c
         JOIN articulo a ON a.id = c.articulo_id
@@ -97,11 +102,21 @@ def detalle(con, sesion_id):
         (sesion_id,),
     ).fetchall()
 
+    if filtros:
+        # El filtro se aplica sobre el artículo, no sobre el escaneo: el
+        # tablero ya sabe resolverlo y así los dos archivos describen
+        # exactamente la misma población.
+        permitidos = {fila["id"] for fila in tablero.filas(con, sesion_id, filtros)}
+        crudas = [fila for fila in crudas if fila["articulo_id"] in permitidos]
+
     filas = []
     for fila in crudas:
         es_anulacion = fila["anula_uuid"] is not None
         filas.append({
-            "fecha": fila["timestamp_servidor"],
+            # La fecha del escaneo, no la de la sincronización: los celulares
+            # sincronizan en lote y una mañana entera compartiría instante.
+            "fecha": fila["timestamp_dispositivo"],
+            "fecha_sincronizacion": fila["timestamp_servidor"],
             "pasada": sesiones.etiqueta_pasada(fila["pasada_numero"]),
             "operario": fila["operario"],
             "sku": fila["sku"],

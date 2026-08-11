@@ -13,7 +13,7 @@ def escenario(con):
     contenido = (
         "sku,detalle,grupo,ubic,um,stock,costo\n"
         "A,Tornillo,Buloneria,P-1,UN,100,25\n"
-        "B,Cable,Electricidad,P-2,MT,50,\n"
+        "B,Cañería de bronce,Electricidad,P-2,MT,50,\n"
     ).encode("utf-8")
     importacion.importar(con, sesion_id, contenido, {
         "sku": "sku", "descripcion": "detalle", "grupo": "grupo",
@@ -97,3 +97,73 @@ def test_detalle_tiene_una_fila_por_escaneo(con, escenario):
     assert filas[0]["pasada"] == "Conteo 1"
     assert filas[0]["ubicacion_real"] == "P-9"
     assert filas[0]["observaciones"] == "Estaba en otro estante"
+
+
+def test_detalle_tiene_las_columnas_del_spec(con, escenario):
+    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+
+    assert list(filas[0].keys()) == [
+        "fecha", "fecha_sincronizacion", "pasada", "operario", "sku",
+        "descripcion", "unidad", "cantidad", "ubicacion", "ubicacion_real",
+        "observaciones", "anulado",
+    ]
+
+
+def test_la_fecha_del_detalle_es_la_del_conteo_no_la_de_la_sincronizacion(
+    con, escenario
+):
+    """Los celulares sincronizan en lote: una mañana entera compartiría instante."""
+    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+
+    assert filas[0]["fecha"] == "2026-08-10T10:00:00Z"
+    assert filas[0]["fecha_sincronizacion"] != filas[0]["fecha"]
+
+
+def test_el_detalle_marca_las_dos_filas_de_una_anulacion(con, escenario):
+    """La que anula y la anulada: si falta una, el total no cierra al leerlo."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-2", "codigo": "B", "cantidad": 50000,
+        "timestamp_dispositivo": "2026-08-10T10:10:00Z",
+    })
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-3", "codigo": "B", "cantidad": 0,
+        "timestamp_dispositivo": "2026-08-10T10:20:00Z", "anula_uuid": "u-2",
+    })
+
+    marcas = {
+        f["observaciones"] or f["cantidad"]: f["anulado"]
+        for f in leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+    }
+
+    assert marcas["50"] == "SI"   # la anulada
+    assert marcas["0"] == "SI"    # la que anula
+    assert marcas["Estaba en otro estante"] == ""  # un escaneo vivo
+
+
+def test_el_detalle_respeta_los_mismos_filtros_que_el_resumen(con, escenario):
+    """Dos archivos que describen poblaciones distintas se leen mal juntos."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-2", "codigo": "B", "cantidad": 50000,
+        "timestamp_dispositivo": "2026-08-10T10:10:00Z",
+    })
+
+    filas = leer_csv(
+        exportacion.detalle(con, escenario["sesion_id"], {"grupo": "Electricidad"})
+    )
+
+    assert [f["sku"] for f in filas] == ["B"]
+
+
+def test_el_resumen_filtrado_devuelve_lo_que_corresponde(con, escenario):
+    filas = leer_csv(exportacion.resumen_por_sku(
+        con, escenario["sesion_id"], {"grupo": "Buloneria"}
+    ))
+
+    assert [f["sku"] for f in filas] == ["A"]
+
+
+def test_los_acentos_sobreviven(con, escenario):
+    """El BOM lo pone quien sirve el archivo, pero el texto tiene que llegar."""
+    texto = exportacion.resumen_por_sku(con, escenario["sesion_id"])
+
+    assert "Cañería" in texto

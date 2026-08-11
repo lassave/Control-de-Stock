@@ -740,6 +740,19 @@ def a_centavos(texto):
     return _a_escalado(texto, CENTAVOS)
 
 
+def a_texto_importe(centavos):
+    """Convierte centavos a texto con dos decimales. 12345 -> '123,45'.
+
+    Vive acá, junto a `a_centavos`, para que la conversión de importes tenga
+    una sola implementación: la exportación y el panel muestran plata los dos.
+    """
+    if centavos is None:
+        return ""
+    signo = "-" if centavos < 0 else ""
+    entero, resto = divmod(abs(centavos), CENTAVOS)
+    return f"{signo}{entero},{resto:02d}"
+
+
 def a_texto(milesimas):
     """Convierte milésimas a texto con coma decimal. 3500 -> '3,5'."""
     signo = "-" if milesimas < 0 else ""
@@ -3580,7 +3593,7 @@ def escenario(con):
     contenido = (
         "sku,detalle,grupo,ubic,um,stock,costo\n"
         "A,Tornillo,Buloneria,P-1,UN,100,25\n"
-        "B,Cable,Electricidad,P-2,MT,50,\n"
+        "B,Cañería de bronce,Electricidad,P-2,MT,50,\n"
     ).encode("utf-8")
     importacion.importar(con, sesion_id, contenido, {
         "sku": "sku", "descripcion": "detalle", "grupo": "grupo",
@@ -3664,6 +3677,76 @@ def test_detalle_tiene_una_fila_por_escaneo(con, escenario):
     assert filas[0]["pasada"] == "Conteo 1"
     assert filas[0]["ubicacion_real"] == "P-9"
     assert filas[0]["observaciones"] == "Estaba en otro estante"
+
+
+def test_detalle_tiene_las_columnas_del_spec(con, escenario):
+    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+
+    assert list(filas[0].keys()) == [
+        "fecha", "fecha_sincronizacion", "pasada", "operario", "sku",
+        "descripcion", "unidad", "cantidad", "ubicacion", "ubicacion_real",
+        "observaciones", "anulado",
+    ]
+
+
+def test_la_fecha_del_detalle_es_la_del_conteo_no_la_de_la_sincronizacion(
+    con, escenario
+):
+    """Los celulares sincronizan en lote: una mañana entera compartiría instante."""
+    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+
+    assert filas[0]["fecha"] == "2026-08-10T10:00:00Z"
+    assert filas[0]["fecha_sincronizacion"] != filas[0]["fecha"]
+
+
+def test_el_detalle_marca_las_dos_filas_de_una_anulacion(con, escenario):
+    """La que anula y la anulada: si falta una, el total no cierra al leerlo."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-2", "codigo": "B", "cantidad": 50000,
+        "timestamp_dispositivo": "2026-08-10T10:10:00Z",
+    })
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-3", "codigo": "B", "cantidad": 0,
+        "timestamp_dispositivo": "2026-08-10T10:20:00Z", "anula_uuid": "u-2",
+    })
+
+    marcas = {
+        f["observaciones"] or f["cantidad"]: f["anulado"]
+        for f in leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+    }
+
+    assert marcas["50"] == "SI"   # la anulada
+    assert marcas["0"] == "SI"    # la que anula
+    assert marcas["Estaba en otro estante"] == ""  # un escaneo vivo
+
+
+def test_el_detalle_respeta_los_mismos_filtros_que_el_resumen(con, escenario):
+    """Dos archivos que describen poblaciones distintas se leen mal juntos."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-2", "codigo": "B", "cantidad": 50000,
+        "timestamp_dispositivo": "2026-08-10T10:10:00Z",
+    })
+
+    filas = leer_csv(
+        exportacion.detalle(con, escenario["sesion_id"], {"grupo": "Electricidad"})
+    )
+
+    assert [f["sku"] for f in filas] == ["B"]
+
+
+def test_el_resumen_filtrado_devuelve_lo_que_corresponde(con, escenario):
+    filas = leer_csv(exportacion.resumen_por_sku(
+        con, escenario["sesion_id"], {"grupo": "Buloneria"}
+    ))
+
+    assert [f["sku"] for f in filas] == ["A"]
+
+
+def test_los_acentos_sobreviven(con, escenario):
+    """El BOM lo pone quien sirve el archivo, pero el texto tiene que llegar."""
+    texto = exportacion.resumen_por_sku(con, escenario["sesion_id"])
+
+    assert "Cañería" in texto
 ```
 
 - [ ] **Step 2: Correr el test y verificar que falla**
@@ -3679,6 +3762,11 @@ Expected: FAIL con `ModuleNotFoundError: No module named 'app.servicios.exportac
 Se usa punto y coma como separador y coma decimal, que es lo que espera
 Excel en configuración regional argentina. Con coma como separador, Excel
 parte las cantidades decimales en dos columnas.
+
+Falta la tercera pata del mismo requisito y no se resuelve acá: **quien
+sirva estos archivos tiene que codificarlos como `utf-8-sig`**, con marca
+de orden de bytes. Sin ella, el Excel de un Windows en español lee el
+archivo como cp1252 y las descripciones con acentos llegan ilegibles.
 """
 
 import csv
@@ -3696,8 +3784,8 @@ COLUMNAS_RESUMEN = [
 ]
 
 COLUMNAS_DETALLE = [
-    "fecha", "pasada", "operario", "sku", "descripcion", "unidad",
-    "cantidad", "ubicacion", "ubicacion_real", "observaciones", "anulado",
+    "fecha", "fecha_sincronizacion", "pasada", "operario", "sku", "descripcion",
+    "unidad", "cantidad", "ubicacion", "ubicacion_real", "observaciones", "anulado",
 ]
 
 
@@ -3706,11 +3794,7 @@ def _milesimas(valor):
 
 
 def _centavos(valor):
-    if valor is None:
-        return ""
-    signo = "-" if valor < 0 else ""
-    entero, resto = divmod(abs(valor), 100)
-    return f"{signo}{entero},{resto:02d}"
+    return cantidades.a_texto_importe(valor)
 
 
 def _escribir(columnas, filas):
@@ -3749,7 +3833,15 @@ def resumen_por_sku(con, sesion_id, filtros=None):
     return _escribir(COLUMNAS_RESUMEN, filas)
 
 
-def detalle(con, sesion_id):
+def detalle(con, sesion_id, filtros=None):
+    """El detalle escaneo por escaneo.
+
+    Acepta los mismos filtros que el resumen: si no, exportar un resumen de
+    un grupo junto a un detalle del depósito entero deja dos archivos que
+    dicen cosas distintas sin que ninguno aclare cuál es cuál.
+    """
+    articulos = {fila["id"] for fila in tablero.filas(con, sesion_id, filtros)}
+
     anulados = {
         fila["anula_uuid"]
         for fila in con.execute(
@@ -3760,7 +3852,8 @@ def detalle(con, sesion_id):
     crudas = con.execute(
         """
         SELECT c.uuid, c.cantidad, c.ubicacion_real, c.observaciones,
-               c.timestamp_servidor, c.anula_uuid,
+               c.timestamp_dispositivo, c.timestamp_servidor, c.anula_uuid,
+               a.id AS articulo_id,
                a.sku, a.descripcion, a.unidad, a.ubicacion,
                o.nombre AS operario, p.numero AS pasada_numero
         FROM conteo c
@@ -3775,9 +3868,16 @@ def detalle(con, sesion_id):
 
     filas = []
     for fila in crudas:
+        if fila["articulo_id"] not in articulos:
+            continue
+
         es_anulacion = fila["anula_uuid"] is not None
         filas.append({
-            "fecha": fila["timestamp_servidor"],
+            # La fecha del conteo es la del dispositivo, no la del servidor:
+            # los celulares sincronizan tarde y en lote, así que una mañana
+            # entera de trabajo comparte el mismo instante de sincronización.
+            "fecha": fila["timestamp_dispositivo"],
+            "fecha_sincronizacion": fila["timestamp_servidor"],
             "pasada": sesiones.etiqueta_pasada(fila["pasada_numero"]),
             "operario": fila["operario"],
             "sku": fila["sku"],
