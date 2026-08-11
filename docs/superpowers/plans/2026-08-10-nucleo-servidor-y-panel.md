@@ -2528,6 +2528,24 @@ def test_una_anulacion_vacia_se_trata_como_ausente(con, escenario):
     assert resultado["rechazados"] == []
 
 
+def test_una_anulacion_no_se_puede_anular(con, escenario):
+    """Si no, el conteo original queda excluido por una fila que ya no vale y
+    el artículo vuelve a figurar sin contar: desaparecen unidades reales."""
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1"))
+    conteos.registrar(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        evento("u-2", cantidad=0, anula_uuid="u-1"),
+    )
+
+    resultado = conteos.registrar_lote(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        [evento("u-3", cantidad=0, anula_uuid="u-2")],
+    )
+
+    assert resultado["registrados"] == 0
+    assert resultado["rechazados"][0]["reintentable"] is False
+
+
 def test_un_conteo_no_puede_anularse_a_si_mismo(con, escenario):
     """La única fila que lo satisfaría es la que se está rechazando."""
     resultado = conteos.registrar_lote(
@@ -2789,7 +2807,8 @@ def registrar(con, sesion_id, operario_id, evento):
         raise EventoInvalido("Un conteo no puede anularse a sí mismo")
     if anula:
         original = con.execute(
-            "SELECT sesion_id, articulo_id FROM conteo WHERE uuid = ?", (anula,)
+            "SELECT sesion_id, articulo_id, anula_uuid FROM conteo WHERE uuid = ?",
+            (anula,),
         ).fetchone()
 
         if original is None:
@@ -2808,6 +2827,12 @@ def registrar(con, sesion_id, operario_id, evento):
             )
         if original["articulo_id"] != articulo["id"]:
             raise EventoInvalido("La anulación no corresponde a ese artículo")
+        if original["anula_uuid"] is not None:
+            # Anular una anulación dejaría al conteo original excluido por una
+            # fila que ya no vale, y el artículo volvería a figurar sin contar:
+            # se perderían unidades que alguien sí contó. Para deshacer una
+            # anulación se carga el conteo de nuevo.
+            raise EventoInvalido("Una anulación no se puede anular")
 
     pasada = sesiones.pasada_abierta(con, sesion_id)
 
@@ -2925,7 +2950,7 @@ dispositivo, sin stock ni costo, por el conteo a ciegas."
 - Produces:
   - `tablero.SIN_CONTAR`, `tablero.CONSOLIDADO`, `tablero.A_RECONTAR` — constantes de estado
   - `tablero.estado_de(dif: int, stock: int, pct: float, min_abs: int, hubo_conteo: bool) -> str`
-  - `tablero.parece_error_de_carga(contado: int, stock: int) -> str | None` — devuelve el patrón detectado (`"dígito de más"`, `"dígitos permutados"`, `"dígito repetido"`) o `None`
+  - `tablero.parece_error_de_carga(contado: int, stock: int) -> str | None` — devuelve el patrón detectado (`"dígito de más"`, `"dígito faltante"`, `"dígitos permutados"`, `"dígito repetido"`) o `None`
   - `tablero.filas(con, sesion_id, filtros: dict | None = None) -> list[dict]`
   - `tablero.resumen(con, sesion_id) -> dict`
 
@@ -2986,8 +3011,9 @@ def test_sin_conteo_es_sin_contar():
 
 @pytest.mark.parametrize("contado, stock, esperado", [
     (240000, 24000, "dígito de más"),      # 240 en vez de 24
-    (2000,   24000, "dígito de más"),      # 2 en vez de 24
+    (2000,   24000, "dígito faltante"),    # 2 en vez de 24
     (2400000, 24000, "dígito de más"),     # 2400 en vez de 24
+    (12000,  120000, "dígito faltante"),   # 12 en vez de 120
     (42000,  24000, "dígitos permutados"), # 42 en vez de 24
     (55000,  5000,  "dígito repetido"),    # 55 en vez de 5
     (23000,  24000, None),                 # diferencia común, no tiene forma de tipeo
@@ -3056,6 +3082,58 @@ def test_conteo_anulado_no_suma(con, escenario):
     fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
 
     assert fila["ultimo_conteo"] == 100000
+
+
+def abrir_conteo_2(con, sesion_id):
+    """Cierra la pasada abierta y abre la siguiente.
+
+    Los conteos sucesivos se implementan en un plan posterior, pero el cálculo
+    del valor vigente ya tiene que estar bien: si no, el defecto aparece recién
+    cuando alguien manda a recontar, y para entonces el número está mal en la
+    reunión con el cliente.
+    """
+    con.execute(
+        "UPDATE pasada SET estado = 'cerrada', fecha_cierre = ? "
+        "WHERE sesion_id = ? AND estado = 'abierta'",
+        ("2026-08-10T12:00:00Z", sesion_id),
+    )
+    con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion_id, "2026-08-10T12:00:00Z"),
+    )
+    con.commit()
+
+
+def test_el_conteo_nuevo_reemplaza_al_anterior_no_se_suma(con, escenario):
+    """48 en el Conteo 1 y 50 en el Conteo 2 dan 50, no 98."""
+    contar(con, escenario, "A", 48000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 50000, "u-2")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["ultimo_conteo"] == 50000
+
+
+def test_dentro_de_una_pasada_los_conteos_siguen_sumando(con, escenario):
+    contar(con, escenario, "A", 30000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 20000, "u-2")
+    contar(con, escenario, "A", 30000, "u-3")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["ultimo_conteo"] == 50000
+
+
+def test_un_articulo_fuera_del_reconteo_conserva_su_valor(con, escenario):
+    contar(con, escenario, "B", 45000, "u-1")
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 100000, "u-2")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "B")
+
+    assert fila["ultimo_conteo"] == 45000
 
 
 def test_diferencia_fuera_de_tolerancia(con, escenario):
@@ -3232,44 +3310,69 @@ def parece_error_de_carga(contado, stock):
         return "dígitos permutados"
 
     # 2 por 24: se soltó la tecla antes de tiempo y falta el último dígito.
+    # Se distingue de «dígito de más» a propósito: el tablero es donde alguien
+    # decide qué ir a recontar, y decirle que sobra un dígito cuando falta lo
+    # manda a mirar para el lado equivocado.
     corto, largo = sorted((nucleo_c, nucleo_s), key=len)
     if len(largo) - len(corto) == 1 and largo.startswith(corto):
-        return "dígito de más"
+        return "dígito de más" if nucleo_c == largo else "dígito faltante"
 
     return None
 
 
 def _consulta_base():
-    """Artículos con su total contado, sin las filas anuladas.
+    """Artículos con el valor vigente de su última pasada contada.
 
-    Una anulación es una fila que apunta a otra por anula_uuid. Se excluyen
-    las dos: la anulación (que no suma) y la anulada.
+    Dos reglas viven en esta consulta.
+
+    Las anulaciones se descartan de a pares: una anulación es una fila que
+    apunta a otra por anula_uuid, y se excluyen las dos, la que anula —que no
+    suma— y la anulada.
+
+    Y el total es el de la pasada de número más alto en la que el artículo
+    fue contado, no la suma de todas. Si en el Conteo 1 se registraron 48 y
+    en el Conteo 2 se cuentan 50, el valor vigente es 50: sumar daría 98, que
+    no significa nada. Un artículo que no entró en la última pasada conserva
+    el valor de la última en la que sí se contó.
     """
     return """
+        WITH vigentes AS (
+            SELECT c.*, p.numero AS pasada_numero
+            FROM conteo c
+            JOIN pasada p ON p.id = c.pasada_id
+            WHERE c.anula_uuid IS NULL
+              AND c.uuid NOT IN (
+                  SELECT anula_uuid FROM conteo WHERE anula_uuid IS NOT NULL
+              )
+        ),
+        ultima_pasada AS (
+            SELECT articulo_id, MAX(pasada_numero) AS numero
+            FROM vigentes
+            GROUP BY articulo_id
+        )
         SELECT
             a.id, a.id_orden, a.tipo, a.material, a.sku, a.descripcion,
             a.grupo, a.ubicacion, a.unidad, a.stock_sistema, a.costo_unitario,
             a.origen,
             (
-                SELECT GROUP_CONCAT(c2.ubicacion_real)
-                FROM conteo c2
-                WHERE c2.articulo_id = a.id AND c2.ubicacion_real IS NOT NULL
+                SELECT v2.ubicacion_real
+                FROM vigentes v2
+                WHERE v2.articulo_id = a.id AND v2.ubicacion_real IS NOT NULL
+                ORDER BY v2.timestamp_servidor DESC, v2.rowid DESC
+                LIMIT 1
             ) AS ubicacion_real,
             (
-                SELECT GROUP_CONCAT(c3.observaciones, ' | ')
-                FROM conteo c3
-                WHERE c3.articulo_id = a.id AND c3.observaciones IS NOT NULL
+                SELECT GROUP_CONCAT(v3.observaciones, ' | ')
+                FROM vigentes v3
+                WHERE v3.articulo_id = a.id AND v3.observaciones IS NOT NULL
             ) AS observaciones,
-            SUM(c.cantidad) AS total,
-            COUNT(c.uuid) AS cantidad_conteos,
-            MAX(c.timestamp_servidor) AS fecha
+            SUM(v.cantidad) AS total,
+            COUNT(v.uuid) AS cantidad_conteos,
+            MAX(v.timestamp_servidor) AS fecha
         FROM articulo a
-        LEFT JOIN conteo c
-            ON c.articulo_id = a.id
-            AND c.anula_uuid IS NULL
-            AND c.uuid NOT IN (
-                SELECT anula_uuid FROM conteo WHERE anula_uuid IS NOT NULL
-            )
+        LEFT JOIN ultima_pasada u ON u.articulo_id = a.id
+        LEFT JOIN vigentes v
+            ON v.articulo_id = a.id AND v.pasada_numero = u.numero
         WHERE a.sesion_id = ? AND a.fusionado_en IS NULL
         GROUP BY a.id
         ORDER BY a.id_orden
