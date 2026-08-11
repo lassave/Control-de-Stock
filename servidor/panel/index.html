@@ -94,7 +94,9 @@
           </p>
           <p class="ayuda"><a id="enlace-apk" href="/app.apk">Descargar el APK</a></p>
         </div>
-        <img class="qr" src="/api/instalacion/qr" alt="Código QR para descargar la app">
+        <!-- Sin `src`: el navegador baja la imagen aunque el bloque esté
+             escondido. Lo pone `cargarInstalacion()` recién cuando hay APK. -->
+        <img id="qr-instalacion" class="qr" alt="Código QR para descargar la app">
       </div>
 
       <h2>Operarios</h2>

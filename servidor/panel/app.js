@@ -334,6 +334,13 @@ function dibujarOperario(operario) {
 async function cargarInstalacion() {
   const estado = await pedir("/api/instalacion");
   $("#instalacion").classList.toggle("oculta", !estado.disponible);
+  // El `src` va acá y no en el HTML. Un `src` fijo se descarga aunque el
+  // bloque esté escondido, y el navegador no reintenta: si el APK se copia
+  // con el panel abierto, el bloque se desesconde con el QR roto y hay que
+  // apretar F5. Poniéndolo recién cuando hay APK, aparece siempre entero.
+  if (estado.disponible) {
+    $("#qr-instalacion").src = "/api/instalacion/qr";
+  }
 }
 
 async function cargarOperarios() {

@@ -123,12 +123,56 @@ def test_exportar_arrastra_los_filtros_del_tablero():
     assert "exportar/detalle?" in contenido
 
 
+def _cuerpo_de(js, nombre):
+    """El código entre las llaves de una función, contando el anidamiento.
+
+    Buscar el nombre en el archivo entero no alcanza: una función definida
+    y nunca llamada aparece igual.
+    """
+    apertura = js.index("{", js.index(f"function {nombre}("))
+    profundidad = 0
+    for posicion in range(apertura, len(js)):
+        if js[posicion] == "{":
+            profundidad += 1
+        elif js[posicion] == "}":
+            profundidad -= 1
+            if profundidad == 0:
+                return js[apertura + 1:posicion]
+    raise AssertionError(f"«{nombre}» no cierra sus llaves")
+
+
 def test_el_panel_esconde_la_instalacion_si_no_hay_apk():
     """Ofrecer una descarga que devuelve 404 es peor que no ofrecer nada."""
     contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
 
     assert "/api/instalacion" in contenido
     assert "estado.disponible" in contenido
+    # Las dos de arriba quedan verdes con el toggle invertido —el bloque
+    # aparecería justo cuando NO hay APK— y también si nadie llama a
+    # `cargarInstalacion`, con lo que no aparecería nunca.
+    assert "!estado.disponible" in contenido
+    assert "cargarInstalacion" in _cuerpo_de(contenido, "cargarOperarios")
+
+
+ETIQUETA_IMG = re.compile(r"<img[^>]*>")
+
+
+def test_el_qr_de_instalacion_se_pide_recien_cuando_hay_apk():
+    """Un `src` fijo se baja igual con el bloque escondido, y no se reintenta.
+
+    Puesta en marcha real: se abre el panel sin APK y la imagen 404ea; se
+    copia el APK; se da de alta un operario y el bloque se desesconde en
+    caliente, pero con el QR roto y sin ninguna explicación. Hay que apretar
+    F5 para verlo. Es también el 404 en la consola en cada carga sin APK.
+    """
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+    bloque = html.split('id="instalacion"', 1)[1].split("</section>", 1)[0]
+    imagen = ETIQUETA_IMG.search(bloque).group(0)
+
+    assert "src=" not in imagen, f"el QR de instalación tiene src fijo: {imagen}"
+    assert "/api/instalacion/qr" in _cuerpo_de(
+        (RUTA_PANEL / "app.js").read_text(encoding="utf-8"), "cargarInstalacion"
+    )
 
 
 REGLA_CSS = re.compile(r"([^{}]+)\{([^{}]*)\}")
