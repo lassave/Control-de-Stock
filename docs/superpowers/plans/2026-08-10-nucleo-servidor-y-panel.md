@@ -2306,7 +2306,7 @@ def desactivar(con, operario_id):
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_operarios.py -v`
-Expected: PASS, 7 tests
+Expected: PASS, todos en verde
 
 - [ ] **Step 5: Commit**
 
@@ -3322,7 +3322,7 @@ def detalle(con, sesion_id):
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `cd servidor && python -m pytest tests/test_exportacion.py -v`
-Expected: PASS, 7 tests
+Expected: PASS, todos en verde
 
 - [ ] **Step 5: Correr toda la suite**
 
