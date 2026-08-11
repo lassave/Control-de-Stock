@@ -2148,6 +2148,57 @@ def test_listar_ordena_por_nombre(con):
     nombres = [o["nombre"] for o in operarios.listar(con)]
 
     assert nombres == ["Ana", "Zulema"]
+
+
+def test_dar_de_alta_a_alguien_desactivado_lo_reactiva(con):
+    """Sin esto, un clic equivocado dejaba el nombre bloqueado para siempre."""
+    juan = operarios.crear(con, "Juan")
+    operarios.desactivar(con, juan["id"])
+
+    revivido = operarios.crear(con, "Juan")
+
+    assert revivido["id"] == juan["id"]
+    assert revivido["activo"] == 1
+    assert operarios.por_token(con, revivido["token_dispositivo"]) is not None
+
+
+def test_reactivar_cambia_el_token(con):
+    """El celular que quedó desvinculado no tiene que volver a funcionar solo."""
+    juan = operarios.crear(con, "Juan")
+    token_viejo = juan["token_dispositivo"]
+    operarios.desactivar(con, juan["id"])
+
+    operarios.crear(con, "Juan")
+
+    assert operarios.por_token(con, token_viejo) is None
+
+
+def test_el_nombre_se_normaliza(con):
+    """«Juan» y «Juan » partirían el conteo de una misma persona en dos."""
+    operarios.crear(con, "Juan")
+
+    with pytest.raises(ValueError, match="Ya existe"):
+        operarios.crear(con, "  Juan  ")
+
+
+@pytest.mark.parametrize("nombre", ["", "   ", None, 123])
+def test_rechaza_nombres_invalidos(con, nombre):
+    with pytest.raises(ValueError, match="necesita un nombre"):
+        operarios.crear(con, nombre)
+
+
+def test_no_expone_el_pin(con):
+    """El PIN no tiene por qué viajar en cada respuesta del panel."""
+    juan = operarios.crear(con, "Juan", pin="1234")
+
+    assert "pin" not in juan
+    assert "pin" not in operarios.listar(con)[0]
+    assert "pin" not in operarios.por_token(con, juan["token_dispositivo"])
+
+
+def test_desactivar_a_alguien_que_no_existe_falla(con):
+    with pytest.raises(ValueError, match="No existe el operario"):
+        operarios.desactivar(con, 9999)
 ```
 
 - [ ] **Step 2: Correr el test y verificar que falla**
@@ -2167,44 +2218,89 @@ reutilizan en todos los inventarios.
 import secrets
 import sqlite3
 
+# Se enumeran las columnas en vez de usar «*» para que el PIN no viaje en
+# cada respuesta: el panel necesita el token, para armar el QR, pero nunca
+# el PIN.
+CAMPOS = "id, nombre, token_dispositivo, activo"
+
 
 def crear(con, nombre, pin=None):
-    token = secrets.token_urlsafe(32)
-    try:
-        cursor = con.execute(
-            "INSERT INTO operario (nombre, pin, token_dispositivo) VALUES (?, ?, ?)",
-            (nombre, pin, token),
-        )
-    except sqlite3.IntegrityError as error:
-        raise ValueError(f"Ya existe un operario llamado «{nombre}»") from error
+    """Da de alta un operario y le asigna su token de vinculación.
 
-    con.commit()
-    return _obtener(con, cursor.lastrowid)
+    Si el nombre corresponde a alguien desactivado, lo reactiva con un token
+    nuevo. Sin esto, desactivar a una persona dejaba su nombre bloqueado para
+    siempre y sin forma de volver a darla de alta. El token se renueva a
+    propósito: el celular que quedó desvinculado no tiene que revivir solo.
+    """
+    nombre = (nombre or "").strip() if isinstance(nombre, str) else ""
+    if not nombre:
+        raise ValueError("El operario necesita un nombre")
+
+    existente = con.execute(
+        "SELECT id, activo FROM operario WHERE nombre = ?", (nombre,)
+    ).fetchone()
+
+    if existente and existente["activo"]:
+        raise ValueError(f"Ya existe un operario llamado «{nombre}»")
+
+    token = secrets.token_urlsafe(32)
+
+    try:
+        with con:
+            if existente:
+                con.execute(
+                    "UPDATE operario SET activo = 1, pin = ?, token_dispositivo = ? "
+                    "WHERE id = ?",
+                    (pin, token, existente["id"]),
+                )
+                operario_id = existente["id"]
+            else:
+                cursor = con.execute(
+                    "INSERT INTO operario (nombre, pin, token_dispositivo) "
+                    "VALUES (?, ?, ?)",
+                    (nombre, pin, token),
+                )
+                operario_id = cursor.lastrowid
+    except sqlite3.IntegrityError as error:
+        # Solo puede pasar si otro hilo dio de alta el mismo nombre entre la
+        # consulta y la escritura. Cualquier otra violación se deja pasar tal
+        # cual: convertirla en «ya existe» mentiría sobre lo que ocurrió.
+        if "operario.nombre" in str(error):
+            raise ValueError(f"Ya existe un operario llamado «{nombre}»") from error
+        raise
+
+    return _obtener(con, operario_id)
 
 
 def _obtener(con, operario_id):
-    fila = con.execute("SELECT * FROM operario WHERE id = ?", (operario_id,)).fetchone()
+    fila = con.execute(
+        f"SELECT {CAMPOS} FROM operario WHERE id = ?", (operario_id,)
+    ).fetchone()
     return dict(fila) if fila else None
 
 
 def listar(con):
     filas = con.execute(
-        "SELECT * FROM operario WHERE activo = 1 ORDER BY nombre"
+        f"SELECT {CAMPOS} FROM operario WHERE activo = 1 ORDER BY nombre"
     ).fetchall()
     return [dict(fila) for fila in filas]
 
 
 def por_token(con, token):
     fila = con.execute(
-        "SELECT * FROM operario WHERE token_dispositivo = ? AND activo = 1",
+        f"SELECT {CAMPOS} FROM operario WHERE token_dispositivo = ? AND activo = 1",
         (token,),
     ).fetchone()
     return dict(fila) if fila else None
 
 
 def desactivar(con, operario_id):
-    con.execute("UPDATE operario SET activo = 0 WHERE id = ?", (operario_id,))
-    con.commit()
+    with con:
+        cursor = con.execute(
+            "UPDATE operario SET activo = 0 WHERE id = ?", (operario_id,)
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"No existe el operario {operario_id}")
 ```
 
 - [ ] **Step 4: Correr el test y verificar que pasa**
