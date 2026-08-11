@@ -373,14 +373,63 @@ def test_lo_dado_de_alta_se_puede_contar_enseguida(cliente, sesion):
     assert respuesta.json()["registrados"] == 1
 
 
+def test_lo_dado_de_alta_sin_codigo_tambien_se_puede_contar(cliente, sesion):
+    """El caso que motiva el SKU correlativo: producto sin etiqueta legible.
+
+    Si el SKU generado no queda como código, el conteo vuelve rechazado y
+    —peor— como no reintentable: la app lo descarta y el dato se pierde.
+    """
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    encabezados = {"X-Token": operario["token_dispositivo"]}
+    alta = alta_rapida(cliente, operario["token_dispositivo"], codigo="").json()
+
+    respuesta = cliente.post("/api/dispositivo/conteos", headers=encabezados, json={
+        "conteos": [{"uuid": "u-7", "codigo": alta["sku"], "cantidad": 2000,
+                     "timestamp_dispositivo": "2026-08-11T10:00:00Z"}],
+    })
+
+    assert respuesta.json()["registrados"] == 1
+
+
 def test_el_alta_rapida_no_expone_stock_ni_costo(cliente, sesion):
     importar(cliente, sesion["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
-    cuerpo = alta_rapida(cliente, operario["token_dispositivo"]).json()
+    respuesta = alta_rapida(cliente, operario["token_dispositivo"])
 
+    # Sin esto el test pasa en verde contra un 404: el cuerpo de un error
+    # tampoco trae stock, y la regla que se quiere fijar queda sin fijar.
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
     assert "stock_sistema" not in cuerpo
     assert "costo_unitario" not in cuerpo
+
+
+def test_el_alta_rapida_con_una_unidad_que_no_es_texto_devuelve_400(cliente, sesion):
+    """Un cliente que serializa la unidad como número no puede colar un alta.
+
+    Tomarlo como ausente daría de alta con «UN» algo que se cuenta en metros:
+    el operario ve la unidad que no es y cuenta con la que no es.
+    """
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = alta_rapida(cliente, operario["token_dispositivo"], unidad=5)
+
+    assert respuesta.status_code == 400
+    assert "unidad" in respuesta.json()["detail"]
+
+
+def test_el_alta_rapida_con_una_ubicacion_que_no_es_texto_devuelve_400(cliente, sesion):
+    """Un pasillo numérico llega como número y la ubicación se perdería."""
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = alta_rapida(cliente, operario["token_dispositivo"], ubicacion=7)
+
+    assert respuesta.status_code == 400
+    assert "ubicación" in respuesta.json()["detail"]
 
 
 def test_el_alta_rapida_sin_token_devuelve_401(cliente, sesion):
@@ -395,6 +444,36 @@ def test_el_alta_rapida_con_datos_invalidos_devuelve_400(cliente, sesion):
 
     assert respuesta.status_code == 400
     assert "descripción" in respuesta.json()["detail"]
+
+
+def test_el_alta_rapida_con_un_cuerpo_que_no_es_objeto_devuelve_400(cliente, sesion):
+    """Un cliente a medio escribir manda una lista; eso es culpa del pedido."""
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.post(
+        "/api/dispositivo/articulos",
+        headers={"X-Token": operario["token_dispositivo"]},
+        json=["a", "b"],
+    )
+
+    assert respuesta.status_code == 400
+    assert "artículo" in respuesta.json()["detail"]
+
+
+def test_el_alta_rapida_con_json_mal_formado_devuelve_400(cliente, sesion):
+    """Una conexión cortada a mitad de envío deja el cuerpo truncado."""
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.post(
+        "/api/dispositivo/articulos",
+        headers={"X-Token": operario["token_dispositivo"],
+                 "Content-Type": "application/json"},
+        content='{"descripcion": "Caño',
+    )
+
+    assert respuesta.status_code == 400
 
 
 def test_el_alta_rapida_aparece_en_el_tablero(cliente, sesion):

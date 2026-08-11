@@ -5,6 +5,8 @@ costo_unitario: el conteo es a ciegas y el dato no debe existir en el
 dispositivo, ni siquiera oculto en la pantalla.
 """
 
+import json
+
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.repos import articulos, conteos, operarios, sesiones
@@ -79,7 +81,15 @@ async def dar_de_alta(request: Request, x_token: str = Header(default="")):
     ciegas que después podría chocar con otra igual.
     """
     con, operario, sesion = _contexto(request, x_token)
-    cuerpo = await request.json()
+
+    try:
+        # Un cuerpo truncado —la conexión se cortó a mitad de envío, que en una
+        # WiFi de depósito pasa— es un pedido mal armado, no una falla nuestra.
+        cuerpo = await request.json()
+    except json.JSONDecodeError as error:
+        raise HTTPException(
+            status_code=400, detail="El pedido no trae un cuerpo JSON válido"
+        ) from error
 
     try:
         return articulos.crear_alta_rapida(

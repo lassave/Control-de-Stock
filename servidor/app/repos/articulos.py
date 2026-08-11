@@ -5,6 +5,8 @@ se crea acá con `origen = 'alta_rapida'`. En el panel y en la exportación
 salen identificados aparte, para resolverlos después en el ERP.
 """
 
+import sqlite3
+
 from app import reloj
 from app.repos import conteos, operarios
 
@@ -69,60 +71,59 @@ def _asociar_codigo(con, articulo_id, codigo):
 def _siguiente_sku_generado(con, sesion_id):
     """AR-1, AR-2, … para los productos que no tienen etiqueta legible.
 
-    Se saltea los que ya están: el maestro del cliente puede traer SKUs con
-    esta misma forma, y repetir uno rompe la unicidad por sesión. El alta
-    fallaría con el operario esperando frente a la mercadería.
+    Sigue al mayor que ya está, no a la cantidad: el maestro del cliente puede
+    traer SKUs con esta misma forma, y repetir uno rompe la unicidad por
+    sesión —el alta fallaría con el operario esperando frente a la
+    mercadería—. Contarlos, además, numeraba salteando y para atrás: con un
+    AR-3 del maestro salían AR-2, AR-4, AR-5, que de correlativo no tiene
+    nada para quien lee la planilla.
     """
-    usados = {
-        fila["sku"]
-        for fila in con.execute(
-            "SELECT sku FROM articulo WHERE sesion_id = ? AND sku LIKE 'AR-%'",
-            (sesion_id,),
-        )
-    }
-    numero = len(usados) + 1
-    while f"AR-{numero}" in usados:
-        numero += 1
-    return f"AR-{numero}"
+    mayor = 0
+    for fila in con.execute(
+        "SELECT sku FROM articulo WHERE sesion_id = ? AND sku LIKE 'AR-%'",
+        (sesion_id,),
+    ):
+        try:
+            numero = int(fila["sku"][len("AR-"):])
+        except ValueError:
+            continue  # 'AR-BRONCE' del maestro no participa de la numeración
+        mayor = max(mayor, numero)
+    return f"AR-{mayor + 1}"
 
 
-def crear_alta_rapida(con, sesion_id, operario_id, datos):
-    """Crea el artículo y le asocia el código escaneado.
+def _resolver_existente(con, sesion_id, codigo):
+    """El artículo de la sesión que ya identifica ese código, o None.
 
-    Si el código ya identifica a un artículo de la sesión —porque otro
-    operario lo dio de alta hace un segundo, o porque coincide con el SKU de
-    uno del maestro— devuelve ese, sin crear nada. Dos filas para el mismo
-    producto partirían su conteo en dos.
+    Contempla las dos formas de «ya está»: que el código esté asociado a un
+    artículo, o que coincida con el SKU de uno del maestro que traía otro
+    código de barras. En el segundo caso le asocia el código escaneado.
     """
-    codigo = _texto(datos, "codigo")
-    descripcion = _texto(datos, "descripcion")
-    unidad = _texto(datos, "unidad").upper() or "UN"
-    ubicacion = _texto(datos, "ubicacion") or None
+    if not codigo:
+        return None
 
-    if not descripcion:
-        raise ValueError("El artículo necesita una descripción")
+    existente = conteos.buscar_por_codigo(con, sesion_id, codigo)
+    if existente:
+        return existente
 
-    unidades = {fila["codigo"] for fila in con.execute("SELECT codigo FROM unidad")}
-    if unidad not in unidades:
-        raise ValueError(f"La unidad «{unidad}» no está en el catálogo")
+    por_sku = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = ?",
+        (sesion_id, codigo),
+    ).fetchone()
+    if por_sku:
+        with con:
+            _asociar_codigo(con, por_sku["id"], codigo)
+        return _publico(con, por_sku["id"])
 
-    if codigo:
-        existente = conteos.buscar_por_codigo(con, sesion_id, codigo)
-        if existente:
-            return existente
+    return None
 
-        por_sku = con.execute(
-            "SELECT id FROM articulo WHERE sesion_id = ? AND sku = ?",
-            (sesion_id, codigo),
-        ).fetchone()
-        if por_sku:
-            with con:
-                _asociar_codigo(con, por_sku["id"], codigo)
-            return _publico(con, por_sku["id"])
 
-    operario = operarios.obtener(con, operario_id)
-    ahora = reloj.ahora()
+# Cuántas veces se reintenta un alta sin código cuyo SKU generado se lo llevó
+# otro pedido en el medio. Con dos o tres celulares dando de alta a la vez,
+# más de un choque seguido es prácticamente imposible.
+INTENTOS_DE_ALTA = 3
 
+
+def _insertar(con, sesion_id, codigo, campos, operario, ahora):
     with con:
         sku = codigo or _siguiente_sku_generado(con, sesion_id)
 
@@ -140,11 +141,74 @@ def crear_alta_rapida(con, sesion_id, operario_id, datos):
                 stock_sistema, origen, creado_por, creado_en
             ) VALUES (?, ?, ?, ?, ?, ?, 0, 'alta_rapida', ?, ?)
             """,
-            (sesion_id, mayor + 1, sku, descripcion, ubicacion, unidad,
-             operario["nombre"] if operario else None, ahora),
+            (sesion_id, mayor + 1, sku, campos["descripcion"], campos["ubicacion"],
+             campos["unidad"], operario["nombre"] if operario else None, ahora),
         )
         articulo_id = cursor.lastrowid
 
-        _asociar_codigo(con, articulo_id, codigo)
+        # Sin etiqueta legible se asocia el SKU generado: el conteo resuelve el
+        # artículo solo por `codigo_barras`, así que sin esta fila el artículo
+        # existiría sin poder contarse nunca. Es la misma convención que usa la
+        # importación del maestro.
+        _asociar_codigo(con, articulo_id, codigo or sku)
 
-    return _publico(con, articulo_id)
+    return articulo_id
+
+
+def crear_alta_rapida(con, sesion_id, operario_id, datos):
+    """Crea el artículo y le asocia el código escaneado.
+
+    Si el código ya identifica a un artículo de la sesión —porque otro
+    operario lo dio de alta hace un segundo, o porque coincide con el SKU de
+    uno del maestro— devuelve ese, sin crear nada. Dos filas para el mismo
+    producto partirían su conteo en dos.
+
+    `creado` distingue las dos cosas. Sin ese campo la pantalla no puede
+    avisar «ese código ya estaba: Tornillo» cuando el operario escribió otra
+    descripción, y cada cliente terminaría inventando su propia heurística.
+    """
+    # El tipo se verifica antes que nada: sobre algo que no es un diccionario,
+    # `.get` lanzaría AttributeError, que el endpoint no atrapa, y el pedido
+    # saldría como error del servidor en vez de como pedido mal armado.
+    if not isinstance(datos, dict):
+        raise ValueError("El pedido tiene que traer los datos del artículo")
+
+    codigo = _texto(datos, "codigo")
+    descripcion = _texto(datos, "descripcion")
+    unidad = _texto(datos, "unidad").upper() or "UN"
+    ubicacion = _texto(datos, "ubicacion") or None
+
+    if not descripcion:
+        raise ValueError("El artículo necesita una descripción")
+
+    unidades = {fila["codigo"] for fila in con.execute("SELECT codigo FROM unidad")}
+    if unidad not in unidades:
+        raise ValueError(f"La unidad «{unidad}» no está en el catálogo")
+
+    existente = _resolver_existente(con, sesion_id, codigo)
+    if existente:
+        return {**existente, "creado": False}
+
+    operario = operarios.obtener(con, operario_id)
+    ahora = reloj.ahora()
+    campos = {"descripcion": descripcion, "ubicacion": ubicacion, "unidad": unidad}
+
+    for intento in range(INTENTOS_DE_ALTA):
+        try:
+            articulo_id = _insertar(con, sesion_id, codigo, campos, operario, ahora)
+        except sqlite3.IntegrityError:
+            # Otro pedido dio de alta lo mismo entre la búsqueda y el INSERT.
+            # El choque no es ValueError, así que sin esto sale como error del
+            # servidor aunque el artículo ya esté creado y el alta sea, en los
+            # hechos, exitosa.
+            existente = _resolver_existente(con, sesion_id, codigo)
+            if existente:
+                return {**existente, "creado": False}
+            if codigo or intento == INTENTOS_DE_ALTA - 1:
+                # Con código el SKU es fijo: reintentar daría el mismo choque.
+                # Sin código el SKU es un correlativo, y volver a generarlo
+                # toma el siguiente libre; devolver el ajeno sería peor, porque
+                # es otro producto, no el mismo.
+                raise
+        else:
+            return {**_publico(con, articulo_id), "creado": True}

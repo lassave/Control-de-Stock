@@ -61,6 +61,20 @@ def test_sin_codigo_genera_un_sku_correlativo(con, escenario):
     assert segundo["sku"] == "AR-2"
 
 
+def test_el_sku_generado_queda_asociado_como_codigo(con, escenario):
+    """Sin esto el artículo existe pero no se puede contar nunca.
+
+    El conteo resuelve el artículo por `codigo_barras`; un alta sin etiqueta
+    que no asocie su propio SKU deja cero filas ahí, y el conteo del operario
+    se rechaza como «código desconocido» sin posibilidad de reintento.
+    """
+    articulo = crear(con, escenario, codigo="")
+
+    encontrado = conteos.buscar_por_codigo(con, escenario["sesion_id"], articulo["sku"])
+    assert encontrado is not None
+    assert encontrado["id"] == articulo["id"]
+
+
 def test_el_sku_generado_no_choca_con_uno_del_maestro(con, escenario):
     """El maestro puede traer SKUs con la misma forma que los generados.
 
@@ -79,6 +93,25 @@ def test_el_sku_generado_no_choca_con_uno_del_maestro(con, escenario):
 
     assert "AR-3" not in generados
     assert len(set(generados)) == 3
+
+
+def test_el_sku_generado_sigue_al_mayor_existente(con, escenario):
+    """«Correlativo» quiere decir sin huecos y sin marcha atrás.
+
+    Contando cuántos hay, con un AR-3 del maestro salen AR-2, AR-4, AR-5: la
+    numeración que el operario ve en la planilla saltea y va para atrás.
+    """
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "stock_sistema, creado_en) VALUES (?, 1, 'AR-3', 'Del maestro', 'UN', 0, "
+        "'2026-08-11T00:00:00Z')",
+        (escenario["sesion_id"],),
+    )
+    con.commit()
+
+    generados = [crear(con, escenario, codigo="")["sku"] for _ in range(3)]
+
+    assert generados == ["AR-4", "AR-5", "AR-6"]
 
 
 def test_un_codigo_que_ya_es_sku_devuelve_el_articulo_existente(con, escenario):
@@ -105,6 +138,41 @@ def test_un_codigo_que_ya_es_sku_devuelve_el_articulo_existente(con, escenario):
     ).fetchone()["n"]
     assert cuantos == 1
     assert conteos.buscar_por_codigo(con, escenario["sesion_id"], "A-100") is not None
+
+
+def test_el_alta_nueva_avisa_que_creo_el_articulo(con, escenario):
+    """Sin este campo la app no puede distinguir un alta de un «ya estaba»."""
+    articulo = crear(con, escenario)
+
+    assert articulo["creado"] is True
+
+
+def test_el_alta_de_un_codigo_ya_dado_de_alta_avisa_que_ya_existia(con, escenario):
+    crear(con, escenario, codigo="7790001001234")
+
+    segundo = crear(con, escenario, codigo="7790001001234", descripcion="Otra cosa")
+
+    assert segundo["creado"] is False
+
+
+def test_el_codigo_que_es_sku_del_maestro_avisa_que_ya_existia(con, escenario):
+    """El operario escribe «Caño de bronce» y le vuelve «Tornillo».
+
+    Está bien que no se pise el maestro, pero la pantalla tiene que poder
+    decir «ese código ya estaba», y para eso hace falta saberlo sin adivinar.
+    """
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "stock_sistema, creado_en) VALUES (?, 1, 'A-100', 'Tornillo', 'UN', 0, "
+        "'2026-08-11T00:00:00Z')",
+        (escenario["sesion_id"],),
+    )
+    con.commit()
+
+    articulo = crear(con, escenario, codigo="A-100")
+
+    assert articulo["creado"] is False
+    assert articulo["descripcion"] == "Tornillo"
 
 
 def test_el_id_orden_queda_por_encima_del_mayor_existente(con, escenario):
@@ -157,6 +225,19 @@ def test_rechaza_un_codigo_que_no_es_texto(con, escenario):
         crear(con, escenario, codigo=7790001001234)
 
 
+def test_rechaza_un_cuerpo_que_no_es_un_objeto(con, escenario):
+    """Una lista o un texto sueltos explotarían en `.get` como AttributeError.
+
+    El conteo ya se defiende igual y con el motivo en castellano: la asimetría
+    confunde a quien escribe el cliente y el error sale como falla del
+    servidor, que hace pensar que el pedido estaba bien.
+    """
+    with pytest.raises(ValueError, match="datos del artículo"):
+        articulos.crear_alta_rapida(
+            con, escenario["sesion_id"], escenario["juan"]["id"], ["a", "b"]
+        )
+
+
 def test_rechaza_una_unidad_que_no_existe(con, escenario):
     """La clave foránea lo rechazaría con un mensaje que no dice nada."""
     with pytest.raises(ValueError, match="unidad"):
@@ -175,3 +256,39 @@ def test_dos_altas_del_mismo_codigo_no_duplican(con, escenario):
     segundo = crear(con, escenario, codigo="7790001001234")
 
     assert primero["id"] == segundo["id"]
+
+
+def test_el_alta_que_pierde_la_carrera_devuelve_la_del_otro(con, escenario, monkeypatch):
+    """El otro operario da de alta el mismo código entre la búsqueda y el INSERT.
+
+    El choque sale como IntegrityError, que no es ValueError: el endpoint no lo
+    atrapa y el operario ve un error del servidor, aunque el artículo ya existe
+    y el reintento andaría. Sin idempotencia real la app no puede reintentar.
+    """
+    original = articulos.operarios.obtener
+
+    def se_adelanta_otro_operario(conexion, operario_id):
+        monkeypatch.setattr(articulos.operarios, "obtener", original)
+        cursor = conexion.execute(
+            "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+            "stock_sistema, creado_en) VALUES (?, 1, '999', 'Del otro operario', "
+            "'UN', 0, '2026-08-11T00:00:00Z')",
+            (escenario["sesion_id"],),
+        )
+        conexion.execute(
+            "INSERT INTO codigo_barras (articulo_id, codigo) VALUES (?, '999')",
+            (cursor.lastrowid,),
+        )
+        conexion.commit()
+        return original(conexion, operario_id)
+
+    monkeypatch.setattr(articulos.operarios, "obtener", se_adelanta_otro_operario)
+
+    articulo = crear(con, escenario, codigo="999")
+
+    assert articulo["descripcion"] == "Del otro operario"
+    cuantos = con.execute(
+        "SELECT COUNT(*) AS n FROM articulo WHERE sesion_id = ?",
+        (escenario["sesion_id"],),
+    ).fetchone()["n"]
+    assert cuantos == 1
