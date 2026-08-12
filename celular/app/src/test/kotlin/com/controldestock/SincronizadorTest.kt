@@ -379,7 +379,7 @@ class SincronizadorTest {
 
     @Test
     fun `cuando el codigo ya existia se reporta con que nombre`() = runTest {
-        // Para poder decirle al operario «ese codigo ya era: Tornillo». Sin
+        // Para poder decirle al operario «ese codigo ya estaba: Tornillo». Sin
         // eso escribio una descripcion que se descarto y nunca se entera.
         guardarAlta()
         responder("""{"id":9,"id_orden":84,"sku":"7790999","descripcion":"Tornillo","unidad":"UN","creado":false}""")
