@@ -74,6 +74,33 @@ interface MaestroDao {
     @Query("SELECT * FROM unidad WHERE codigo = :codigo")
     suspend fun unidad(codigo: String): UnidadEntidad?
 
+    /** El catálogo entero, para que el alta rápida ofrezca dónde elegir. */
+    @Query("SELECT * FROM unidad ORDER BY codigo")
+    suspend fun unidades(): List<UnidadEntidad>
+
+    @Query("SELECT * FROM articulo WHERE estadoAlta = 'PENDIENTE' ORDER BY id DESC")
+    suspend fun altasPendientes(): List<ArticuloEntidad>
+
+    @Query("UPDATE articulo SET estadoAlta = :estado, motivoRechazo = :motivo WHERE id = :id")
+    suspend fun marcarAlta(id: Int, estado: String, motivo: String?)
+
+    /**
+     * El id del próximo artículo nacido en el celular: negativo.
+     *
+     * Los del servidor son positivos, así que ninguna alta local puede pisar
+     * a un artículo del maestro cuando el maestro se vuelve a bajar.
+     *
+     * Mira solo los ids negativos: con el maestro bajado, el mínimo de todos
+     * sería positivo y la primera alta nacería con un id que le pertenece al
+     * servidor.
+     */
+    @Query("SELECT COALESCE(MIN(id), 0) - 1 FROM articulo WHERE id < 0")
+    suspend fun proximoIdLocal(): Int
+
+    /** El artículo nuevo va al final del recorrido, nunca en el medio. */
+    @Query("SELECT COALESCE(MAX(idOrden), 0) + 1 FROM articulo")
+    suspend fun proximoOrden(): Int
+
     @Query(
         "SELECT ubicacion FROM articulo WHERE ubicacion IS NOT NULL "
             + "GROUP BY ubicacion ORDER BY ubicacion"
@@ -90,6 +117,19 @@ interface MaestroDao {
     suspend fun insertarUnidades(unidades: List<UnidadEntidad>)
 
     @Query("DELETE FROM articulo")
+    suspend fun borrarTodosLosArticulos()
+
+    @Query("DELETE FROM codigo WHERE articuloId NOT IN (SELECT id FROM articulo)")
+    suspend fun borrarCodigosHuerfanos()
+
+    /**
+     * Borra el maestro salvo las altas que todavía no llegaron al servidor.
+     *
+     * Si se las llevara, quedarían conteos de un código que la base local ya
+     * no conoce, y el servidor los rechaza para siempre por código
+     * desconocido: el operario contó y el conteo se pierde.
+     */
+    @Query("DELETE FROM articulo WHERE estadoAlta IS NULL OR estadoAlta <> 'PENDIENTE'")
     suspend fun borrarArticulos()
 
     @Query("DELETE FROM codigo")
@@ -108,8 +148,8 @@ interface MaestroDao {
         codigos: List<CodigoEntidad>,
         unidades: List<UnidadEntidad>,
     ) {
-        borrarCodigos()
         borrarArticulos()
+        borrarCodigosHuerfanos()
         insertarArticulos(articulos)
         insertarCodigos(codigos)
         insertarUnidades(unidades)
@@ -138,6 +178,10 @@ interface ConteoDao {
 
     @Query("SELECT * FROM conteo WHERE uuid = :uuid")
     suspend fun porUuid(uuid: String): ConteoEntidad?
+
+    /** Los conteos de un artículo, para saber si ya se contó en esa ubicación. */
+    @Query("SELECT * FROM conteo WHERE articuloId = :articuloId ORDER BY rowid")
+    suspend fun deArticulo(articuloId: Int): List<ConteoEntidad>
 
     @Query("DELETE FROM conteo")
     suspend fun borrarTodos()

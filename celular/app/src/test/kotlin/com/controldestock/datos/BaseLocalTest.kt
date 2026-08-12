@@ -303,4 +303,93 @@ class BaseLocalTest {
     fun `sin vincular no hay vinculacion`() = runTest {
         assertNull(base.vinculacionDao().actual())
     }
+
+    @Test
+    fun `reemplazar el maestro conserva el alta que no subio`() = runTest {
+        // Si se la llevara, el conteo que ya cargó el operario quedaría
+        // apuntando a un código que la base no conoce, y el servidor lo
+        // rechaza para siempre.
+        base.maestroDao().insertarArticulos(
+            listOf(
+                ArticuloEntidad(
+                    id = -1, idOrden = 99, sku = "7790999", descripcion = "Pack por 6",
+                    unidad = "UN", pasadaNumero = 1, sesionId = 1,
+                    busqueda = textoDeBusqueda("Pack por 6", "7790999", null),
+                    estadoAlta = EstadoSync.PENDIENTE.name,
+                ),
+            ),
+        )
+        base.maestroDao().insertarCodigos(listOf(CodigoEntidad("7790999", -1)))
+
+        base.maestroDao().reemplazarMaestro(
+            articulos = listOf(
+                ArticuloEntidad(
+                    id = 1, idOrden = 1, sku = "A-1", descripcion = "Fideos",
+                    unidad = "UN", pasadaNumero = 1, sesionId = 1,
+                    busqueda = textoDeBusqueda("Fideos", "A-1", null),
+                ),
+            ),
+            codigos = listOf(CodigoEntidad("7790001", 1)),
+            unidades = listOf(UnidadEntidad("UN", "Unidad", 0)),
+        )
+
+        assertEquals("Pack por 6", base.maestroDao().porCodigo("7790999")?.descripcion)
+        assertEquals(1, base.maestroDao().altasPendientes().size)
+    }
+
+    @Test
+    fun `reemplazar el maestro se lleva el alta que ya subio`() = runTest {
+        // Esa ya existe del otro lado: si se quedara, el maestro nuevo la
+        // traería otra vez con su id de verdad y el operario vería el mismo
+        // producto dos veces.
+        base.maestroDao().insertarArticulos(
+            listOf(
+                ArticuloEntidad(
+                    id = -1, idOrden = 99, sku = "7790999", descripcion = "Pack por 6",
+                    unidad = "UN", pasadaNumero = 1, sesionId = 1,
+                    busqueda = textoDeBusqueda("Pack por 6", "7790999", null),
+                    estadoAlta = EstadoSync.ENVIADO.name,
+                ),
+            ),
+        )
+
+        base.maestroDao().reemplazarMaestro(emptyList(), emptyList(), emptyList())
+
+        assertNull(base.maestroDao().porId(-1))
+    }
+
+    @Test
+    fun `vincularse a otro inventario no deja ni las altas pendientes`() = runTest {
+        base.vinculacionDao().guardar(vinculacionDe(sesionId = 1))
+        base.maestroDao().insertarArticulos(
+            listOf(
+                ArticuloEntidad(
+                    id = -1, idOrden = 99, sku = "7790999", descripcion = "Pack por 6",
+                    unidad = "UN", pasadaNumero = 1, sesionId = 1,
+                    busqueda = textoDeBusqueda("Pack por 6", "7790999", null),
+                    estadoAlta = EstadoSync.PENDIENTE.name,
+                ),
+            ),
+        )
+
+        base.vincularA(vinculacionDe(sesionId = 2))
+
+        assertEquals(emptyList<ArticuloEntidad>(), base.maestroDao().altasPendientes())
+    }
+
+    @Test
+    fun `el id del articulo local es negativo y no pisa al maestro`() = runTest {
+        base.maestroDao().insertarArticulos(
+            listOf(
+                ArticuloEntidad(
+                    id = 1, idOrden = 1, sku = "A-1", descripcion = "Fideos",
+                    unidad = "UN", pasadaNumero = 1, sesionId = 1,
+                    busqueda = textoDeBusqueda("Fideos", "A-1", null),
+                ),
+            ),
+        )
+
+        assertEquals(-1, base.maestroDao().proximoIdLocal())
+        assertEquals(2, base.maestroDao().proximoOrden())
+    }
 }

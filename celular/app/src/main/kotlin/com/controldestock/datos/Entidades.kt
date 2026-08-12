@@ -58,6 +58,16 @@ data class ArticuloEntidad(
     // «caño» no encontraría «CAÑO galvanizado» — y los maestros de ERP
     // vienen en mayúsculas, con el castellano lleno de eñes.
     val busqueda: String = "",
+    // Vacío si el artículo vino del maestro. Si nació acá, por un alta
+    // rápida, en qué anda esa alta contra el servidor: PENDIENTE, ENVIADO o
+    // RECHAZADO.
+    //
+    // Es texto y no el enum: la columna admite nulo, y el conversor de
+    // EstadoSync es para columnas obligatorias. Room no admite dos
+    // conversores para el mismo tipo.
+    val estadoAlta: String? = null,
+    // Por qué el servidor no la aceptó, para poder mostrárselo al operario.
+    val motivoRechazo: String? = null,
 )
 
 /** Minúsculas y sin acentos, para que la búsqueda encuentre lo que se ve. */
@@ -133,3 +143,7 @@ data class ConteoEntidad(
         )
     }
 }
+
+/** Un artículo que nació en el celular y todavía no existe en el servidor. */
+val ArticuloEntidad.esAltaPendiente: Boolean
+    get() = estadoAlta == EstadoSync.PENDIENTE.name
