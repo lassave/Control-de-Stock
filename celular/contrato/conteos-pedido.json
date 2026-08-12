@@ -1,0 +1,18 @@
+{
+  "conteos": [
+    {
+      "uuid": "contrato-1",
+      "codigo": "7790001001234",
+      "cantidad": 48000,
+      "timestamp_dispositivo": "2026-08-11T10:00:00Z",
+      "ubicacion_real": "P-9",
+      "observaciones": "Estaba en otro estante"
+    },
+    {
+      "uuid": "contrato-2",
+      "codigo": "no-existe",
+      "cantidad": 1000,
+      "timestamp_dispositivo": "2026-08-11T10:01:00Z"
+    }
+  ]
+}

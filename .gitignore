@@ -26,8 +26,10 @@ venv/
 *.jks
 local.properties
 .gradle/
+celular/.gradle/
 build/
 .cxx/
+.kotlin/
 
 # Espacio de trabajo de los agentes (bitácora, briefs, reportes)
 .superpowers/
