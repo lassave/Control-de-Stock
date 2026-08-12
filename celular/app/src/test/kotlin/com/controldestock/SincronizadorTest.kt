@@ -85,6 +85,27 @@ class SincronizadorTest {
         )
     }
 
+    private suspend fun guardarAlta(
+        codigo: String = "7790999",
+        descripcion: String = "Pack por 6",
+        unidad: String = "UN",
+    ) {
+        base.maestroDao().insertarArticulos(
+            listOf(
+                ArticuloEntidad(
+                    id = -1, idOrden = 99, sku = codigo, descripcion = descripcion,
+                    unidad = unidad, pasadaNumero = 1, sesionId = 1,
+                    busqueda = textoDeBusqueda(descripcion, codigo, null),
+                    estadoAlta = EstadoSync.PENDIENTE.name,
+                ),
+            ),
+        )
+        base.maestroDao().insertarCodigos(listOf(CodigoEntidad(codigo, -1)))
+        base.conteoDao().guardar(
+            ConteoEntidad.de(EventoConteo.nuevo(codigo, 6000, reloj), -1, 1),
+        )
+    }
+
     @Test
     fun `manda los pendientes y los marca como enviados`() = runTest {
         guardarPendiente()
@@ -175,5 +196,105 @@ class SincronizadorTest {
         assertEquals(0, servidor.requestCount)
         assertEquals(0, base.conteoDao().cantidadPendientes())
         assertEquals(0, resultado.enviados)
+    }
+
+    @Test
+    fun `el articulo dado de alta sube antes que su conteo`() = runTest {
+        // Al reves el conteo se pierde: el servidor rechaza para siempre un
+        // codigo que no conoce.
+        guardarAlta()
+        responder("""{"id":9,"id_orden":84,"sku":"7790999","descripcion":"Pack por 6","unidad":"UN","creado":true}""")
+        responder("""{"registrados":1,"duplicados":0,"rechazados":[]}""")
+
+        sincronizador().sincronizar()
+
+        assertEquals("/api/dispositivo/articulos", servidor.takeRequest().path)
+        assertEquals("/api/dispositivo/conteos", servidor.takeRequest().path)
+        assertEquals(0, base.conteoDao().cantidadPendientes())
+        assertEquals(emptyList<ArticuloEntidad>(), base.maestroDao().altasPendientes())
+    }
+
+    @Test
+    fun `sin red el alta y su conteo siguen esperando`() = runTest {
+        guardarAlta()
+        servidor.shutdown()
+
+        val resultado = sincronizador().sincronizar()
+
+        assertTrue(resultado.huboError)
+        assertEquals(1, base.conteoDao().cantidadPendientes())
+        assertEquals(1, base.maestroDao().altasPendientes().size)
+    }
+
+    @Test
+    fun `un alta rechazada para siempre cierra sus conteos`() = runTest {
+        // Sin esto la cola nunca se vacia: el articulo no va a existir jamas,
+        // asi que sus conteos se reintentarian para siempre.
+        guardarAlta(unidad = "XX")
+        responder("""{"detail":"La unidad «XX» no está en el catálogo"}""", codigo = 400)
+
+        sincronizador().sincronizar()
+
+        assertEquals(0, base.conteoDao().cantidadPendientes())
+        val conteo = base.conteoDao().todos().single()
+        assertEquals(EstadoSync.RECHAZADO, conteo.estadoSync)
+        assertEquals("La unidad «XX» no está en el catálogo", conteo.motivoRechazo)
+        assertEquals(
+            "La unidad «XX» no está en el catálogo",
+            base.maestroDao().porId(-1)?.motivoRechazo,
+        )
+    }
+
+    @Test
+    fun `un codigo que ya existia no es un error`() = runTest {
+        // Otro operario lo dio de alta hace un minuto, o coincide con el SKU
+        // de uno del maestro: el conteo entra igual contra ese articulo.
+        guardarAlta()
+        responder("""{"id":9,"id_orden":84,"sku":"7790999","descripcion":"Tornillo","unidad":"UN","creado":false}""")
+        responder("""{"registrados":1,"duplicados":0,"rechazados":[]}""")
+
+        val resultado = sincronizador().sincronizar()
+
+        assertEquals(1, resultado.enviados)
+        assertEquals(emptyList<ArticuloEntidad>(), base.maestroDao().altasPendientes())
+    }
+
+    @Test
+    fun `cuando el codigo ya existia se reporta con que nombre`() = runTest {
+        // Para poder decirle al operario «ese codigo ya era: Tornillo». Sin
+        // eso escribio una descripcion que se descarto y nunca se entera.
+        guardarAlta()
+        responder("""{"id":9,"id_orden":84,"sku":"7790999","descripcion":"Tornillo","unidad":"UN","creado":false}""")
+        responder("""{"registrados":1,"duplicados":0,"rechazados":[]}""")
+
+        val resultado = sincronizador().sincronizar()
+
+        assertEquals(listOf("Tornillo"), resultado.yaExistian)
+    }
+
+    @Test
+    fun `un alta nueva no reporta ningun nombre`() = runTest {
+        guardarAlta()
+        responder("""{"id":9,"id_orden":84,"sku":"7790999","descripcion":"Pack por 6","unidad":"UN","creado":true}""")
+        responder("""{"registrados":1,"duplicados":0,"rechazados":[]}""")
+
+        val resultado = sincronizador().sincronizar()
+
+        assertEquals(emptyList<String>(), resultado.yaExistian)
+    }
+
+    @Test
+    fun `un alta trabada no frena a los conteos de los demas articulos`() = runTest {
+        // El operario conto cincuenta del maestro y uno nuevo: los cincuenta
+        // no esperan al que falta.
+        guardarAlta()
+        guardarPendiente()
+        responder("""{"detail":"algo pasajero"}""", codigo = 500)
+        responder("""{"registrados":1,"duplicados":0,"rechazados":[]}""")
+
+        sincronizador().sincronizar()
+
+        assertEquals(1, base.conteoDao().cantidadPendientes())
+        assertEquals(1, base.maestroDao().altasPendientes().size)
     }
 }

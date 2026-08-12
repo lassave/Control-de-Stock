@@ -34,8 +34,15 @@ object PlanDeSincronizacion {
      * pendientes no baja a cero y el trabajo en segundo plano quema batería y
      * red sin fin. Es la misma falla que el estado RECHAZADO existe para
      * evitar, entrando por la puerta de la anulación.
+     *
+     * Y se retiene lo que depende de un alta que todavía no llegó: mandar un
+     * conteo antes que su artículo es tirarlo, porque el servidor rechaza
+     * para siempre un código que no conoce.
      */
-    fun aEnviar(locales: List<ConteoLocal>): List<EventoConteo> {
+    fun aEnviar(
+        locales: List<ConteoLocal>,
+        codigosSinArticulo: Set<String> = emptySet(),
+    ): List<EventoConteo> {
         val nuncaLlegaron = locales
             .filter { it.estadoSync == EstadoSync.RECHAZADO }
             .map { it.evento.uuid }
@@ -44,8 +51,26 @@ object PlanDeSincronizacion {
         return locales
             .filter { it.estadoSync == EstadoSync.PENDIENTE }
             .filterNot { it.evento.anulaUuid in nuncaLlegaron }
+            .filterNot { it.evento.codigo in codigosSinArticulo }
             .map { it.evento }
     }
+
+    /**
+     * Los conteos que hay que cerrar porque su alta no va a entrar nunca.
+     *
+     * Si el servidor rechazó el artículo para siempre —una unidad que no está
+     * en su catálogo, el inventario cerrado— sus conteos no tienen a dónde
+     * llegar. Dejarlos pendientes deja la cola girando para siempre, quema
+     * batería y red, y el indicador de «sin subir» pasa a mentir.
+     */
+    fun cerradosPorAltaRechazada(
+        locales: List<ConteoLocal>,
+        codigo: String,
+        motivo: String,
+    ): List<ConteoLocal> = locales
+        .filter { it.estadoSync == EstadoSync.PENDIENTE }
+        .filter { it.evento.codigo == codigo }
+        .map { it.copy(estadoSync = EstadoSync.RECHAZADO, motivoRechazo = motivo) }
 
     /**
      * Las anulaciones que no tiene sentido mandar, con su motivo.

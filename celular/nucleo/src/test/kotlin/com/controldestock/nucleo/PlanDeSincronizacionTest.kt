@@ -195,4 +195,65 @@ class PlanDeSincronizacionTest {
 
         assertEquals(EstadoSync.ENVIADO, resultado.single().estadoSync)
     }
+
+    @Test
+    fun `un conteo cuyo articulo no existe todavia en el servidor espera`() {
+        // Mandarlo antes que su alta es tirarlo: el servidor rechaza para
+        // siempre un conteo cuyo codigo no conoce.
+        val locales = listOf(
+            ConteoLocal(EventoConteo("uuid-1", "7790999", 6000, "2026-08-12T10:00:00Z")),
+            ConteoLocal(EventoConteo("uuid-2", "7790001", 1000, "2026-08-12T10:01:00Z")),
+        )
+
+        val aEnviar = PlanDeSincronizacion.aEnviar(locales, setOf("7790999"))
+
+        assertEquals(listOf("uuid-2"), aEnviar.map { it.uuid })
+    }
+
+    @Test
+    fun `un alta trabada no frena a los conteos de los demas articulos`() {
+        // El operario conto cincuenta articulos del maestro y uno nuevo: los
+        // cincuenta no tienen por que esperar al que falta.
+        val locales = (1..3).map {
+            ConteoLocal(EventoConteo("uuid-$it", "779000$it", 1000, "2026-08-12T10:0$it:00Z"))
+        }
+
+        val aEnviar = PlanDeSincronizacion.aEnviar(locales, setOf("7790999"))
+
+        assertEquals(3, aEnviar.size)
+    }
+
+    @Test
+    fun `los conteos de un alta rechazada para siempre se cierran con su motivo`() {
+        val locales = listOf(
+            ConteoLocal(EventoConteo("uuid-1", "7790999", 6000, "2026-08-12T10:00:00Z")),
+            ConteoLocal(EventoConteo("uuid-2", "7790001", 1000, "2026-08-12T10:01:00Z")),
+        )
+
+        val cerrados = PlanDeSincronizacion.cerradosPorAltaRechazada(
+            locales, "7790999", "La unidad «XX» no está en el catálogo",
+        )
+
+        assertEquals(1, cerrados.size)
+        assertEquals("uuid-1", cerrados.single().evento.uuid)
+        assertEquals(EstadoSync.RECHAZADO, cerrados.single().estadoSync)
+        assertEquals(
+            "La unidad «XX» no está en el catálogo",
+            cerrados.single().motivoRechazo,
+        )
+    }
+
+    @Test
+    fun `cerrar los conteos de un alta rechazada no toca a los que ya subieron`() {
+        val locales = listOf(
+            ConteoLocal(
+                EventoConteo("uuid-1", "7790999", 6000, "2026-08-12T10:00:00Z"),
+                EstadoSync.ENVIADO,
+            ),
+        )
+
+        val cerrados = PlanDeSincronizacion.cerradosPorAltaRechazada(locales, "7790999", "no")
+
+        assertEquals(emptyList<ConteoLocal>(), cerrados)
+    }
 }
