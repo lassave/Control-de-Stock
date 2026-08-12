@@ -6,7 +6,6 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -55,13 +54,30 @@ class PantallaEscaneoTest {
 
     @Test
     fun `con la ficha abierta la camara deja de avisar lecturas`() {
+        val activo = montarConFicha(abierta = true)
+
+        compose.onNodeWithText("La ficha").assertIsDisplayed()
+        assertTrue("la cámara siguió leyendo: $activo", activo.none { it })
+    }
+
+    @Test
+    fun `sin ninguna ficha abierta la camara lee`() {
+        // La otra dirección: apagarla siempre es el modo de falla peor de
+        // todos, porque el operario apunta y no pasa nada.
+        val activo = montarConFicha(abierta = false)
+
+        assertTrue("la cámara quedó apagada: $activo", activo.all { it })
+    }
+
+    /** Cómo quedó `activo` en cada composición de la cámara. */
+    private fun montarConFicha(abierta: Boolean): List<Boolean> {
         val activo = mutableListOf<Boolean>()
         compose.setContent {
             PantallaEscaneo(
                 operario = "Ana",
                 pasada = "Pasada 1",
                 pendientes = 0,
-                fichaAbierta = true,
+                fichaAbierta = abierta,
                 avisoDeDesconocido = null,
                 alDarDeAlta = null,
                 alLeer = {},
@@ -70,8 +86,10 @@ class PantallaEscaneoTest {
                 Box { Text("La ficha") }
             }
         }
-
-        compose.onNodeWithText("La ficha").assertIsDisplayed()
-        assertEquals(listOf(false), activo)
+        // Que se haya compuesto una sola vez no es una regla de nada: lo que
+        // importa es que ninguna composición la haya dejado del lado que no
+        // corresponde.
+        assertTrue("la cámara no se compuso nunca", activo.isNotEmpty())
+        return activo
     }
 }
