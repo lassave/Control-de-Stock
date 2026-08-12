@@ -36,6 +36,24 @@ def test_la_api_gana_sobre_los_archivos_estaticos(cliente):
     assert cliente.get("/api/sesiones").status_code == 200
 
 
+@pytest.mark.parametrize("ruta", ["/", "/app.js", "/estilos.css"])
+def test_el_panel_le_pregunta_al_servidor_antes_de_reusar_lo_que_tiene(cliente, ruta):
+    """Sin `Cache-Control`, el navegador se guarda el derecho a no preguntar.
+
+    Con `ETag` y `Last-Modified` solos, alcanza para que el navegador estime
+    por su cuenta cuánto vale lo que ya bajó y siga usándolo sin consultar.
+    Después de actualizar el sistema, el panel viejo sigue corriendo y no hay
+    nada en pantalla que lo diga: pasó acá, con un `app.js` anterior al QR de
+    vinculación: el operario no podía vincular el celular y el panel se veía
+    perfecto. `no-cache` no prohíbe guardar, obliga a revalidar; con el ETag
+    la respuesta suele ser un 304 sin cuerpo, que en la red del depósito no
+    cuesta nada.
+    """
+    respuesta = cliente.get(ruta)
+
+    assert "no-cache" in respuesta.headers.get("cache-control", "")
+
+
 def test_no_hay_referencias_a_recursos_externos():
     """Durante el conteo puede no haber internet: todo se sirve local."""
     patron = re.compile(r'(src|href)\s*=\s*["\']https?://', re.IGNORECASE)

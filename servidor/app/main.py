@@ -14,6 +14,26 @@ RUTA_PANEL = Path(__file__).parent.parent / "panel"
 RUTA_DB_POR_DEFECTO = Path(__file__).parent.parent / "inventario.db"
 
 
+class PanelQueSeRevalida(StaticFiles):
+    """El panel, sirviéndose siempre con permiso del servidor.
+
+    `StaticFiles` manda `ETag` y `Last-Modified` pero no `Cache-Control`, y
+    con eso el navegador estima por su cuenta cuánto vale lo que ya bajó y
+    lo reusa sin preguntar. Después de actualizar el sistema el panel viejo
+    sigue corriendo, y no hay nada en pantalla que lo diga: acá quedó una
+    pestaña con un `app.js` anterior al QR de vinculación, el celular no se
+    podía vincular y el panel se veía perfecto.
+
+    `no-cache` no prohíbe guardar: obliga a preguntar antes de reusar. Con
+    el ETag, la respuesta habitual es un 304 sin cuerpo.
+    """
+
+    async def get_response(self, path, scope):
+        respuesta = await super().get_response(path, scope)
+        respuesta.headers["Cache-Control"] = "no-cache"
+        return respuesta
+
+
 def crear_app(ruta_db=None):
     ruta = str(ruta_db or RUTA_DB_POR_DEFECTO)
 
@@ -48,7 +68,7 @@ def crear_app(ruta_db=None):
     # El panel se monta al final y en la raíz: cualquier ruta que no haya
     # tomado un router de la API cae acá como archivo estático.
     if RUTA_PANEL.exists():
-        app.mount("/", StaticFiles(directory=RUTA_PANEL, html=True), name="panel")
+        app.mount("/", PanelQueSeRevalida(directory=RUTA_PANEL, html=True), name="panel")
 
     return app
 
