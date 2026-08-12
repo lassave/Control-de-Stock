@@ -29,6 +29,15 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    buildFeatures {
+        compose = true
+    }
+
+    composeOptions {
+        // Atada a Kotlin 1.9.23: una combinación distinta no compila.
+        kotlinCompilerExtensionVersion = "1.5.11"
+    }
 }
 
 dependencies {
@@ -40,6 +49,16 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.core:core-ktx:1.13.1")
+
+    implementation(platform("androidx.compose:compose-bom:2024.05.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")

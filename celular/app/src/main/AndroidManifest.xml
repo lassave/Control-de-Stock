@@ -7,6 +7,22 @@
         android:label="Control de Stock"
         android:supportsRtl="false"
         android:allowBackup="false"
-        android:networkSecurityConfig="@xml/red" />
+        android:networkSecurityConfig="@xml/red">
+
+        <!--
+          Fija en vertical: el operario cuenta con una mano, y una rotación en
+          medio del escaneo reinicia la cámara.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
 
 </manifest>
