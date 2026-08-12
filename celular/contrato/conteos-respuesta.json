@@ -1,0 +1,11 @@
+{
+  "registrados": 1,
+  "duplicados": 0,
+  "rechazados": [
+    {
+      "uuid": "contrato-2",
+      "motivo": "Código desconocido: no-existe",
+      "reintentable": false
+    }
+  ]
+}

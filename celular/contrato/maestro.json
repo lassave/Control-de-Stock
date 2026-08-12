@@ -1,0 +1,79 @@
+{
+  "sesion_id": 1,
+  "articulos": [
+    {
+      "id": 1,
+      "id_orden": 1,
+      "tipo": null,
+      "material": null,
+      "sku": "7790001001234",
+      "descripcion": "Fideos guisero 500g",
+      "grupo": null,
+      "ubicacion": "P-1",
+      "unidad": "UN"
+    },
+    {
+      "id": 2,
+      "id_orden": 2,
+      "tipo": null,
+      "material": null,
+      "sku": "7790002005678",
+      "descripcion": "Aceite girasol 900ml",
+      "grupo": null,
+      "ubicacion": "P-2",
+      "unidad": "UN"
+    }
+  ],
+  "codigos": [
+    {
+      "codigo": "7790001001234",
+      "articulo_id": 1
+    },
+    {
+      "codigo": "7790002005678",
+      "articulo_id": 2
+    }
+  ],
+  "unidades": [
+    {
+      "codigo": "UN",
+      "nombre": "Unidad",
+      "admite_decimales": 0
+    },
+    {
+      "codigo": "CJ",
+      "nombre": "Caja",
+      "admite_decimales": 0
+    },
+    {
+      "codigo": "PACK",
+      "nombre": "Pack",
+      "admite_decimales": 0
+    },
+    {
+      "codigo": "KG",
+      "nombre": "Kilogramo",
+      "admite_decimales": 1
+    },
+    {
+      "codigo": "GR",
+      "nombre": "Gramo",
+      "admite_decimales": 1
+    },
+    {
+      "codigo": "LT",
+      "nombre": "Litro",
+      "admite_decimales": 1
+    },
+    {
+      "codigo": "ML",
+      "nombre": "Mililitro",
+      "admite_decimales": 1
+    },
+    {
+      "codigo": "MT",
+      "nombre": "Metro",
+      "admite_decimales": 1
+    }
+  ]
+}
