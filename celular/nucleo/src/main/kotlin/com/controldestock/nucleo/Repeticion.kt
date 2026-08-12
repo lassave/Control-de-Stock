@@ -24,7 +24,12 @@ object Repeticion {
     )
 
     /**
-     * @param previos los conteos de ese mismo artículo en este celular.
+     * @param previos los conteos de ese mismo artículo en este celular, en orden
+     *   de carga ascendente. El último de la lista es el que cargó el operario más
+     *   recientemente. Se ordena por rowid, no por timestampDispositivo: el timestamp
+     *   tiene resolución de segundo así que dos escaneos rápidos empatan, y viene del
+     *   reloj del celular que puede saltar hacia atrás cuando se sincroniza por NTP.
+     *   El rowid es inmune a las dos cosas.
      * @param ubicacionDelArticulo la que trae el maestro.
      * @param ubicacionElegida la que el operario corrigió, si corrigió alguna.
      */
