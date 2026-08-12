@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "control-de-stock"
 include(":nucleo")
+include(":app")
