@@ -263,7 +263,7 @@ private fun App(base: BaseLocal) {
                                     .firstOrNull { it.codigo == codigo }
                                     ?.let {
                                         avisoDesconocido =
-                                            "Ese código ya era: ${it.descripcion}"
+                                            "Ese código ya estaba: ${it.descripcion}"
                                     }
                             }
                         }

@@ -25,7 +25,7 @@ data class ResultadoDeSync(
      *
      * El operario escribió una descripción que se descarta —manda la del
      * servidor— así que si sigue mirando hay que decírselo: «ese código ya
-     * era: Tornillo». Sin esto se entera recién cuando baja el maestro, o
+     * estaba: Tornillo». Sin esto se entera recién cuando baja el maestro, o
      * nunca.
      */
     val yaExistian: List<CodigoYaExistente> = emptyList(),
