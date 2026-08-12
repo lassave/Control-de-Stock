@@ -461,7 +461,25 @@ def test_el_alta_rapida_con_un_cuerpo_que_no_es_objeto_devuelve_400(cliente, ses
     assert "artículo" in respuesta.json()["detail"]
 
 
-def test_el_alta_rapida_con_el_cuerpo_cortado_devuelve_422(cliente, sesion):
+def cortes(texto_con_acento, texto_sin_acento):
+    """Los dos modos en que un corte de red deja el cuerpo inservible.
+
+    Para Python son fallas distintas, y hay que atrapar las dos. Si el corte
+    cae adentro de un carácter acentuado —media eñe— los bytes ni siquiera
+    forman texto y falla la decodificación. Si cae en cualquier otro lado, el
+    texto se arma pero queda incompleto y falla el parseo. En un sistema en
+    castellano el primero no es un borde raro.
+    """
+    return [
+        pytest.param(texto_con_acento.encode()[:-1], id="adentro-de-la-enie"),
+        pytest.param(texto_sin_acento.encode(), id="entre-caracteres"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "cuerpo", cortes('{"descripcion": "Cañ', '{"descripcion": "Cano'),
+)
+def test_el_alta_rapida_con_el_cuerpo_cortado_devuelve_422(cliente, sesion, cuerpo):
     """Una conexión cortada a mitad de envío deja el cuerpo truncado.
 
     No es 400 a propósito, y la diferencia no es cosmética: el 400 del alta
@@ -478,14 +496,21 @@ def test_el_alta_rapida_con_el_cuerpo_cortado_devuelve_422(cliente, sesion):
         "/api/dispositivo/articulos",
         headers={"X-Token": operario["token_dispositivo"],
                  "Content-Type": "application/json"},
-        content='{"descripcion": "Caño',
+        content=cuerpo,
     )
 
     assert respuesta.status_code == 422
     assert "incompleto" in respuesta.json()["detail"]
 
 
-def test_los_conteos_con_el_cuerpo_cortado_devuelven_422(cliente, sesion):
+@pytest.mark.parametrize(
+    "cuerpo",
+    cortes(
+        '{"conteos": [{"ubicacion_real": "Pasillo ñ',
+        '{"conteos": [{"ubicacion_real": "Pasillo A',
+    ),
+)
+def test_los_conteos_con_el_cuerpo_cortado_devuelven_422(cliente, sesion, cuerpo):
     """El mismo corte de red, en el endpoint por el que sube todo el trabajo."""
     importar(cliente, sesion["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
@@ -494,7 +519,7 @@ def test_los_conteos_con_el_cuerpo_cortado_devuelven_422(cliente, sesion):
         "/api/dispositivo/conteos",
         headers={"X-Token": operario["token_dispositivo"],
                  "Content-Type": "application/json"},
-        content='{"conteos": [{"uuid": "abc"',
+        content=cuerpo,
     )
 
     assert respuesta.status_code == 422

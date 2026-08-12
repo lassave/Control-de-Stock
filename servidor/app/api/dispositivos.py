@@ -27,7 +27,16 @@ async def _cuerpo_json(request):
     """
     try:
         return await request.json()
-    except json.JSONDecodeError as error:
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        # Son dos fallas distintas y hay que atrapar las dos. Si el corte cae
+        # justo adentro de un carácter acentuado —«Cañ» partido al medio, o
+        # sea media eñe— los bytes ni siquiera forman texto y falla la
+        # decodificación, antes de que nadie mire si es JSON. Si cae en
+        # cualquier otro lado, el texto se arma pero queda incompleto y falla
+        # el parseo. En castellano la primera no es un borde raro.
+        #
+        # Para el operario las dos significan lo mismo: el pedido llegó
+        # cortado y hay que mandarlo de nuevo.
         raise HTTPException(
             status_code=422, detail="El pedido llegó incompleto."
         ) from error
