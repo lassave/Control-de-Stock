@@ -1,0 +1,170 @@
+package com.controldestock
+
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.controldestock.datos.ArticuloEntidad
+import com.controldestock.datos.BaseLocal
+import com.controldestock.datos.CodigoEntidad
+import com.controldestock.datos.UnidadEntidad
+import com.controldestock.datos.textoDeBusqueda
+import com.controldestock.nucleo.EstadoSync
+import com.controldestock.nucleo.Reloj
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+
+class RelojDeContador(private val instante: String) : Reloj {
+    override fun ahora() = instante
+}
+
+@RunWith(RobolectricTestRunner::class)
+class ContadorTest {
+
+    private lateinit var base: BaseLocal
+    private val reloj = RelojDeContador("2026-08-12T10:00:00Z")
+
+    @Before
+    fun preparar() = runTest {
+        base = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            BaseLocal::class.java,
+        ).build()
+
+        base.maestroDao().reemplazarMaestro(
+            articulos = listOf(
+                ArticuloEntidad(
+                    id = 1, idOrden = 1, sku = "A-1", descripcion = "Fideos",
+                    unidad = "UN", ubicacion = "P-1", pasadaNumero = 1, sesionId = 1,
+                    busqueda = textoDeBusqueda("Fideos", "A-1", "P-1"),
+                ),
+                ArticuloEntidad(
+                    id = 2, idOrden = 2, sku = "A-2", descripcion = "Harina",
+                    unidad = "KG", ubicacion = "P-2", pasadaNumero = 1, sesionId = 1,
+                    busqueda = textoDeBusqueda("Harina", "A-2", "P-2"),
+                ),
+            ),
+            codigos = listOf(CodigoEntidad("7790001", 1), CodigoEntidad("7790002", 2)),
+            unidades = listOf(
+                UnidadEntidad("UN", "Unidad", 0),
+                UnidadEntidad("KG", "Kilogramo", 1),
+            ),
+        )
+    }
+
+    @After
+    fun terminar() = base.close()
+
+    private fun contador() = Contador(base, reloj)
+
+    @Test
+    fun `encuentra el articulo por el codigo escaneado`() = runTest {
+        val hallazgo = contador().buscar("7790001")
+
+        assertTrue(hallazgo is Hallazgo.Encontrado)
+        assertEquals("Fideos", (hallazgo as Hallazgo.Encontrado).articulo.descripcion)
+    }
+
+    @Test
+    fun `dice si la unidad admite decimales`() = runTest {
+        // Es lo que decide si medio kilo se carga sin preguntar o pide
+        // confirmación.
+        val fideos = contador().buscar("7790001") as Hallazgo.Encontrado
+        val harina = contador().buscar("7790002") as Hallazgo.Encontrado
+
+        assertEquals(false, fideos.admiteDecimales)
+        assertEquals(true, harina.admiteDecimales)
+    }
+
+    @Test
+    fun `un codigo que no esta en el maestro se reporta como desconocido`() = runTest {
+        val hallazgo = contador().buscar("no-existe")
+
+        assertEquals(Hallazgo.Desconocido("no-existe"), hallazgo)
+    }
+
+    @Test
+    fun `una unidad que no esta en el catalogo no rompe el escaneo`() = runTest {
+        // El maestro puede traer una unidad que no bajó: no se puede dejar al
+        // operario sin poder contar por eso.
+        base.maestroDao().insertarArticulos(
+            listOf(
+                ArticuloEntidad(
+                    id = 3, idOrden = 3, sku = "A-3", descripcion = "Raro",
+                    unidad = "XX", ubicacion = null, pasadaNumero = 1, sesionId = 1,
+                    busqueda = textoDeBusqueda("Raro", "A-3", null),
+                ),
+            ),
+        )
+        base.maestroDao().insertarCodigos(listOf(CodigoEntidad("7790003", 3)))
+
+        val hallazgo = contador().buscar("7790003") as Hallazgo.Encontrado
+
+        assertEquals(false, hallazgo.admiteDecimales)
+    }
+
+    @Test
+    fun `registrar guarda el conteo pendiente en la base local`() = runTest {
+        val articulo = (contador().buscar("7790001") as Hallazgo.Encontrado).articulo
+
+        contador().registrar(articulo, 48000, null, null)
+
+        val guardado = base.conteoDao().todos().single()
+        assertEquals(48000, guardado.cantidad)
+        assertEquals("7790001", guardado.codigo)
+        assertEquals(EstadoSync.PENDIENTE, guardado.estadoSync)
+        assertEquals("2026-08-12T10:00:00Z", guardado.timestampDispositivo)
+    }
+
+    @Test
+    fun `el conteo viaja con un codigo de barras real y no con el sku`() = runTest {
+        // El servidor resuelve solo por código de barras. Mandar el SKU falla
+        // en los artículos que tienen un código propio distinto.
+        val articulo = (contador().buscar("7790001") as Hallazgo.Encontrado).articulo
+
+        contador().registrar(articulo, 1000, null, null)
+
+        assertEquals("7790001", base.conteoDao().todos().single().codigo)
+    }
+
+    @Test
+    fun `guarda la ubicacion real y las observaciones cuando las hay`() = runTest {
+        val articulo = (contador().buscar("7790001") as Hallazgo.Encontrado).articulo
+
+        contador().registrar(articulo, 1000, "P-9", "Estaba en otro estante")
+
+        val guardado = base.conteoDao().todos().single()
+        assertEquals("P-9", guardado.ubicacionReal)
+        assertEquals("Estaba en otro estante", guardado.observaciones)
+    }
+
+    @Test
+    fun `el conteo queda atado a la sesion del maestro`() = runTest {
+        val articulo = (contador().buscar("7790001") as Hallazgo.Encontrado).articulo
+
+        contador().registrar(articulo, 1000, null, null)
+
+        assertEquals(1, base.conteoDao().todos().single().sesionId)
+    }
+
+    @Test
+    fun `dos escaneos del mismo articulo son dos conteos`() = runTest {
+        // Dentro de una pasada los conteos suman: el mismo producto puede
+        // estar en dos estantes.
+        val articulo = (contador().buscar("7790001") as Hallazgo.Encontrado).articulo
+
+        contador().registrar(articulo, 1000, null, null)
+        contador().registrar(articulo, 2000, null, null)
+
+        assertEquals(2, base.conteoDao().todos().size)
+    }
+
+    @Test
+    fun `las ubicaciones del maestro estan disponibles para corregir`() = runTest {
+        assertEquals(listOf("P-1", "P-2"), contador().ubicaciones())
+    }
+}
