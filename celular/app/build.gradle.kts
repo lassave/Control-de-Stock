@@ -40,6 +40,13 @@ android {
     }
 }
 
+// Room escribe acá el esquema de cada versión de la base. Van al repo: son
+// la referencia de cómo era antes de cada migración, y sin ellos una
+// migración solo se puede probar a ojo.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(project(":nucleo"))
 

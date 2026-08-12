@@ -26,7 +26,7 @@ class ConversorDeEstado {
         ConteoEntidad::class,
     ],
     version = 1,
-    exportSchema = false,
+    exportSchema = true,
 )
 @TypeConverters(ConversorDeEstado::class)
 abstract class BaseLocal : RoomDatabase() {
