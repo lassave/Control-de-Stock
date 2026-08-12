@@ -392,4 +392,35 @@ class BaseLocalTest {
         assertEquals(-1, base.maestroDao().proximoIdLocal())
         assertEquals(2, base.maestroDao().proximoOrden())
     }
+
+    private fun altaLocal(id: Int, sku: String, estadoAlta: String) = ArticuloEntidad(
+        id = id, idOrden = 99, sku = sku, descripcion = "Alta $sku",
+        unidad = "UN", pasadaNumero = 1, sesionId = 1,
+        busqueda = textoDeBusqueda("Alta $sku", sku, null),
+        estadoAlta = estadoAlta,
+    )
+
+    @Test
+    fun `la segunda alta no pisa a la primera`() = runTest {
+        // Si le tocara el mismo id, la primera desaparecería reemplazada y su
+        // conteo pendiente quedaría apuntando a otro producto.
+        base.maestroDao().insertarArticulos(
+            listOf(altaLocal(-1, "7790999", EstadoSync.PENDIENTE.name)),
+        )
+
+        assertEquals(-2, base.maestroDao().proximoIdLocal())
+    }
+
+    @Test
+    fun `un id que todavia tiene conteos no se vuelve a usar`() = runTest {
+        // El artículo se fue al reimportar el maestro —ya estaba en el
+        // servidor— pero su conteo sigue acá. Si el id se reciclara, el aviso
+        // de repetido le mostraría al operario lo que contó del producto
+        // anterior y el nuevo quedaría sin contar.
+        base.conteoDao().guardar(
+            ConteoEntidad.de(EventoConteo.nuevo("7790999", 1000, reloj), articuloId = -1),
+        )
+
+        assertEquals(-2, base.maestroDao().proximoIdLocal())
+    }
 }

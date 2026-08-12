@@ -93,8 +93,22 @@ interface MaestroDao {
      * Mira solo los ids negativos: con el maestro bajado, el mínimo de todos
      * sería positivo y la primera alta nacería con un id que le pertenece al
      * servidor.
+     *
+     * Y mira las dos tablas, no alcanza con `articulo`: al reimportar el
+     * maestro se van las altas que ya llegaron al servidor, pero sus conteos
+     * se quedan. Mirando solo los artículos, ese id se daría por libre y la
+     * próxima alta lo heredaría con los conteos del producto anterior
+     * colgados: el aviso de repetido diría que ya se contó algo que nunca se
+     * contó, y el producto nuevo quedaría sin contar.
      */
-    @Query("SELECT COALESCE(MIN(id), 0) - 1 FROM articulo WHERE id < 0")
+    @Query(
+        """
+        SELECT MIN(
+            COALESCE((SELECT MIN(id) FROM articulo WHERE id < 0), 0),
+            COALESCE((SELECT MIN(articuloId) FROM conteo WHERE articuloId < 0), 0)
+        ) - 1
+        """
+    )
     suspend fun proximoIdLocal(): Int
 
     /** El artículo nuevo va al final del recorrido, nunca en el medio. */
