@@ -34,6 +34,15 @@ fun PantallaEscaneo(
     /** Qué hacer con el código desconocido. Nulo si no hay ninguno. */
     alDarDeAlta: (() -> Unit)?,
     alLeer: (String) -> Unit,
+    /**
+     * La cámara. Se reemplaza en los tests: CameraX no arranca sin celular,
+     * y sin este hueco la pantalla entera queda sin cubrir, incluido el botón
+     * que es el único camino al alta.
+     */
+    camara: @Composable (activo: Boolean, alLeer: (String) -> Unit) -> Unit =
+        { activo, leer ->
+            VistaDeCamara(activo = activo, alLeer = leer, modifier = Modifier.fillMaxSize())
+        },
     ficha: @Composable () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -52,11 +61,7 @@ fun PantallaEscaneo(
         }
 
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            VistaDeCamara(
-                activo = !fichaAbierta,
-                alLeer = alLeer,
-                modifier = Modifier.fillMaxSize(),
-            )
+            camara(!fichaAbierta, alLeer)
 
             avisoDeDesconocido?.let {
                 FranjaDeDesconocido(
