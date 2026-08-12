@@ -6,6 +6,7 @@ import com.controldestock.datos.ArticuloEntidad
 import com.controldestock.datos.BaseLocal
 import com.controldestock.datos.CodigoEntidad
 import com.controldestock.datos.UnidadEntidad
+import com.controldestock.datos.VinculacionEntidad
 import com.controldestock.datos.textoDeBusqueda
 import com.controldestock.nucleo.EstadoSync
 import com.controldestock.nucleo.Reloj
@@ -166,5 +167,87 @@ class ContadorTest {
     @Test
     fun `las ubicaciones del maestro estan disponibles para corregir`() = runTest {
         assertEquals(listOf("P-1", "P-2"), contador().ubicaciones())
+    }
+
+    @Test
+    fun `el alta deja el articulo, su codigo y su primer conteo`() = runTest {
+        val articulo = contador().darDeAlta(
+            codigo = "7790999", descripcion = "Pack por 6", unidad = "UN",
+            ubicacion = "P-3", milesimas = 6000, observaciones = null,
+        )
+
+        assertEquals("Pack por 6", base.maestroDao().porCodigo("7790999")?.descripcion)
+        val conteo = base.conteoDao().todos().single()
+        assertEquals("7790999", conteo.codigo)
+        assertEquals(6000, conteo.cantidad)
+        assertEquals(articulo.id, conteo.articuloId)
+    }
+
+    @Test
+    fun `el articulo dado de alta queda pendiente de crearse en el servidor`() = runTest {
+        contador().darDeAlta("7790999", "Pack por 6", "UN", null, 6000, null)
+
+        val pendiente = base.maestroDao().altasPendientes().single()
+        assertEquals("Pack por 6", pendiente.descripcion)
+        assertEquals(EstadoSync.PENDIENTE.name, pendiente.estadoAlta)
+    }
+
+    @Test
+    fun `el id del articulo dado de alta no pisa a ninguno del maestro`() = runTest {
+        // Los del servidor son positivos. Sin esto, bajar el maestro de nuevo
+        // reemplazaría el artículo nuevo por otro con el mismo número.
+        val articulo = contador().darDeAlta("7790999", "Pack por 6", "UN", null, 6000, null)
+
+        assertTrue("el id tiene que ser negativo: ${articulo.id}", articulo.id < 0)
+    }
+
+    @Test
+    fun `el segundo escaneo del producto recien dado de alta ya lo encuentra`() = runTest {
+        // Es lo que hace que en una estantería de packs iguales el operario
+        // escriba la descripción una sola vez.
+        contador().darDeAlta("7790999", "Pack por 6", "UN", null, 6000, null)
+
+        val hallazgo = contador().buscar("7790999")
+
+        assertTrue(hallazgo is Hallazgo.Encontrado)
+        assertEquals("Pack por 6", (hallazgo as Hallazgo.Encontrado).articulo.descripcion)
+    }
+
+    @Test
+    fun `el alta respeta la unidad elegida y si admite decimales`() = runTest {
+        contador().darDeAlta("7790999", "Harina suelta", "KG", null, 3500, null)
+
+        val hallazgo = contador().buscar("7790999") as Hallazgo.Encontrado
+
+        assertEquals("KG", hallazgo.articulo.unidad)
+        assertEquals(true, hallazgo.admiteDecimales)
+    }
+
+    @Test
+    fun `el alta queda atada a la sesion y a la pasada del celular`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = "http://172.16.11.12:8000", token = "abc",
+                operarioId = 1, operarioNombre = "Juan", sesionId = 7,
+                pasadaId = 3, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
+            ),
+        )
+
+        val articulo = contador().darDeAlta("7790999", "Pack por 6", "UN", null, 6000, null)
+
+        assertEquals(7, articulo.sesionId)
+        assertEquals(2, articulo.pasadaNumero)
+        assertEquals(7, base.conteoDao().todos().single().sesionId)
+    }
+
+    @Test
+    fun `los conteos de un articulo se pueden leer para avisar de repetidos`() = runTest {
+        val articulo = (contador().buscar("7790001") as Hallazgo.Encontrado).articulo
+        contador().registrar(articulo, 24000, null, null)
+
+        val previos = contador().conteosDe(articulo)
+
+        assertEquals(1, previos.size)
+        assertEquals(24000, previos.single().evento.cantidad)
     }
 }
