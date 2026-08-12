@@ -50,7 +50,24 @@ data class ArticuloEntidad(
     // sucesivas, agregar la columna obligaría a migrar la base de cada
     // dispositivo en medio de un inventario.
     val pasadaNumero: Int,
+    // De qué sesión es. Un celular que se revincula a otro inventario no
+    // puede seguir mostrando el maestro del anterior.
+    val sesionId: Int = 0,
+    // Descripción, SKU y ubicación juntos, en minúscula y sin acentos.
+    // El LIKE de SQLite solo pliega mayúsculas en ASCII, así que buscar
+    // «caño» no encontraría «CAÑO galvanizado» — y los maestros de ERP
+    // vienen en mayúsculas, con el castellano lleno de eñes.
+    val busqueda: String = "",
 )
+
+/** Minúsculas y sin acentos, para que la búsqueda encuentre lo que se ve. */
+fun plegar(texto: String): String =
+    java.text.Normalizer.normalize(texto.lowercase(), java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "")
+
+/** El texto contra el que busca el operario. */
+fun textoDeBusqueda(descripcion: String, sku: String, ubicacion: String?): String =
+    plegar(listOfNotNull(descripcion, sku, ubicacion).joinToString(" "))
 
 @Entity(
     tableName = "codigo",
@@ -73,6 +90,11 @@ data class UnidadEntidad(
 data class ConteoEntidad(
     @PrimaryKey val uuid: String,
     val articuloId: Int,
+    // De qué sesión es este conteo. Sin esto, un pendiente que quedó de un
+    // inventario cerrado se sincroniza contra la sesión abierta hoy: el
+    // servidor resuelve por «la» sesión abierta, así que el conteo de ayer
+    // entra al inventario de hoy sin que nada lo señale.
+    val sesionId: Int = 0,
     val codigo: String,
     val cantidad: Int,
     val ubicacionReal: String? = null,
@@ -98,9 +120,10 @@ data class ConteoEntidad(
     fun aLocal() = ConteoLocal(aEvento(), estadoSync, motivoRechazo)
 
     companion object {
-        fun de(evento: EventoConteo, articuloId: Int) = ConteoEntidad(
+        fun de(evento: EventoConteo, articuloId: Int, sesionId: Int = 0) = ConteoEntidad(
             uuid = evento.uuid,
             articuloId = articuloId,
+            sesionId = sesionId,
             codigo = evento.codigo,
             cantidad = evento.cantidad,
             ubicacionReal = evento.ubicacionReal,

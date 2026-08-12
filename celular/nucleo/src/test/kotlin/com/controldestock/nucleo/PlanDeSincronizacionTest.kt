@@ -130,6 +130,56 @@ class PlanDeSincronizacionTest {
     }
 
     @Test
+    fun `no manda la anulacion de un conteo que el servidor nunca acepto`() {
+        // El caso se cierra solo: el conteo se rechaza como código
+        // desconocido, el operario lo ve mal en «Mis conteos» y lo anula, y
+        // el servidor rechaza la anulación como reintentable porque el
+        // conteo que anula no le llegó nunca. Sin este filtro, esa anulación
+        // vuelve a la cola para siempre.
+        val rechazado = EventoConteo.nuevo("no-existe", 1000, reloj)
+        val locales = listOf(
+            ConteoLocal(rechazado, EstadoSync.RECHAZADO, "Código desconocido"),
+            ConteoLocal(EventoConteo.anulacionDe(rechazado, reloj), EstadoSync.PENDIENTE),
+            local("A"),
+        )
+
+        val aEnviar = PlanDeSincronizacion.aEnviar(locales)
+
+        assertEquals(listOf("A"), aEnviar.map { it.codigo })
+    }
+
+    @Test
+    fun `esa anulacion queda marcada con su motivo en vez de pendiente`() {
+        // Si quedara pendiente, el indicador de conteos sin subir nunca
+        // bajaría a cero y el operario no sabría por qué.
+        val rechazado = EventoConteo.nuevo("no-existe", 1000, reloj)
+        val anulacion = EventoConteo.anulacionDe(rechazado, reloj)
+        val locales = listOf(
+            ConteoLocal(rechazado, EstadoSync.RECHAZADO, "Código desconocido"),
+            ConteoLocal(anulacion, EstadoSync.PENDIENTE),
+        )
+
+        val sinDestino = PlanDeSincronizacion.anulacionesSinDestino(locales)
+
+        assertEquals(1, sinDestino.size)
+        assertEquals(anulacion.uuid, sinDestino.single().evento.uuid)
+        assertEquals(EstadoSync.RECHAZADO, sinDestino.single().estadoSync)
+        assertTrue(sinDestino.single().motivoRechazo!!.isNotEmpty())
+    }
+
+    @Test
+    fun `la anulacion de un conteo que si entro se manda normalmente`() {
+        val enviado = EventoConteo.nuevo("A", 1000, reloj)
+        val locales = listOf(
+            ConteoLocal(enviado, EstadoSync.ENVIADO),
+            ConteoLocal(EventoConteo.anulacionDe(enviado, reloj), EstadoSync.PENDIENTE),
+        )
+
+        assertEquals(1, PlanDeSincronizacion.aEnviar(locales).size)
+        assertTrue(PlanDeSincronizacion.anulacionesSinDestino(locales).isEmpty())
+    }
+
+    @Test
     fun `un rechazo de un uuid que no se mando no afecta a los demas`() {
         // El servidor puede contestar sobre un evento de otro lote si hubo un
         // reintento cruzado. Lo que importa es no marcar mal lo que sí se mandó.

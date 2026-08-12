@@ -37,7 +37,15 @@ class BaseLocalTest {
 
     private fun articulo(id: Int, sku: String, unidad: String = "UN") = ArticuloEntidad(
         id = id, idOrden = id, sku = sku, descripcion = "Artículo $sku",
-        unidad = unidad, ubicacion = "P-1", pasadaNumero = 1,
+        unidad = unidad, ubicacion = "P-1", pasadaNumero = 1, sesionId = 1,
+        busqueda = textoDeBusqueda("Artículo $sku", sku, "P-1"),
+    )
+
+    private fun vinculacionDe(sesionId: Int, operario: String = "Juan") = VinculacionEntidad(
+        url = "http://172.16.11.12:8000", token = "t-$sesionId",
+        operarioId = 1, operarioNombre = operario,
+        sesionId = sesionId, pasadaId = sesionId,
+        pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
     )
 
     @Test
@@ -82,15 +90,20 @@ class BaseLocalTest {
         assertEquals(listOf("NUEVO"), base.maestroDao().articulos().map { it.sku })
     }
 
+    private fun paraBuscar(id: Int, sku: String, descripcion: String, ubicacion: String) =
+        ArticuloEntidad(
+            id = id, idOrden = id, sku = sku, descripcion = descripcion,
+            unidad = "UN", ubicacion = ubicacion, pasadaNumero = 1, sesionId = 1,
+            busqueda = textoDeBusqueda(descripcion, sku, ubicacion),
+        )
+
     @Test
     fun `busca por descripcion sku y ubicacion sin distinguir mayusculas`() = runTest {
         // Es lo que destraba la etiqueta rota: el operario busca a mano.
         base.maestroDao().reemplazarMaestro(
             listOf(
-                ArticuloEntidad(1, 1, sku = "10453", descripcion = "Tornillo hexagonal",
-                    unidad = "UN", ubicacion = "A-03", pasadaNumero = 1),
-                ArticuloEntidad(2, 2, sku = "10454", descripcion = "Tuerca",
-                    unidad = "UN", ubicacion = "B-01", pasadaNumero = 1),
+                paraBuscar(1, "10453", "Tornillo hexagonal", "A-03"),
+                paraBuscar(2, "10454", "Tuerca", "B-01"),
             ),
             emptyList(), emptyList(),
         )
@@ -98,6 +111,46 @@ class BaseLocalTest {
         assertEquals(listOf("10453"), base.maestroDao().buscar("torni").map { it.sku })
         assertEquals(listOf("10453"), base.maestroDao().buscar("10453").map { it.sku })
         assertEquals(listOf("10454"), base.maestroDao().buscar("b-01").map { it.sku })
+    }
+
+    @Test
+    fun `busca con eñes y acentos aunque el maestro venga en mayusculas`() = runTest {
+        // Los maestros de ERP vienen en mayúsculas y el castellano está lleno
+        // de CAÑO, TAMAÑO, ARTÍCULO. El LIKE de SQLite solo pliega mayúsculas
+        // en ASCII, así que sin normalizar, «caño» no encuentra «CAÑO».
+        base.maestroDao().reemplazarMaestro(
+            listOf(
+                paraBuscar(1, "A-1", "CAÑO GALVANIZADO 3/4", "P-1"),
+                paraBuscar(2, "A-2", "ARTÍCULO DE LIMPIEZA", "P-2"),
+            ),
+            emptyList(), emptyList(),
+        )
+
+        assertEquals(listOf("A-1"), base.maestroDao().buscar("caño").map { it.sku })
+        assertEquals(listOf("A-1"), base.maestroDao().buscar("cano").map { it.sku })
+        assertEquals(listOf("A-2"), base.maestroDao().buscar("articulo").map { it.sku })
+        assertEquals(listOf("A-2"), base.maestroDao().buscar("ARTÍCULO").map { it.sku })
+    }
+
+    @Test
+    fun `devuelve un codigo de barras del articulo para poder contarlo`() = runTest {
+        // El conteo viaja con el código, no con el id, y el servidor resuelve
+        // solo por código. Sin esto, lo que el operario encuentra desde
+        // «Buscar» no se puede cargar.
+        base.maestroDao().reemplazarMaestro(
+            listOf(articulo(1, "A")),
+            listOf(CodigoEntidad("7790001001234", 1)),
+            emptyList(),
+        )
+
+        assertEquals("7790001001234", base.maestroDao().codigoDe(1))
+    }
+
+    @Test
+    fun `un articulo sin codigo asociado devuelve null`() = runTest {
+        base.maestroDao().reemplazarMaestro(listOf(articulo(1, "A")), emptyList(), emptyList())
+
+        assertNull(base.maestroDao().codigoDe(1))
     }
 
     @Test
@@ -206,16 +259,44 @@ class BaseLocalTest {
     fun `vincular de nuevo reemplaza la vinculacion anterior`() = runTest {
         // Un celular que se revincula con otro operario no puede quedar con
         // los dos: los conteos se atribuirían a quien no contó.
-        val primera = VinculacionEntidad(
-            url = "http://a", token = "t1", operarioId = 1, operarioNombre = "Juan",
-            sesionId = 1, pasadaId = 1, pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
-        )
+        val primera = vinculacionDe(sesionId = 1)
         base.vinculacionDao().guardar(primera)
 
         base.vinculacionDao().guardar(primera.copy(token = "t2", operarioNombre = "Ana"))
 
         assertEquals("Ana", base.vinculacionDao().actual()?.operarioNombre)
         assertEquals("t2", base.vinculacionDao().actual()?.token)
+    }
+
+    @Test
+    fun `vincular a otra sesion borra el maestro y los conteos anteriores`() = runTest {
+        // Un pendiente que quedó de un inventario cerrado se sincronizaría
+        // contra la sesión abierta hoy: el servidor resuelve por «la» sesión
+        // abierta, así que el conteo de ayer entraría al inventario de hoy sin
+        // que nada lo señale.
+        base.vincularA(vinculacionDe(sesionId = 1))
+        base.maestroDao().reemplazarMaestro(listOf(articulo(1, "VIEJO")), emptyList(), emptyList())
+        base.conteoDao().guardar(ConteoEntidad.de(EventoConteo.nuevo("A", 1000, reloj), 1, 1))
+
+        base.vincularA(vinculacionDe(sesionId = 2, operario = "Ana"))
+
+        assertEquals(emptyList<ConteoEntidad>(), base.conteoDao().todos())
+        assertEquals(emptyList<ArticuloEntidad>(), base.maestroDao().articulos())
+        assertEquals(2, base.vinculacionDao().actual()?.sesionId)
+    }
+
+    @Test
+    fun `vincular a la misma sesion conserva los conteos pendientes`() = runTest {
+        // Cambio de operario o token renovado dentro del mismo inventario: lo
+        // que todavía no subió sigue siendo válido y no se puede tirar.
+        base.vincularA(vinculacionDe(sesionId = 1))
+        base.maestroDao().reemplazarMaestro(listOf(articulo(1, "A")), emptyList(), emptyList())
+        base.conteoDao().guardar(ConteoEntidad.de(EventoConteo.nuevo("A", 1000, reloj), 1, 1))
+
+        base.vincularA(vinculacionDe(sesionId = 1, operario = "Ana"))
+
+        assertEquals(1, base.conteoDao().todos().size)
+        assertEquals(1, base.maestroDao().articulos().size)
     }
 
     @Test

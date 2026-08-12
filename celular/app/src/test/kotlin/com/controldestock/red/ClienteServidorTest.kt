@@ -173,6 +173,30 @@ class ClienteServidorTest {
     }
 
     @Test
+    fun `una direccion invalida se explica en vez de cerrar la app`() = runTest {
+        // La dirección sale del QR, o sea de afuera: puede ser cualquier cosa.
+        val conBasura = ClienteServidor("no es una url", "token")
+
+        val error = try {
+            conBasura.maestro(); null
+        } catch (e: ErrorDeServidor) { e }
+
+        assertTrue(error!!.message!!.contains("QR"))
+        assertEquals(false, error.reintentable)
+    }
+
+    @Test
+    fun `una barra final en la direccion no rompe el pedido`() = runTest {
+        // El QR puede traerla, y «.../ /api/...» daria 404.
+        responder(contrato("maestro"))
+        val conBarra = ClienteServidor(servidor.url("/").toString(), "token-de-prueba")
+
+        conBarra.maestro()
+
+        assertEquals("/api/dispositivo/maestro", servidor.takeRequest().path)
+    }
+
+    @Test
     fun `una respuesta que no se entiende no se reintenta`() = runTest {
         // Reintentar contra algo que no es el servidor esperado no arregla
         // nada; conviene decirlo y frenar.

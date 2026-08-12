@@ -39,18 +39,37 @@ interface MaestroDao {
     @Query("SELECT * FROM articulo WHERE id = :id")
     suspend fun porId(id: Int): ArticuloEntidad?
 
-    /** Lo que destraba la etiqueta rota: el operario busca a mano, sin señal. */
+    /**
+     * Lo que destraba la etiqueta rota: el operario busca a mano, sin señal.
+     *
+     * Busca contra la columna ya plegada, no contra la descripción: el LIKE
+     * de SQLite solo pliega mayúsculas en ASCII, así que «caño» no
+     * encontraría «CAÑO galvanizado». Usá `buscarTexto`, que pliega la
+     * consulta igual que la columna.
+     */
     @Query(
         """
         SELECT * FROM articulo
-        WHERE descripcion LIKE '%' || :texto || '%' COLLATE NOCASE
-           OR sku LIKE '%' || :texto || '%' COLLATE NOCASE
-           OR ubicacion LIKE '%' || :texto || '%' COLLATE NOCASE
+        WHERE busqueda LIKE '%' || :plegado || '%'
         ORDER BY idOrden
         LIMIT 50
         """
     )
-    suspend fun buscar(texto: String): List<ArticuloEntidad>
+    suspend fun buscarPlegado(plegado: String): List<ArticuloEntidad>
+
+    suspend fun buscar(texto: String): List<ArticuloEntidad> =
+        buscarPlegado(plegar(texto))
+
+    /**
+     * Un código de barras del artículo, para poder contarlo.
+     *
+     * Hace falta porque el conteo viaja con el código y no con el id, y el
+     * servidor resuelve solo por código. Sin esto, lo que el operario
+     * encuentra desde «Buscar» no se puede cargar: usar el SKU falla justo
+     * en los artículos que sí tienen un código de barras propio.
+     */
+    @Query("SELECT codigo FROM codigo WHERE articuloId = :articuloId LIMIT 1")
+    suspend fun codigoDe(articuloId: Int): String?
 
     @Query("SELECT * FROM unidad WHERE codigo = :codigo")
     suspend fun unidad(codigo: String): UnidadEntidad?
@@ -119,4 +138,7 @@ interface ConteoDao {
 
     @Query("SELECT * FROM conteo WHERE uuid = :uuid")
     suspend fun porUuid(uuid: String): ConteoEntidad?
+
+    @Query("DELETE FROM conteo")
+    suspend fun borrarTodos()
 }

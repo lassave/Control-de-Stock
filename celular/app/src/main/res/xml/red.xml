@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  El servidor del depósito habla HTTP en claro: es una IP de red local que
+  cambia en cada lugar, y no hay certificado que se le pueda poner.
+
+  Desde targetSdk 28 Android bloquea el tráfico en claro por defecto, y el
+  bloqueo llega como una IOException que la app confunde con «se cortó el
+  wifi»: reintentaría para siempre sin que nadie entienda por qué.
+
+  Se habilita en general y no por dominio porque la dirección del servidor
+  no se conoce hasta que el operario escanea el QR. La contención real es
+  otra: la app solo habla con la dirección que vino en ese QR, y todo
+  ocurre dentro de la red del lugar.
+
+  Cuando exista la variante con certificado propio (sección 7 del diseño
+  general), esto pasa a ser una excepción acotada en vez del caso general.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

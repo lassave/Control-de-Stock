@@ -52,7 +52,7 @@ class EventoConteoTest {
 
     @Test
     fun `la hora tiene el formato del proyecto`() {
-        val evento = EventoConteo.nuevo("A", 1000, RelojDelSistema)
+        val evento = EventoConteo.nuevo("A", 1000, RelojDelSistema.DEL_SISTEMA)
 
         assertTrue(
             evento.timestampDispositivo,

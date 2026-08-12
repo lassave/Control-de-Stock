@@ -5,6 +5,8 @@
 
     <application
         android:label="Control de Stock"
-        android:supportsRtl="false" />
+        android:supportsRtl="false"
+        android:allowBackup="false"
+        android:networkSecurityConfig="@xml/red" />
 
 </manifest>

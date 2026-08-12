@@ -23,9 +23,52 @@ data class ConteoLocal(
  */
 object PlanDeSincronizacion {
 
-    /** Los pendientes, en el orden en que se cargaron. */
-    fun aEnviar(locales: List<ConteoLocal>): List<EventoConteo> =
-        locales.filter { it.estadoSync == EstadoSync.PENDIENTE }.map { it.evento }
+    /**
+     * Los pendientes, en el orden en que se cargaron.
+     *
+     * Se descarta la anulación de un conteo que el servidor nunca aceptó.
+     * El caso se cierra solo: un conteo se rechaza como «código desconocido»,
+     * el operario lo ve mal en «Mis conteos» y lo anula; el servidor rechaza
+     * esa anulación como reintentable —porque el conteo que anula no le
+     * llegó nunca— y vuelve a la cola. Para siempre: el indicador de
+     * pendientes no baja a cero y el trabajo en segundo plano quema batería y
+     * red sin fin. Es la misma falla que el estado RECHAZADO existe para
+     * evitar, entrando por la puerta de la anulación.
+     */
+    fun aEnviar(locales: List<ConteoLocal>): List<EventoConteo> {
+        val nuncaLlegaron = locales
+            .filter { it.estadoSync == EstadoSync.RECHAZADO }
+            .map { it.evento.uuid }
+            .toSet()
+
+        return locales
+            .filter { it.estadoSync == EstadoSync.PENDIENTE }
+            .filterNot { it.evento.anulaUuid in nuncaLlegaron }
+            .map { it.evento }
+    }
+
+    /**
+     * Las anulaciones que no tiene sentido mandar, con su motivo.
+     *
+     * Quien las guarda las marca como rechazadas: si no, quedan pendientes
+     * para siempre y el contador miente.
+     */
+    fun anulacionesSinDestino(locales: List<ConteoLocal>): List<ConteoLocal> {
+        val nuncaLlegaron = locales
+            .filter { it.estadoSync == EstadoSync.RECHAZADO }
+            .map { it.evento.uuid }
+            .toSet()
+
+        return locales
+            .filter { it.estadoSync == EstadoSync.PENDIENTE }
+            .filter { it.evento.anulaUuid in nuncaLlegaron }
+            .map {
+                it.copy(
+                    estadoSync = EstadoSync.RECHAZADO,
+                    motivoRechazo = "El conteo que anula nunca entró al servidor",
+                )
+            }
+    }
 
     fun pendientes(locales: List<ConteoLocal>): Int =
         locales.count { it.estadoSync == EstadoSync.PENDIENTE }

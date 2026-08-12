@@ -51,13 +51,15 @@ private data class DetalleDeError(val detail: String? = null)
  * en el depósito, así que van en castellano llano y dicen qué hacer.
  */
 class ClienteServidor(
-    private val url: String,
+    url: String,
     private val token: String,
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),
 ) {
+    // La dirección viene del QR, donde puede haber quedado una barra final.
+    private val url = url.trimEnd('/')
 
     // El mismo parser que fija el contrato: tolera los campos que el servidor
     // manda de más, que son varios.
@@ -91,27 +93,38 @@ class ClienteServidor(
     /** Hace el pedido y devuelve el texto de la respuesta, o lanza. */
     private suspend fun traer(ruta: String, cuerpo: String? = null): String =
         withContext(Dispatchers.IO) {
-            val pedido = Request.Builder()
-                .url("$url$ruta")
-                .header("X-Token", token)
-                .apply { if (cuerpo != null) post(cuerpo.toRequestBody(TIPO_JSON)) }
-                .build()
+            val pedido = try {
+                Request.Builder()
+                    .url("$url$ruta")
+                    .header("X-Token", token)
+                    .apply { if (cuerpo != null) post(cuerpo.toRequestBody(TIPO_JSON)) }
+                    .build()
+            } catch (error: IllegalArgumentException) {
+                // La dirección salió del QR: puede ser cualquier cosa. Sin
+                // esto, un QR que no es el del panel cierra la app en vez de
+                // explicar el problema.
+                throw ErrorDeServidor(
+                    "La dirección del servidor no es válida. Escaneá de nuevo "
+                        + "el QR del panel.",
+                    reintentable = false,
+                )
+            }
 
-            val respuesta = try {
-                http.newCall(pedido).execute()
+            // El try cubre también la lectura del cuerpo: la conexión se puede
+            // cortar a mitad de la respuesta, que es el caso normal cuando el
+            // operario se aleja del alcance del wifi. Una IOException cruda
+            // saliendo de acá cierra la app en vez de reintentarse sola.
+            try {
+                http.newCall(pedido).execute().use {
+                    val texto = it.body?.string().orEmpty()
+                    if (!it.isSuccessful) throw traducir(it.code, texto)
+                    texto
+                }
             } catch (error: IOException) {
-                // El caso normal en un depósito: el celular salió del alcance
-                // del wifi. No se pierde nada, se reintenta más tarde.
                 throw ErrorDeServidor(
                     "Sin conexión con el servidor. Se va a reintentar solo.",
                     reintentable = true,
                 )
-            }
-
-            respuesta.use {
-                val texto = it.body?.string().orEmpty()
-                if (!it.isSuccessful) throw traducir(it.code, texto)
-                texto
             }
         }
 
@@ -126,7 +139,7 @@ class ClienteServidor(
         )
     }
 
-    fun traducir(codigo: Int, cuerpo: String): ErrorDeServidor = when (codigo) {
+    private fun traducir(codigo: Int, cuerpo: String): ErrorDeServidor = when (codigo) {
         401 -> ErrorDeServidor(
             "Este celular ya no está vinculado. Escaneá de nuevo el QR del panel.",
             reintentable = false,
