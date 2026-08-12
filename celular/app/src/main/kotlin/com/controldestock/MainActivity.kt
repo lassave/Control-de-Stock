@@ -138,7 +138,20 @@ private fun App(base: BaseLocal) {
                 pendientes = pendientes,
                 fichaAbierta = hallazgo is Hallazgo.Encontrado || altaDe != null,
                 avisoDeDesconocido = avisoDesconocido,
-                alDarDeAlta = codigoDesconocido?.let { codigo -> { altaDe = codigo } },
+                alDarDeAlta = codigoDesconocido?.let { codigo ->
+                    {
+                        // Si en el mismo cuadro entró una lectura y abrió una
+                        // ficha, se descarta. No es tirar trabajo del operario:
+                        // el botón solo existe mientras no hay ninguna ficha
+                        // —al abrirse una, el aviso del desconocido se limpia y
+                        // la franja desaparece—, así que esa ficha nació vacía
+                        // en el cuadro anterior, debajo del dedo que ya iba al
+                        // botón, de una lectura que él no pidió. Lo que quiso
+                        // hacer es el alta.
+                        hallazgo = null
+                        altaDe = codigo
+                    }
+                },
                 alLeer = { codigo ->
                     // La cámara avisa una lectura por cuadro, y esta guarda
                     // sola no alcanza: decide acá, pero el estado se escribe
