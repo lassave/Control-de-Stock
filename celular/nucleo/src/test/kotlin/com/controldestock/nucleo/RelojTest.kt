@@ -41,4 +41,23 @@ class RelojTest {
 
         assertEquals("2026-01-05T09:07:03Z", RelojDelSistema(fijo).ahora())
     }
+
+    @Test
+    fun `la hora que ve el operario es la del deposito`() {
+        // Todo se guarda en UTC. Mostrarlo tal cual, en Argentina, diría tres
+        // horas menos: el operario leería que lo cargó otro, o que fue otro
+        // día.
+        val texto = horaLocal("2026-08-12T13:32:05Z", ZoneId.of("America/Argentina/Buenos_Aires"))
+
+        assertEquals("10:32", texto)
+    }
+
+    @Test
+    fun `la hora se muestra con dos digitos`() {
+        // «9:05» y «09:05» se leen distinto de reojo, que es como se lee en
+        // el depósito.
+        val texto = horaLocal("2026-08-12T12:05:00Z", ZoneId.of("America/Argentina/Buenos_Aires"))
+
+        assertEquals("09:05", texto)
+    }
 }

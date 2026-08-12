@@ -1,6 +1,8 @@
 package com.controldestock.nucleo
 
 import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -37,3 +39,16 @@ class RelojDelSistema(private val reloj: Clock = Clock.systemUTC()) : Reloj {
         val DEL_SISTEMA = RelojDelSistema()
     }
 }
+
+private val SOLO_LA_HORA = DateTimeFormatter.ofPattern("HH:mm")
+
+/**
+ * La hora del día en la zona del depósito, para mostrarla.
+ *
+ * Vive junto al reloj porque es su contraparte: el reloj es la única fuente
+ * del formato con el que se guarda, y esta la única del formato con el que
+ * se lee. Todo se guarda en UTC; mostrarlo así, en Argentina, diría tres
+ * horas menos.
+ */
+fun horaLocal(instante: String, zona: ZoneId = ZoneId.systemDefault()): String =
+    Instant.parse(instante).atZone(zona).format(SOLO_LA_HORA)
