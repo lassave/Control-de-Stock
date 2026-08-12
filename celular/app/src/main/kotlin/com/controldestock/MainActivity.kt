@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val base = BaseLocal.de(this)
+        TrabajoDeSincronizacion.programar(this)
 
         setContent {
             Tema {
@@ -67,6 +68,9 @@ private fun App(base: BaseLocal) {
     val contexto = LocalContext.current
     val avisos = remember { AvisoSonoro(contexto) }
     val contador = remember { Contador(base, RelojDelSistema.DEL_SISTEMA) }
+    val sincronizador = remember {
+        Sincronizador(base) { url, token -> ClienteServidor(url, token) }
+    }
 
     DisposableEffect(Unit) { onDispose { avisos.cerrar() } }
 
@@ -148,9 +152,18 @@ private fun App(base: BaseLocal) {
                             contador.registrar(
                                 encontrado.articulo, milesimas, ubicacionReal, observaciones,
                             )
-                            pendientes = base.conteoDao().cantidadPendientes()
                             avisos.cargado()
                             hallazgo = null
+                            pendientes = base.conteoDao().cantidadPendientes()
+
+                            // Intento inmediato: con señal, el tablero se
+                            // entera en el momento. Sin señal no pasa nada y
+                            // el trabajo periódico lo sube más tarde. Va
+                            // después de cerrar la ficha a propósito: al
+                            // revés, el operario esperaría a la red para
+                            // poder seguir contando.
+                            sincronizador.sincronizar()
+                            pendientes = base.conteoDao().cantidadPendientes()
                         }
                     }
                 }
