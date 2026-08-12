@@ -39,6 +39,7 @@ import com.controldestock.ui.PantallaVinculacion
 import com.controldestock.ui.Tema
 import com.controldestock.ui.pantallaSegun
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : ComponentActivity() {
 
@@ -72,6 +73,9 @@ private fun App(base: BaseLocal) {
     var unidades by remember { mutableStateOf<List<UnidadEntidad>>(emptyList()) }
     var previos by remember { mutableStateOf<List<ConteoLocal>>(emptyList()) }
     val vinculacion = remember { mutableStateOf<VinculacionEntidad?>(null) }
+    // Bandera común y no estado de Compose: no tiene nada que redibujar, y
+    // tiene que valer en el instante en que se toma, no en el próximo cuadro.
+    val leyendo = remember { AtomicBoolean(false) }
     val contexto = LocalContext.current
     val avisos = remember { AvisoSonoro(contexto) }
     val contador = remember { Contador(base, RelojDelSistema.DEL_SISTEMA) }
@@ -131,24 +135,55 @@ private fun App(base: BaseLocal) {
                 avisoDeDesconocido = avisoDesconocido,
                 alDarDeAlta = codigoDesconocido?.let { { dandoDeAlta = true } },
                 alLeer = { codigo ->
-                    // La cámara avisa una lectura por cuadro: sin esta guarda
-                    // se abrirían decenas de fichas del mismo código.
-                    if (hallazgo == null && !dandoDeAlta) {
+                    // La cámara avisa una lectura por cuadro, y esta guarda
+                    // sola no alcanza: decide acá, pero el estado se escribe
+                    // recién cuando la corrutina vuelve de la base. En esa
+                    // ventana entra el barrido que hace el operario al bajar
+                    // el celular para tocar «Darlo de alta», y la lectura de
+                    // otro estante se aplica encima de lo que ya tocó.
+                    //
+                    // La bandera se toma en el mismo golpe que la lectura,
+                    // así hay una sola búsqueda en vuelo por vez y no un
+                    // chorro de consultas por cuadro.
+                    val laToma = hallazgo == null && !dandoDeAlta &&
+                        leyendo.compareAndSet(false, true)
+
+                    if (laToma) {
                         alcance.launch {
-                            when (val h = contador.buscar(codigo)) {
-                                is Hallazgo.Encontrado -> {
-                                    avisos.leido()
-                                    avisoDesconocido = null
-                                    codigoDesconocido = null
-                                    previos = contador.conteosDe(h.articulo)
-                                    hallazgo = h
+                            try {
+                                // Todo lo que consulta la base va primero:
+                                // después de revalidar no puede quedar ninguna
+                                // suspensión, o la ventana se vuelve a abrir
+                                // entre el control y la escritura.
+                                val h = contador.buscar(codigo)
+                                val previosDelArticulo = (h as? Hallazgo.Encontrado)
+                                    ?.let { contador.conteosDe(it.articulo) }
+
+                                // Lo que valía al leer puede no valer más: si
+                                // mientras tanto se abrió una ficha o el alta,
+                                // esta lectura llegó tarde y se descarta. Sin
+                                // esto queda `dandoDeAlta` en true con el
+                                // código ya borrado, y la app se traba con una
+                                // ficha vacía que nadie puede cerrar.
+                                if (hallazgo != null || dandoDeAlta) return@launch
+
+                                when (h) {
+                                    is Hallazgo.Encontrado -> {
+                                        avisos.leido()
+                                        avisoDesconocido = null
+                                        codigoDesconocido = null
+                                        previos = previosDelArticulo.orEmpty()
+                                        hallazgo = h
+                                    }
+                                    is Hallazgo.Desconocido -> {
+                                        avisos.desconocido()
+                                        codigoDesconocido = h.codigo
+                                        avisoDesconocido =
+                                            "Este código no está en el conteo: ${h.codigo}"
+                                    }
                                 }
-                                is Hallazgo.Desconocido -> {
-                                    avisos.desconocido()
-                                    codigoDesconocido = h.codigo
-                                    avisoDesconocido =
-                                        "Este código no está en el conteo: ${h.codigo}"
-                                }
+                            } finally {
+                                leyendo.set(false)
                             }
                         }
                     }
