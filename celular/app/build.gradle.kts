@@ -70,6 +70,11 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.2.0")
 
     testImplementation("junit:junit:4.13.2")
+    // Para probar las pantallas sin celular: lo que el operario ve en la
+    // ficha es una regla de negocio y no puede depender de que alguien la
+    // mire.
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.robolectric:robolectric:4.12.2")
     testImplementation("androidx.test:core:1.5.0")

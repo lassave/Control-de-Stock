@@ -48,17 +48,20 @@ fun FichaDelArticulo(
     var ubicacionReal by remember { mutableStateOf<String?>(null) }
     var observaciones by remember { mutableStateOf("") }
     var aviso by remember { mutableStateOf<String?>(null) }
-    var confirmarDecimal by remember { mutableStateOf<Int?>(null) }
+    // La pregunta por el decimal viaja entera adentro del cartel y no por
+    // `aviso`: si no, el mismo texto se ve dos veces a la vez —en el cartel
+    // y en rojo abajo del teclado— y queda colgado al elegir corregir, como
+    // si además del cartel hubiera algo mal.
+    var confirmarDecimal by remember {
+        mutableStateOf<ResultadoDeCarga.PideConfirmacion?>(null)
+    }
     var eligiendoUbicacion by remember { mutableStateOf(false) }
 
     fun confirmar() {
         when (val r = ReglasDeCarga.validar(texto, admiteDecimales)) {
             is ResultadoDeCarga.Valida ->
                 alConfirmar(r.milesimas, ubicacionReal, observaciones.ifBlank { null })
-            is ResultadoDeCarga.PideConfirmacion -> {
-                aviso = r.motivo
-                confirmarDecimal = r.milesimas
-            }
+            is ResultadoDeCarga.PideConfirmacion -> confirmarDecimal = r
             is ResultadoDeCarga.Invalida -> aviso = r.motivo
         }
     }
@@ -128,15 +131,17 @@ fun FichaDelArticulo(
         }
     }
 
-    confirmarDecimal?.let { milesimas ->
+    confirmarDecimal?.let { pregunta ->
         AlertDialog(
             onDismissRequest = { confirmarDecimal = null },
             title = { Text("¿Va con decimales?") },
-            text = { Text(aviso.orEmpty()) },
+            text = { Text(pregunta.motivo) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmarDecimal = null
-                    alConfirmar(milesimas, ubicacionReal, observaciones.ifBlank { null })
+                    alConfirmar(
+                        pregunta.milesimas, ubicacionReal, observaciones.ifBlank { null },
+                    )
                 }) { Text("Sí, cargar") }
             },
             dismissButton = {
