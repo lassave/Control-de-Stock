@@ -67,7 +67,12 @@ private fun App(base: BaseLocal) {
     var hallazgo by remember { mutableStateOf<Hallazgo?>(null) }
     var avisoDesconocido by remember { mutableStateOf<String?>(null) }
     var codigoDesconocido by remember { mutableStateOf<String?>(null) }
-    var dandoDeAlta by remember { mutableStateOf(false) }
+    // El alta guarda el código y no un «sí, está abierta»: el toque se aplica
+    // un cuadro después de la composición que lo dibujó, así que un dedo que
+    // llega tarde puede tocar el botón cuando `codigoDesconocido` ya se
+    // limpió. Guardando el código, el click se lo lleva desde la composición
+    // y no queda forma de tener el alta abierta sin saber de qué código es.
+    var altaDe by remember { mutableStateOf<String?>(null) }
     var pendientes by remember { mutableStateOf(0) }
     var ubicaciones by remember { mutableStateOf<List<String>>(emptyList()) }
     var unidades by remember { mutableStateOf<List<UnidadEntidad>>(emptyList()) }
@@ -131,9 +136,9 @@ private fun App(base: BaseLocal) {
                 operario = quien?.operarioNombre.orEmpty(),
                 pasada = quien?.pasadaEtiqueta.orEmpty(),
                 pendientes = pendientes,
-                fichaAbierta = hallazgo is Hallazgo.Encontrado || dandoDeAlta,
+                fichaAbierta = hallazgo is Hallazgo.Encontrado || altaDe != null,
                 avisoDeDesconocido = avisoDesconocido,
-                alDarDeAlta = codigoDesconocido?.let { { dandoDeAlta = true } },
+                alDarDeAlta = codigoDesconocido?.let { codigo -> { altaDe = codigo } },
                 alLeer = { codigo ->
                     // La cámara avisa una lectura por cuadro, y esta guarda
                     // sola no alcanza: decide acá, pero el estado se escribe
@@ -145,7 +150,10 @@ private fun App(base: BaseLocal) {
                     // La bandera se toma en el mismo golpe que la lectura,
                     // así hay una sola búsqueda en vuelo por vez y no un
                     // chorro de consultas por cuadro.
-                    val laToma = hallazgo == null && !dandoDeAlta &&
+                    // Mira lo mismo que decide `fichaAbierta`: si mirara otra
+                    // cosa, la cámara seguiría entregando lecturas con una
+                    // ficha en pantalla.
+                    val laToma = hallazgo == null && altaDe == null &&
                         leyendo.compareAndSet(false, true)
 
                     if (laToma) {
@@ -161,11 +169,10 @@ private fun App(base: BaseLocal) {
 
                                 // Lo que valía al leer puede no valer más: si
                                 // mientras tanto se abrió una ficha o el alta,
-                                // esta lectura llegó tarde y se descarta. Sin
-                                // esto queda `dandoDeAlta` en true con el
-                                // código ya borrado, y la app se traba con una
-                                // ficha vacía que nadie puede cerrar.
-                                if (hallazgo != null || dandoDeAlta) return@launch
+                                // esta lectura llegó tarde y se descarta —si
+                                // no, se aplica encima de lo que el operario
+                                // ya eligió, que es lo único que él vio.
+                                if (hallazgo != null || altaDe != null) return@launch
 
                                 when (h) {
                                     is Hallazgo.Encontrado -> {
@@ -217,55 +224,52 @@ private fun App(base: BaseLocal) {
                     }
                 }
 
-                if (dandoDeAlta) {
-                    codigoDesconocido?.let { codigo ->
-                        FichaDeAlta(
-                            codigo = codigo,
-                            unidades = unidades,
-                            ubicaciones = ubicaciones,
-                            alCancelar = { dandoDeAlta = false },
-                        ) { descripcion, unidad, ubicacion, milesimas, observaciones ->
-                            alcance.launch {
-                                // Con nombre: son dos `String` pegados y un
-                                // alta con la unidad en la descripción compila
-                                // igual, y se descubre cuando el servidor la
-                                // rechaza y el conteo ya está hecho.
-                                contador.darDeAlta(
-                                    codigo = codigo,
-                                    descripcion = descripcion,
-                                    unidad = unidad,
-                                    ubicacion = ubicacion,
-                                    milesimas = milesimas,
-                                    observaciones = observaciones,
-                                )
-                                avisos.cargado()
-                                dandoDeAlta = false
-                                codigoDesconocido = null
-                                avisoDesconocido = null
-                                // La ubicación nueva pasa a estar disponible
-                                // para corregir en las fichas siguientes.
-                                ubicaciones = contador.ubicaciones()
-                                pendientes = base.conteoDao().cantidadPendientes()
+                altaDe?.let { codigo ->
+                    FichaDeAlta(
+                        codigo = codigo,
+                        unidades = unidades,
+                        ubicaciones = ubicaciones,
+                        alCancelar = { altaDe = null },
+                    ) { descripcion, unidad, ubicacion, milesimas, observaciones ->
+                        alcance.launch {
+                            // Con nombre: son dos `String` pegados y un alta
+                            // con la unidad en la descripción compila igual, y
+                            // se descubre cuando el servidor la rechaza y el
+                            // conteo ya está hecho.
+                            contador.darDeAlta(
+                                codigo = codigo,
+                                descripcion = descripcion,
+                                unidad = unidad,
+                                ubicacion = ubicacion,
+                                milesimas = milesimas,
+                                observaciones = observaciones,
+                            )
+                            avisos.cargado()
+                            altaDe = null
+                            codigoDesconocido = null
+                            avisoDesconocido = null
+                            // La ubicación nueva pasa a estar disponible para
+                            // corregir en las fichas siguientes.
+                            ubicaciones = contador.ubicaciones()
+                            pendientes = base.conteoDao().cantidadPendientes()
 
-                                val resultado = sincronizador.sincronizar()
-                                pendientes = base.conteoDao().cantidadPendientes()
+                            val resultado = sincronizador.sincronizar()
+                            pendientes = base.conteoDao().cantidadPendientes()
 
-                                // El servidor ya conocía ese código: lo dio de
-                                // alta otro operario hace un minuto, o coincide
-                                // con el SKU de uno del maestro. La descripción
-                                // que escribió este operario se descartó, así
-                                // que merece enterarse mientras sigue mirando.
-                                // Se busca por código porque en la misma subida
-                                // pueden viajar varias altas juntas, y el aviso
-                                // habla del producto que acaba de tener en la
-                                // mano.
-                                resultado.yaExistian
-                                    .firstOrNull { it.codigo == codigo }
-                                    ?.let {
-                                        avisoDesconocido =
-                                            "Ese código ya estaba: ${it.descripcion}"
-                                    }
-                            }
+                            // El servidor ya conocía ese código: lo dio de alta
+                            // otro operario hace un minuto, o coincide con el
+                            // SKU de uno del maestro. La descripción que
+                            // escribió este operario se descartó, así que
+                            // merece enterarse mientras sigue mirando. Se busca
+                            // por código porque en la misma subida pueden
+                            // viajar varias altas juntas, y el aviso habla del
+                            // producto que acaba de tener en la mano.
+                            resultado.yaExistian
+                                .firstOrNull { it.codigo == codigo }
+                                ?.let {
+                                    avisoDesconocido =
+                                        "Ese código ya estaba: ${it.descripcion}"
+                                }
                         }
                     }
                 }
