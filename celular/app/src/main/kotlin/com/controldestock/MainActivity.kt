@@ -15,15 +15,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.controldestock.datos.BaseLocal
+import com.controldestock.nucleo.DatosDelQr
+import com.controldestock.red.ClienteServidor
 import com.controldestock.ui.Pantalla
+import com.controldestock.ui.PantallaVinculacion
 import com.controldestock.ui.Tema
 import com.controldestock.ui.pantallaSegun
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -43,7 +48,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun App(base: BaseLocal) {
+    val alcance = rememberCoroutineScope()
     var pantalla by remember { mutableStateOf<Pantalla>(Pantalla.Cargando) }
+    var vinculando by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         pantalla = pantallaSegun(base.vinculacionDao().actual())
@@ -51,7 +59,27 @@ private fun App(base: BaseLocal) {
 
     when (pantalla) {
         Pantalla.Cargando -> Aviso("Un momento…")
-        Pantalla.Vinculando -> Aviso("Escaneá el QR del panel para vincular este celular.")
+
+        Pantalla.Vinculando -> PantallaVinculacion(
+            vinculando = vinculando,
+            error = error,
+        ) { url, token ->
+            // La cámara avisa una lectura por cuadro: sin esta guarda, el
+            // mismo QR dispara veinte vinculaciones en un segundo.
+            if (!vinculando) {
+                vinculando = true
+                error = null
+                alcance.launch {
+                    val vinculador = Vinculador(base) { u, t -> ClienteServidor(u, t) }
+                    when (val r = vinculador.vincular(DatosDelQr(url, token))) {
+                        is ResultadoDeVinculacion.Vinculado -> pantalla = Pantalla.Escaneando
+                        is ResultadoDeVinculacion.Fallo -> error = r.mensaje
+                    }
+                    vinculando = false
+                }
+            }
+        }
+
         Pantalla.Escaneando -> Aviso("Listo para contar.")
     }
 }
