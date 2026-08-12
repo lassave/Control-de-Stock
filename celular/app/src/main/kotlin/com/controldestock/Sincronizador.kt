@@ -6,6 +6,16 @@ import com.controldestock.nucleo.PlanDeSincronizacion
 import com.controldestock.red.ClienteServidor
 import com.controldestock.red.ErrorDeServidor
 
+/**
+ * Un código que el servidor ya conocía, con el nombre que tenía.
+ *
+ * Lleva el código y no solo el nombre porque el aviso habla de *ese* código:
+ * varias altas pueden subir juntas cuando vuelve la señal, y sin el código no
+ * hay forma de saber si el choque es del producto que el operario tiene en la
+ * mano o de uno que escaneó hace media hora.
+ */
+data class CodigoYaExistente(val codigo: String, val descripcion: String)
+
 data class ResultadoDeSync(
     val enviados: Int = 0,
     val rechazados: Int = 0,
@@ -18,7 +28,7 @@ data class ResultadoDeSync(
      * era: Tornillo». Sin esto se entera recién cuando baja el maestro, o
      * nunca.
      */
-    val yaExistian: List<String> = emptyList(),
+    val yaExistian: List<CodigoYaExistente> = emptyList(),
 )
 
 /**
@@ -83,7 +93,7 @@ class Sincronizador(
     private data class Altas(
         val uuidsRetenidos: Set<String> = emptySet(),
         val huboError: Boolean = false,
-        val yaExistian: List<String> = emptyList(),
+        val yaExistian: List<CodigoYaExistente> = emptyList(),
     )
 
     /**
@@ -100,7 +110,7 @@ class Sincronizador(
 
     private suspend fun subirAltas(cliente: ClienteServidor): Altas {
         val retenidos = mutableSetOf<String>()
-        val yaExistian = mutableListOf<String>()
+        val yaExistian = mutableListOf<CodigoYaExistente>()
         var huboError = false
 
         val pendientes = base.maestroDao().altasPendientes()
@@ -117,7 +127,9 @@ class Sincronizador(
                 // enterarse.
                 val respuesta =
                     cliente.altaRapida(codigo, alta.descripcion, alta.unidad, alta.ubicacion)
-                if (!respuesta.creado) yaExistian += respuesta.descripcion
+                if (!respuesta.creado) {
+                    yaExistian += CodigoYaExistente(codigo, respuesta.descripcion)
+                }
                 base.maestroDao().marcarAlta(alta.id, EstadoSync.ENVIADO.name, null)
             } catch (error: ErrorDeServidor) {
                 if (!error.contenidoRechazado) {

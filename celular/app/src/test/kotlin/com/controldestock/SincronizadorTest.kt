@@ -387,7 +387,30 @@ class SincronizadorTest {
 
         val resultado = sincronizador().sincronizar()
 
-        assertEquals(listOf("Tornillo"), resultado.yaExistian)
+        assertEquals(
+            listOf(CodigoYaExistente("7790999", "Tornillo")),
+            resultado.yaExistian,
+        )
+    }
+
+    @Test
+    fun `el nombre viene con el codigo al que le corresponde`() = runTest {
+        // Sin el codigo no se sabe de cual de las altas habla: con la WiFi
+        // cortada se juntan varias y suben todas de una, asi que el primer
+        // choque puede ser de un producto que el operario escaneo hace media
+        // hora y ya no tiene en la mano.
+        guardarAlta(codigo = "7790999", id = -1)
+        guardarAlta(codigo = "7790998", descripcion = "Cano de PVC", id = -2)
+        responder("""{"id":9,"id_orden":84,"sku":"7790999","descripcion":"Pack por 6","unidad":"UN","creado":true}""")
+        responder("""{"id":10,"id_orden":85,"sku":"7790998","descripcion":"Tornillo","unidad":"UN","creado":false}""")
+        responder("""{"registrados":2,"duplicados":0,"rechazados":[]}""")
+
+        val resultado = sincronizador().sincronizar()
+
+        assertEquals(
+            listOf(CodigoYaExistente("7790998", "Tornillo")),
+            resultado.yaExistian,
+        )
     }
 
     @Test
@@ -398,7 +421,7 @@ class SincronizadorTest {
 
         val resultado = sincronizador().sincronizar()
 
-        assertEquals(emptyList<String>(), resultado.yaExistian)
+        assertEquals(emptyList<CodigoYaExistente>(), resultado.yaExistian)
     }
 
     @Test
