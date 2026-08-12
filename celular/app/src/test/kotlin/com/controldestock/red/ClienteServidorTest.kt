@@ -185,6 +185,22 @@ class ClienteServidorTest {
     }
 
     @Test
+    fun `un pedido que llego cortado se reintenta`() = runTest {
+        // El 422 del servidor dice que el cuerpo no llegó entero: la conexión
+        // se cortó a mitad de envío, que en una WiFi de depósito pasa. Nadie
+        // llegó a leer el artículo, así que mandarlo de nuevo funciona. Es la
+        // diferencia con el 400, que sí es el servidor rechazando lo que leyó.
+        responder("""{"detail":"El pedido llegó incompleto."}""", 422)
+
+        val error = try {
+            cliente.altaRapida("999", "Algo", "UN", null); null
+        } catch (e: ErrorDeServidor) { e }
+
+        assertTrue(error!!.reintentable)
+        assertFalse(error.contenidoRechazado)
+    }
+
+    @Test
     fun `un 400 sin motivo legible no da el contenido por rechazado`() = runTest {
         // Traer el motivo del servidor es también lo que prueba que contestó
         // el servidor. Sin eso puede haber contestado cualquier intermediario,

@@ -294,6 +294,23 @@ class SincronizadorTest {
     }
 
     @Test
+    fun `un pedido que llego cortado no pierde el alta ni su conteo`() = runTest {
+        // La conexión se cortó a mitad de envío y el cuerpo llegó truncado.
+        // El servidor contesta 422 justamente para que no se confunda con el
+        // 400 del alta rechazada: nadie leyó el artículo, y reintentarlo
+        // funciona. Tratarlo como rechazo tira conteos que se habrían subido.
+        guardarAlta()
+        val uuid = conteoDelAlta()
+        responder("""{"detail":"El pedido llegó incompleto."}""", codigo = 422)
+
+        val resultado = sincronizador().sincronizar()
+
+        assertEquals(EstadoSync.PENDIENTE, estadoDe(uuid))
+        assertEquals(1, base.maestroDao().altasPendientes().size)
+        assertTrue(resultado.huboError)
+    }
+
+    @Test
     fun `el inventario cerrado no pierde el alta ni su conteo`() = runTest {
         // El 409 lo arregla quien maneja el panel, reabriendo la sesión. El
         // celular no tiene por qué tirar nada mientras tanto.

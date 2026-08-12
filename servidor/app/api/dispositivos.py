@@ -14,6 +14,25 @@ from app.repos import articulos, conteos, operarios, sesiones
 router = APIRouter(prefix="/api/dispositivo")
 
 
+async def _cuerpo_json(request):
+    """El cuerpo del pedido, o 422 si llegó cortado.
+
+    Es 422 y no 400 a propósito. El 400 de estos endpoints significa «leí lo
+    que mandaste y lo rechazo por lo que es», y el celular lo usa para cerrar
+    un alta y sus conteos para siempre. Un cuerpo truncado —la conexión se
+    cortó a mitad de envío, que en una WiFi de depósito pasa— es lo contrario:
+    nadie llegó a leer nada y reintentarlo funciona. Con el mismo código, un
+    corte de red le destruiría al operario conteos que se habrían subido
+    solos.
+    """
+    try:
+        return await request.json()
+    except json.JSONDecodeError as error:
+        raise HTTPException(
+            status_code=422, detail="El pedido llegó incompleto."
+        ) from error
+
+
 def _contexto(request, token):
     con = request.app.state.con
     operario = operarios.por_token(con, token or "")
@@ -82,14 +101,7 @@ async def dar_de_alta(request: Request, x_token: str = Header(default="")):
     """
     con, operario, sesion = _contexto(request, x_token)
 
-    try:
-        # Un cuerpo truncado —la conexión se cortó a mitad de envío, que en una
-        # WiFi de depósito pasa— es un pedido mal armado, no una falla nuestra.
-        cuerpo = await request.json()
-    except json.JSONDecodeError as error:
-        raise HTTPException(
-            status_code=400, detail="El pedido no trae un cuerpo JSON válido"
-        ) from error
+    cuerpo = await _cuerpo_json(request)
 
     try:
         return articulos.crear_alta_rapida(
@@ -102,7 +114,10 @@ async def dar_de_alta(request: Request, x_token: str = Header(default="")):
 @router.post("/conteos")
 async def recibir_conteos(request: Request, x_token: str = Header(default="")):
     con, operario, sesion = _contexto(request, x_token)
-    cuerpo = await request.json()
+    # Sin esto, un cuerpo cortado sube como error no controlado: el celular
+    # ve un 500, que por suerte también reintenta, pero el servidor escupe un
+    # traceback por cada corte de WiFi y el motivo real queda enterrado.
+    cuerpo = await _cuerpo_json(request)
 
     return conteos.registrar_lote(
         con, sesion["id"], operario["id"], cuerpo.get("conteos", [])

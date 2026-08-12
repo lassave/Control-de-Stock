@@ -461,8 +461,16 @@ def test_el_alta_rapida_con_un_cuerpo_que_no_es_objeto_devuelve_400(cliente, ses
     assert "artículo" in respuesta.json()["detail"]
 
 
-def test_el_alta_rapida_con_json_mal_formado_devuelve_400(cliente, sesion):
-    """Una conexión cortada a mitad de envío deja el cuerpo truncado."""
+def test_el_alta_rapida_con_el_cuerpo_cortado_devuelve_422(cliente, sesion):
+    """Una conexión cortada a mitad de envío deja el cuerpo truncado.
+
+    No es 400 a propósito, y la diferencia no es cosmética: el 400 del alta
+    significa «leí tu artículo y lo rechazo por lo que es», y el celular lo
+    usa para cerrar el alta y sus conteos para siempre. Un cuerpo cortado es
+    lo contrario —el pedido no llegó entero— y reintentarlo funciona. Con el
+    mismo código, un corte de WiFi le destruiría al operario conteos que se
+    habrían subido solos.
+    """
     importar(cliente, sesion["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
@@ -473,7 +481,24 @@ def test_el_alta_rapida_con_json_mal_formado_devuelve_400(cliente, sesion):
         content='{"descripcion": "Caño',
     )
 
-    assert respuesta.status_code == 400
+    assert respuesta.status_code == 422
+    assert "incompleto" in respuesta.json()["detail"]
+
+
+def test_los_conteos_con_el_cuerpo_cortado_devuelven_422(cliente, sesion):
+    """El mismo corte de red, en el endpoint por el que sube todo el trabajo."""
+    importar(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.post(
+        "/api/dispositivo/conteos",
+        headers={"X-Token": operario["token_dispositivo"],
+                 "Content-Type": "application/json"},
+        content='{"conteos": [{"uuid": "abc"',
+    )
+
+    assert respuesta.status_code == 422
+    assert "incompleto" in respuesta.json()["detail"]
 
 
 def test_el_alta_rapida_aparece_en_el_tablero(cliente, sesion):

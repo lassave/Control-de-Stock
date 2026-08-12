@@ -170,6 +170,14 @@ class ClienteServidor(
         // reintento y para el otro cuesta los conteos del operario.
         400 -> detalle(cuerpo)?.let { ErrorDeServidor(it, false, contenidoRechazado = true) }
             ?: ErrorDeServidor("El servidor rechazó el pedido.", false)
+        // El cuerpo llegó cortado: la conexión se interrumpió a mitad de
+        // envío. Nadie del otro lado llegó a leer lo que se mandó, así que
+        // mandarlo de nuevo funciona — y es justamente lo que separa este
+        // caso del 400, que sí cierra lo que dependía del pedido.
+        422 -> ErrorDeServidor(
+            "El pedido no llegó entero. Se va a reintentar solo.",
+            reintentable = true,
+        )
         in 500..599 -> ErrorDeServidor(
             "El servidor tuvo un problema. Se va a reintentar solo.",
             reintentable = true,
