@@ -242,12 +242,24 @@ class ContadorTest {
 
     @Test
     fun `los conteos de un articulo se pueden leer para avisar de repetidos`() = runTest {
-        val articulo = (contador().buscar("7790001") as Hallazgo.Encontrado).articulo
-        contador().registrar(articulo, 24000, null, null)
+        // Tres conteos y no uno: con uno solo, leer la tabla entera y sin
+        // ordenar pasaría igual. Quien avisa del repetido se queda con el
+        // último de la lista, así que si viniera al revés le diría al
+        // operario la cantidad y la hora del conteo más viejo, y si viniera
+        // sin filtrar, las de un producto que no tiene en la mano.
+        val fideos = (contador().buscar("7790001") as Hallazgo.Encontrado).articulo
+        val harina = (contador().buscar("7790002") as Hallazgo.Encontrado).articulo
+        contador().registrar(fideos, 24000, null, null)
+        contador().registrar(harina, 99000, null, null)
+        contador().registrar(fideos, 12000, null, null)
 
-        val previos = contador().conteosDe(articulo)
+        val previos = contador().conteosDe(fideos)
 
-        assertEquals(1, previos.size)
-        assertEquals(24000, previos.single().evento.cantidad)
+        assertEquals(2, previos.size)
+        assertEquals(listOf(24000, 12000), previos.map { it.evento.cantidad })
+        assertTrue(
+            "no puede traer el conteo de otro artículo",
+            previos.none { it.evento.codigo == "7790002" },
+        )
     }
 }
