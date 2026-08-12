@@ -2,6 +2,18 @@ package com.controldestock.nucleo
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+/**
+ * El parser del contrato.
+ *
+ * `ignoreUnknownKeys` no es una comodidad del test: el servidor manda más
+ * campos de los que la app declara —`pasada` trae nueve y acá se usan tres—
+ * así que con el parser por defecto de kotlinx la vinculación falla. Además
+ * es lo que permite que el servidor agregue un campo sin coordinar una
+ * versión de la app.
+ */
+val jsonDelContrato = Json { ignoreUnknownKeys = true }
 
 /**
  * Los tipos que viajan entre el celular y el servidor.

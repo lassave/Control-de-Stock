@@ -14,15 +14,3 @@ def con():
     db.crear_esquema(conexion)
     yield conexion
     conexion.close()
-
-
-@pytest.fixture
-def cliente_contrato(tmp_path):
-    """Un cliente HTTP sobre una app real, para los tests de contrato."""
-    from fastapi.testclient import TestClient
-
-    from app.main import crear_app
-
-    app = crear_app(str(tmp_path / "contrato.db"))
-    with TestClient(app) as cliente:
-        yield cliente

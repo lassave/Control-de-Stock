@@ -35,9 +35,19 @@ def guardar(nombre, datos):
 
 def main():
     with httpx.Client(base_url=BASE, timeout=10) as c:
-        for sesion in c.get("/api/sesiones").json():
-            if sesion["estado"] == "abierta":
-                c.post(f"/api/sesiones/{sesion['id']}/cerrar")
+        # Este script crea sesiones y artículos de mentira. Correrlo contra el
+        # servidor de un cliente le mete basura al inventario en curso, y la
+        # dirección por defecto es justamente la que levanta «Iniciar
+        # servidor.bat». Si hay algo cargado, no se toca nada.
+        existentes = c.get("/api/sesiones").json()
+        if existentes:
+            print(
+                "Este servidor ya tiene sesiones cargadas. Capturá el contrato "
+                "contra un servidor vacío: el script crea datos de prueba y no "
+                "es para la PC de un cliente.",
+                file=sys.stderr,
+            )
+            return 1
 
         sesion = c.post("/api/sesiones", json={"nombre": "Contrato"}).json()
         c.post(
@@ -56,14 +66,14 @@ def main():
         guardar("vinculacion", c.post("/api/dispositivo/vincular", headers=cab).json())
         guardar("maestro", c.get("/api/dispositivo/maestro", headers=cab).json())
 
+        # El pedido es la otra mitad del contrato: son los nombres que la app
+        # escribe. Vive en su propio archivo para que los dos lados lo fijen,
+        # en vez de existir solo como literal acá adentro.
+        pedido = json.loads(
+            (DESTINO / "conteos-pedido.json").read_text(encoding="utf-8")
+        )
         guardar("conteos-respuesta", c.post(
-            "/api/dispositivo/conteos", headers=cab,
-            json={"conteos": [
-                {"uuid": "contrato-1", "codigo": "7790001001234", "cantidad": 48000,
-                 "timestamp_dispositivo": "2026-08-11T10:00:00Z"},
-                {"uuid": "contrato-2", "codigo": "no-existe", "cantidad": 1000,
-                 "timestamp_dispositivo": "2026-08-11T10:01:00Z"},
-            ]},
+            "/api/dispositivo/conteos", headers=cab, json=pedido,
         ).json())
 
         guardar("alta-rapida", c.post(

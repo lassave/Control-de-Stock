@@ -6,6 +6,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 
 /**
  * La app se prueba contra las respuestas reales del servidor, capturadas en
@@ -14,7 +18,10 @@ import org.junit.Test
  */
 class ContratoApiTest {
 
-    private val json = Json { ignoreUnknownKeys = true }
+    // El mismo parser que usa la app, no uno configurado para el test: si
+    // `jsonDelContrato` deja de tolerar campos desconocidos, esto se pone rojo
+    // en vez de fallar recién en el celular.
+    private val json = jsonDelContrato
 
     private fun leer(nombre: String): String =
         File("../contrato/$nombre.json").readText()
@@ -65,6 +72,56 @@ class ContratoApiTest {
 
         assertTrue(respuesta.creado)
         assertEquals("7790009999999", respuesta.sku)
+    }
+
+    @Test
+    fun `lo que la app manda tiene los nombres que el servidor lee`() {
+        // La otra mitad del contrato, y la más peligrosa: un typo en un
+        // @SerialName compila, pasa todos los demás tests, y hace que el
+        // servidor rechace cada conteo del lote. Recién se descubre contando.
+        val lote = LoteDeConteos(
+            listOf(
+                ConteoParaEnviar(
+                    uuid = "contrato-1",
+                    codigo = "7790001001234",
+                    cantidad = 48000,
+                    timestampDispositivo = "2026-08-11T10:00:00Z",
+                    ubicacionReal = "P-9",
+                    observaciones = "Estaba en otro estante",
+                ),
+                ConteoParaEnviar(
+                    uuid = "contrato-2",
+                    codigo = "no-existe",
+                    cantidad = 1000,
+                    timestampDispositivo = "2026-08-11T10:01:00Z",
+                ),
+            ),
+        )
+
+        val queManda = json.parseToJsonElement(json.encodeToString(lote)).jsonObject
+        val queEspera = json.parseToJsonElement(leer("conteos-pedido")).jsonObject
+
+        assertEquals(queEspera.keys, queManda.keys)
+        assertEquals(
+            queEspera["conteos"]!!.jsonArray[0].jsonObject.keys,
+            queManda["conteos"]!!.jsonArray[0].jsonObject.keys,
+        )
+        assertEquals(
+            queEspera["conteos"]!!.jsonArray[1].jsonObject.keys,
+            queManda["conteos"]!!.jsonArray[1].jsonObject.keys,
+        )
+    }
+
+    @Test
+    fun `la anulacion viaja con el nombre que el servidor lee`() {
+        val anulacion = EventoConteo(
+            uuid = "u-2", codigo = "A", cantidad = 0,
+            timestampDispositivo = "2026-08-11T10:05:00Z", anulaUuid = "u-1",
+        ).paraEnviar()
+
+        val texto = json.encodeToString(anulacion)
+
+        assertTrue(texto.contains("\"anula_uuid\":\"u-1\""))
     }
 
     @Test
