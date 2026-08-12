@@ -25,8 +25,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.controldestock.datos.ArticuloEntidad
+import com.controldestock.nucleo.Cantidades
+import com.controldestock.nucleo.ConteoLocal
 import com.controldestock.nucleo.ReglasDeCarga
+import com.controldestock.nucleo.Repeticion
 import com.controldestock.nucleo.ResultadoDeCarga
+import com.controldestock.nucleo.horaLocal
 
 /**
  * La ficha que sube al leer un código.
@@ -40,6 +44,8 @@ fun FichaDelArticulo(
     articulo: ArticuloEntidad,
     admiteDecimales: Boolean,
     ubicaciones: List<String>,
+    /** Los conteos que este celular ya hizo de este artículo. */
+    previos: List<ConteoLocal>,
     alCancelar: () -> Unit,
     // Último para que quede como lambda final en la llamada.
     alConfirmar: (Int, String?, String?) -> Unit,
@@ -55,12 +61,29 @@ fun FichaDelArticulo(
     var confirmarDecimal by remember {
         mutableStateOf<ResultadoDeCarga.PideConfirmacion?>(null)
     }
+    var confirmarRepetido by remember {
+        mutableStateOf<Pair<Int, Repeticion.YaContado>?>(null)
+    }
     var eligiendoUbicacion by remember { mutableStateOf(false) }
+
+    fun cargar(milesimas: Int) =
+        alConfirmar(milesimas, ubicacionReal, observaciones.ifBlank { null })
+
+    /**
+     * El último filtro antes de cargar: ¿ya se contó acá?
+     *
+     * Va después de la pregunta por el decimal y no antes: preguntar dos
+     * cosas a la vez no se entiende, y la cantidad tiene que estar resuelta
+     * para poder decir cuánto se está sumando.
+     */
+    fun preguntarOCargar(milesimas: Int) {
+        val repetido = Repeticion.buscar(previos, articulo.ubicacion, ubicacionReal)
+        if (repetido == null) cargar(milesimas) else confirmarRepetido = milesimas to repetido
+    }
 
     fun confirmar() {
         when (val r = ReglasDeCarga.validar(texto, admiteDecimales)) {
-            is ResultadoDeCarga.Valida ->
-                alConfirmar(r.milesimas, ubicacionReal, observaciones.ifBlank { null })
+            is ResultadoDeCarga.Valida -> preguntarOCargar(r.milesimas)
             is ResultadoDeCarga.PideConfirmacion -> confirmarDecimal = r
             is ResultadoDeCarga.Invalida -> aviso = r.motivo
         }
@@ -139,13 +162,36 @@ fun FichaDelArticulo(
             confirmButton = {
                 TextButton(onClick = {
                     confirmarDecimal = null
-                    alConfirmar(
-                        pregunta.milesimas, ubicacionReal, observaciones.ifBlank { null },
-                    )
+                    preguntarOCargar(pregunta.milesimas)
                 }) { Text("Sí, cargar") }
             },
             dismissButton = {
                 TextButton(onClick = { confirmarDecimal = null }) { Text("Corregir") }
+            },
+        )
+    }
+
+    confirmarRepetido?.let { (milesimas, repetido) ->
+        val donde = ubicacionReal ?: articulo.ubicacion ?: "sin ubicación"
+
+        AlertDialog(
+            onDismissRequest = { confirmarRepetido = null },
+            title = { Text("¿Ya lo contaste acá?") },
+            text = {
+                Text(
+                    "Ya cargaste ${Cantidades.aTexto(repetido.milesimas)} ${articulo.unidad} " +
+                        "de este producto en $donde a las ${horaLocal(repetido.cuando)}. " +
+                        "¿Sumás otra carga?",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmarRepetido = null
+                    cargar(milesimas)
+                }) { Text("Cargar igual") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmarRepetido = null }) { Text("Cancelar") }
             },
         )
     }
@@ -157,77 +203,4 @@ fun FichaDelArticulo(
             alCerrar = { eligiendoUbicacion = false },
         )
     }
-}
-
-@Composable
-private fun TecladoNumerico(alTocar: (String) -> Unit, alBorrar: () -> Unit) {
-    val filas = listOf(
-        listOf("1", "2", "3"),
-        listOf("4", "5", "6"),
-        listOf("7", "8", "9"),
-        listOf("C", "0", ","),
-    )
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        filas.forEach { fila ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                fila.forEach { tecla ->
-                    Button(
-                        onClick = { alTocar(tecla) },
-                        modifier = Modifier.weight(1f).height(64.dp),
-                    ) {
-                        Text(tecla, fontSize = 22.sp)
-                    }
-                }
-                if (fila == filas.last()) {
-                    Button(
-                        onClick = alBorrar,
-                        modifier = Modifier.weight(1f).height(64.dp),
-                    ) {
-                        Text("←", fontSize = 22.sp)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ElegirUbicacion(
-    ubicaciones: List<String>,
-    alElegir: (String) -> Unit,
-    alCerrar: () -> Unit,
-) {
-    var filtro by remember { mutableStateOf("") }
-    var otra by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = alCerrar,
-        title = { Text("¿Dónde estaba?") },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                OutlinedTextField(
-                    value = filtro,
-                    onValueChange = { filtro = it },
-                    label = { Text("Buscar ubicación") },
-                )
-                ubicaciones.filter { it.contains(filtro, ignoreCase = true) }
-                    .take(20)
-                    .forEach { u ->
-                        TextButton(onClick = { alElegir(u) }) { Text(u) }
-                    }
-                OutlinedTextField(
-                    value = otra,
-                    onValueChange = { otra = it },
-                    label = { Text("Otra…") },
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { if (otra.isNotBlank()) alElegir(otra.trim()) else alCerrar() },
-            ) { Text("Listo") }
-        },
-        dismissButton = { TextButton(onClick = alCerrar) { Text("Cancelar") } },
-    )
 }

@@ -146,6 +146,7 @@ private fun App(base: BaseLocal) {
                         articulo = encontrado.articulo,
                         admiteDecimales = encontrado.admiteDecimales,
                         ubicaciones = ubicaciones,
+                        previos = emptyList(),
                         alCancelar = { hallazgo = null },
                     ) { milesimas, ubicacionReal, observaciones ->
                         alcance.launch {
