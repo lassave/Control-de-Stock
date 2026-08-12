@@ -51,7 +51,7 @@ class Sincronizador(
             base.conteoDao().marcar(it.evento.uuid, EstadoSync.RECHAZADO, it.motivoRechazo)
         }
 
-        val aEnviar = PlanDeSincronizacion.aEnviar(locales, altas.codigos)
+        val aEnviar = PlanDeSincronizacion.aEnviar(locales, altas.uuidsRetenidos)
         if (aEnviar.isEmpty()) {
             return ResultadoDeSync(
                 huboError = altas.huboError,
@@ -79,19 +79,33 @@ class Sincronizador(
         }
     }
 
-    /** Cómo quedaron las altas: qué se trabó y qué código ya existía. */
+    /** Cómo quedaron las altas: qué conteos esperan y qué código ya existía. */
     private data class Altas(
-        val codigos: Set<String> = emptySet(),
+        val uuidsRetenidos: Set<String> = emptySet(),
         val huboError: Boolean = false,
         val yaExistian: List<String> = emptyList(),
     )
 
+    /**
+     * Los uuid de los conteos de un artículo.
+     *
+     * Se pregunta por artículo y no por código porque un código puede
+     * pertenecer a dos artículos a la vez: el alta local que todavía no subió
+     * y el del maestro que ya lo trae, porque otro operario lo dio de alta
+     * antes de que este celular tuviera red. Los conteos del segundo son
+     * válidos y no tienen nada que ver con el alta trabada.
+     */
+    private suspend fun conteosDe(articuloId: Int): Set<String> =
+        base.conteoDao().deArticulo(articuloId).map { it.uuid }.toSet()
+
     private suspend fun subirAltas(cliente: ClienteServidor): Altas {
-        val codigos = mutableSetOf<String>()
+        val retenidos = mutableSetOf<String>()
         val yaExistian = mutableListOf<String>()
         var huboError = false
 
-        for (alta in base.maestroDao().altasPendientes()) {
+        val pendientes = base.maestroDao().altasPendientes()
+
+        for ((indice, alta) in pendientes.withIndex()) {
             val codigo = base.maestroDao().codigoDe(alta.id) ?: alta.sku
 
             try {
@@ -106,30 +120,41 @@ class Sincronizador(
                 if (!respuesta.creado) yaExistian += respuesta.descripcion
                 base.maestroDao().marcarAlta(alta.id, EstadoSync.ENVIADO.name, null)
             } catch (error: ErrorDeServidor) {
-                if (error.reintentable) {
-                    // Se cayó la red o el servidor tosió: el alta sigue
-                    // pendiente y sus conteos esperan con ella.
+                if (!error.contenidoRechazado) {
+                    // No se pudo hablar bien con el servidor: no hay señal, el
+                    // token se revocó, contestó el portal cautivo de una WiFi
+                    // ajena. Nadie leyó este artículo todavía, así que no hay
+                    // nada que dar por perdido — lo pendiente sigue pendiente.
+                    //
+                    // Y se corta acá: lo que falló no es de este artículo, así
+                    // que las altas que siguen van a fallar igual. Sin cortar,
+                    // cada conteo confirmado dispara un pedido por alta
+                    // pendiente, en serie y con diez segundos de timeout cada
+                    // uno, justo cuando el operario se fue de la zona de
+                    // cobertura y sigue contando.
                     huboError = true
-                    codigos += codigo
-                } else {
-                    val motivo = error.message.orEmpty()
-                    base.maestroDao().marcarAlta(alta.id, EstadoSync.RECHAZADO.name, motivo)
-
-                    // Ese artículo no va a existir nunca: sus conteos no
-                    // tienen a dónde llegar, y dejarlos pendientes deja la
-                    // cola girando para siempre.
-                    val locales = base.conteoDao().todos().map { it.aLocal() }
-                    PlanDeSincronizacion
-                        .cerradosPorAltaRechazada(locales, codigo, motivo)
-                        .forEach {
-                            base.conteoDao().marcar(
-                                it.evento.uuid, EstadoSync.RECHAZADO, it.motivoRechazo,
-                            )
-                        }
+                    pendientes.drop(indice).forEach { retenidos += conteosDe(it.id) }
+                    break
                 }
+
+                // Acá sí: el servidor leyó el artículo y lo rechazó por lo que
+                // es —una unidad que no está en su catálogo—. Ese artículo no
+                // va a existir nunca, sus conteos no tienen a dónde llegar, y
+                // dejarlos pendientes deja la cola girando para siempre.
+                val motivo = error.message.orEmpty()
+                base.maestroDao().marcarAlta(alta.id, EstadoSync.RECHAZADO.name, motivo)
+
+                val locales = base.conteoDao().todos().map { it.aLocal() }
+                PlanDeSincronizacion
+                    .cerradosPorAltaRechazada(locales, conteosDe(alta.id), motivo)
+                    .forEach {
+                        base.conteoDao().marcar(
+                            it.evento.uuid, EstadoSync.RECHAZADO, it.motivoRechazo,
+                        )
+                    }
             }
         }
 
-        return Altas(codigos, huboError, yaExistian)
+        return Altas(retenidos, huboError, yaExistian)
     }
 }

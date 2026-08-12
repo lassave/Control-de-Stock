@@ -17,6 +17,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -89,22 +90,29 @@ class SincronizadorTest {
         codigo: String = "7790999",
         descripcion: String = "Pack por 6",
         unidad: String = "UN",
+        id: Int = -1,
     ) {
         base.maestroDao().insertarArticulos(
             listOf(
                 ArticuloEntidad(
-                    id = -1, idOrden = 99, sku = codigo, descripcion = descripcion,
+                    id = id, idOrden = 99, sku = codigo, descripcion = descripcion,
                     unidad = unidad, pasadaNumero = 1, sesionId = 1,
                     busqueda = textoDeBusqueda(descripcion, codigo, null),
                     estadoAlta = EstadoSync.PENDIENTE.name,
                 ),
             ),
         )
-        base.maestroDao().insertarCodigos(listOf(CodigoEntidad(codigo, -1)))
+        base.maestroDao().insertarCodigos(listOf(CodigoEntidad(codigo, id)))
         base.conteoDao().guardar(
-            ConteoEntidad.de(EventoConteo.nuevo(codigo, 6000, reloj), -1, 1),
+            ConteoEntidad.de(EventoConteo.nuevo(codigo, 6000, reloj), id, 1),
         )
     }
+
+    /** El uuid del conteo que dejó `guardarAlta` para ese artículo. */
+    private suspend fun conteoDelAlta(id: Int = -1) =
+        base.conteoDao().deArticulo(id).single().uuid
+
+    private suspend fun estadoDe(uuid: String) = base.conteoDao().porUuid(uuid)!!.estadoSync
 
     @Test
     fun `manda los pendientes y los marca como enviados`() = runTest {
@@ -233,7 +241,7 @@ class SincronizadorTest {
         guardarAlta(unidad = "XX")
         responder("""{"detail":"La unidad «XX» no está en el catálogo"}""", codigo = 400)
 
-        sincronizador().sincronizar()
+        val resultado = sincronizador().sincronizar()
 
         assertEquals(0, base.conteoDao().cantidadPendientes())
         val conteo = base.conteoDao().todos().single()
@@ -243,6 +251,99 @@ class SincronizadorTest {
             "La unidad «XX» no está en el catálogo",
             base.maestroDao().porId(-1)?.motivoRechazo,
         )
+        // Ese conteo no se manda: su artículo no existe y el servidor lo
+        // rechazaría por código desconocido. Solo hubo el pedido del alta.
+        assertEquals(1, servidor.requestCount)
+        // Y no es un error a reintentar. Si lo fuera, el trabajo en segundo
+        // plano volvería a correr para siempre por algo que nunca va a
+        // cambiar: es la falla que esta tarea existe para evitar.
+        assertFalse(resultado.huboError)
+    }
+
+    @Test
+    fun `un celular desvinculado no pierde el alta ni su conteo`() = runTest {
+        // El 401 no es reintentable, pero el mensaje mismo dice cómo
+        // arreglarlo: revincular. Cerrar sus conteos los tira por un problema
+        // que el operario puede resolver en diez segundos.
+        guardarAlta()
+        val uuid = conteoDelAlta()
+        responder("""{"detail":"Token de operario inválido"}""", codigo = 401)
+
+        val resultado = sincronizador().sincronizar()
+
+        assertEquals(EstadoSync.PENDIENTE, estadoDe(uuid))
+        assertEquals(1, base.maestroDao().altasPendientes().size)
+        assertTrue(resultado.huboError)
+    }
+
+    @Test
+    fun `una respuesta que no se entiende no pierde el alta ni su conteo`() = runTest {
+        // El portal cautivo de una WiFi ajena: contesta 200 con HTML, así que
+        // el pedido «sale bien» y lo que falla es leerlo. No es el servidor
+        // rechazando el artículo, y tratarlo como tal borra el trabajo del
+        // operario por haberse enganchado a la red equivocada.
+        guardarAlta()
+        val uuid = conteoDelAlta()
+        responder("<html><body>Aceptá los términos para navegar</body></html>")
+
+        val resultado = sincronizador().sincronizar()
+
+        assertEquals(EstadoSync.PENDIENTE, estadoDe(uuid))
+        assertEquals(1, base.maestroDao().altasPendientes().size)
+        assertTrue(resultado.huboError)
+    }
+
+    @Test
+    fun `el inventario cerrado no pierde el alta ni su conteo`() = runTest {
+        // El 409 lo arregla quien maneja el panel, reabriendo la sesión. El
+        // celular no tiene por qué tirar nada mientras tanto.
+        guardarAlta()
+        val uuid = conteoDelAlta()
+        responder("""{"detail":"No hay ninguna sesión abierta"}""", codigo = 409)
+
+        sincronizador().sincronizar()
+
+        assertEquals(EstadoSync.PENDIENTE, estadoDe(uuid))
+        assertEquals(1, base.maestroDao().altasPendientes().size)
+    }
+
+    @Test
+    fun `el cierre no toca los conteos de otro articulo con el mismo codigo`() = runTest {
+        // Al revincular, el maestro nuevo puede traer ese mismo código porque
+        // otro operario dio de alta el artículo. Quedan dos artículos con el
+        // código: el alta local trabada y el del servidor. Los conteos del
+        // segundo son válidos y el servidor los acepta.
+        guardarAlta(unidad = "XX")
+        val delAlta = conteoDelAlta()
+        val delMaestro = EventoConteo.nuevo("7790999", 2000, reloj)
+        base.conteoDao().guardar(ConteoEntidad.de(delMaestro, 1, 1))
+        responder("""{"detail":"La unidad «XX» no está en el catálogo"}""", codigo = 400)
+        responder("""{"registrados":1,"duplicados":0,"rechazados":[]}""")
+
+        sincronizador().sincronizar()
+
+        assertEquals(EstadoSync.RECHAZADO, estadoDe(delAlta))
+        assertEquals(EstadoSync.ENVIADO, estadoDe(delMaestro.uuid))
+    }
+
+    @Test
+    fun `un error de transporte no dispara un pedido por cada alta pendiente`() = runTest {
+        // El operario dio de alta doce packs y se fue de la zona de
+        // cobertura. Sin cortar, cada conteo confirmado arranca doce pedidos
+        // en serie, diez segundos de timeout cada uno, y las corrutinas se
+        // apilan mientras sigue contando.
+        guardarAlta(codigo = "7790999", id = -1)
+        guardarAlta(codigo = "7790998", id = -2)
+        responder("""{"detail":"algo pasajero"}""", codigo = 500)
+
+        val resultado = sincronizador().sincronizar()
+
+        assertEquals(1, servidor.requestCount)
+        assertEquals(2, base.maestroDao().altasPendientes().size)
+        // Y lo que quedó sin intentar también espera: su artículo tampoco
+        // llegó al servidor.
+        assertEquals(2, base.conteoDao().cantidadPendientes())
+        assertTrue(resultado.huboError)
     }
 
     @Test

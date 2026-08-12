@@ -25,10 +25,21 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * `reintentable` distingue lo que puede andar más tarde —el celular salió
  * del alcance del wifi— de lo que nunca va a andar —el token se revocó—.
  * Sin esa distinción, la app reintenta para siempre o descarta trabajo.
+ *
+ * `contenidoRechazado` responde otra pregunta, y son dos preguntas distintas
+ * a propósito: si el servidor llegó a leer lo que se le mandó y lo rechazó
+ * por lo que es. Solo entonces reintentarlo tal cual es inútil y lo que
+ * depende de ese pedido se puede dar por perdido. No alcanza con mirar
+ * `reintentable`: el token revocado, el inventario cerrado y el portal
+ * cautivo de una WiFi ajena tampoco son reintentables, y sin embargo el
+ * pedido nunca llegó a evaluarse — el operario revincula, o le pide al panel
+ * que reabra la sesión, y andaba. Confundirlos borra trabajo del operario por
+ * haberse enganchado a la red equivocada.
  */
 class ErrorDeServidor(
     mensaje: String,
     val reintentable: Boolean,
+    val contenidoRechazado: Boolean = false,
 ) : Exception(mensaje)
 
 private val TIPO_JSON = "application/json; charset=utf-8".toMediaType()
@@ -150,7 +161,15 @@ class ClienteServidor(
         )
         // El servidor explica en castellano por qué rechazó el pedido, y esa
         // explicación es más útil que cualquier mensaje genérico.
-        400 -> ErrorDeServidor(detalle(cuerpo) ?: "El servidor rechazó el pedido.", false)
+        //
+        // Traer esa explicación es también lo que prueba que del otro lado
+        // contestó el servidor y no un intermediario: es el único caso en que
+        // se sabe que alguien leyó el contenido y lo juzgó. Un 400 sin
+        // detalle legible se trata como cualquier otra respuesta rara y no
+        // cierra nada, porque equivocarse para este lado solo cuesta un
+        // reintento y para el otro cuesta los conteos del operario.
+        400 -> detalle(cuerpo)?.let { ErrorDeServidor(it, false, contenidoRechazado = true) }
+            ?: ErrorDeServidor("El servidor rechazó el pedido.", false)
         in 500..599 -> ErrorDeServidor(
             "El servidor tuvo un problema. Se va a reintentar solo.",
             reintentable = true,

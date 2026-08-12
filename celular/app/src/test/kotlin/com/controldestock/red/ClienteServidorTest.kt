@@ -9,6 +9,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -115,6 +116,10 @@ class ClienteServidorTest {
 
         assertTrue(error!!.message!!.contains("vinculado"))
         assertEquals(false, error.reintentable)
+        // Nadie leyó lo que se mandó: el pedido ni entró. Darlo por rechazado
+        // haría que quien lo llamó tire el trabajo que dependía de él, por un
+        // problema que el operario arregla revinculando.
+        assertFalse(error.contenidoRechazado)
     }
 
     @Test
@@ -127,6 +132,9 @@ class ClienteServidorTest {
 
         assertEquals(false, error!!.reintentable)
         assertTrue(error.message!!.isNotEmpty())
+        // Lo reabre quien maneja el panel. El celular no tiene por qué tirar
+        // nada mientras tanto.
+        assertFalse(error.contenidoRechazado)
     }
 
     @Test
@@ -170,6 +178,25 @@ class ClienteServidorTest {
 
         assertTrue(error!!.message!!.contains("CAJA"))
         assertEquals(false, error.reintentable)
+        // Acá sí: el servidor leyó el artículo y lo rechazó por lo que es. Es
+        // el único caso en que lo que dependía de este pedido se puede dar
+        // por perdido en vez de esperar.
+        assertTrue(error.contenidoRechazado)
+    }
+
+    @Test
+    fun `un 400 sin motivo legible no da el contenido por rechazado`() = runTest {
+        // Traer el motivo del servidor es también lo que prueba que contestó
+        // el servidor. Sin eso puede haber contestado cualquier intermediario,
+        // y equivocarse para este lado solo cuesta un reintento: para el otro
+        // cuesta los conteos del operario.
+        responder("<html>Portal de invitados</html>", HttpURLConnection.HTTP_BAD_REQUEST)
+
+        val error = try {
+            cliente.altaRapida("999", "Algo", "UN", null); null
+        } catch (e: ErrorDeServidor) { e }
+
+        assertFalse(error!!.contenidoRechazado)
     }
 
     @Test
@@ -207,5 +234,8 @@ class ClienteServidorTest {
         } catch (e: ErrorDeServidor) { e }
 
         assertEquals(false, error!!.reintentable)
+        // El portal cautivo de una WiFi ajena entra por acá: contesta 200 con
+        // HTML, así que el pedido «salió bien» y lo que falla es leerlo.
+        assertFalse(error.contenidoRechazado)
     }
 }

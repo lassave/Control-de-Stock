@@ -38,10 +38,17 @@ object PlanDeSincronizacion {
      * Y se retiene lo que depende de un alta que todavía no llegó: mandar un
      * conteo antes que su artículo es tirarlo, porque el servidor rechaza
      * para siempre un código que no conoce.
+     *
+     * Los retenidos se identifican por `uuid` y no por código a propósito: un
+     * mismo código puede pertenecer a dos artículos a la vez —el alta local
+     * que todavía no subió y el del maestro que ya lo trae, porque otro
+     * operario lo dio de alta antes— y los conteos del segundo no tienen por
+     * qué esperar al primero. Quién sabe a qué artículo pertenece cada conteo
+     * es el que tiene la base delante, no esta función.
      */
     fun aEnviar(
         locales: List<ConteoLocal>,
-        codigosSinArticulo: Set<String> = emptySet(),
+        uuidsRetenidos: Set<String> = emptySet(),
     ): List<EventoConteo> {
         val nuncaLlegaron = locales
             .filter { it.estadoSync == EstadoSync.RECHAZADO }
@@ -51,25 +58,30 @@ object PlanDeSincronizacion {
         return locales
             .filter { it.estadoSync == EstadoSync.PENDIENTE }
             .filterNot { it.evento.anulaUuid in nuncaLlegaron }
-            .filterNot { it.evento.codigo in codigosSinArticulo }
+            .filterNot { it.evento.uuid in uuidsRetenidos }
             .map { it.evento }
     }
 
     /**
      * Los conteos que hay que cerrar porque su alta no va a entrar nunca.
      *
-     * Si el servidor rechazó el artículo para siempre —una unidad que no está
-     * en su catálogo, el inventario cerrado— sus conteos no tienen a dónde
-     * llegar. Dejarlos pendientes deja la cola girando para siempre, quema
-     * batería y red, y el indicador de «sin subir» pasa a mentir.
+     * Si el servidor leyó el artículo y lo rechazó por lo que es —una unidad
+     * que no está en su catálogo— sus conteos no tienen a dónde llegar.
+     * Dejarlos pendientes deja la cola girando para siempre, quema batería y
+     * red, y el indicador de «sin subir» pasa a mentir.
+     *
+     * Recibe uuids y no un código por el mismo motivo que `aEnviar`, y acá el
+     * daño de equivocarse es peor: cerrar por código tira los conteos del
+     * artículo del maestro que comparte ese código, que el servidor habría
+     * aceptado sin chistar, y de un conteo cerrado no se vuelve.
      */
     fun cerradosPorAltaRechazada(
         locales: List<ConteoLocal>,
-        codigo: String,
+        uuids: Set<String>,
         motivo: String,
     ): List<ConteoLocal> = locales
         .filter { it.estadoSync == EstadoSync.PENDIENTE }
-        .filter { it.evento.codigo == codigo }
+        .filter { it.evento.uuid in uuids }
         .map { it.copy(estadoSync = EstadoSync.RECHAZADO, motivoRechazo = motivo) }
 
     /**

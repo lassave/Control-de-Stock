@@ -205,7 +205,7 @@ class PlanDeSincronizacionTest {
             ConteoLocal(EventoConteo("uuid-2", "7790001", 1000, "2026-08-12T10:01:00Z")),
         )
 
-        val aEnviar = PlanDeSincronizacion.aEnviar(locales, setOf("7790999"))
+        val aEnviar = PlanDeSincronizacion.aEnviar(locales, setOf("uuid-1"))
 
         assertEquals(listOf("uuid-2"), aEnviar.map { it.uuid })
     }
@@ -218,9 +218,26 @@ class PlanDeSincronizacionTest {
             ConteoLocal(EventoConteo("uuid-$it", "779000$it", 1000, "2026-08-12T10:0$it:00Z"))
         }
 
-        val aEnviar = PlanDeSincronizacion.aEnviar(locales, setOf("7790999"))
+        val aEnviar = PlanDeSincronizacion.aEnviar(locales, setOf("uuid-de-otro"))
 
         assertEquals(3, aEnviar.size)
+    }
+
+    @Test
+    fun `retener es por conteo y no por codigo`() {
+        // Un codigo puede pertenecer a dos articulos a la vez: el alta local
+        // que todavia no subio y el del maestro que ya lo trae, porque otro
+        // operario lo dio de alta antes. Reteniendo por codigo, los conteos
+        // del articulo del maestro —que el servidor acepta sin chistar—
+        // esperarian a un alta que no tiene nada que ver con ellos.
+        val locales = listOf(
+            ConteoLocal(EventoConteo("uuid-1", "7790999", 6000, "2026-08-12T10:00:00Z")),
+            ConteoLocal(EventoConteo("uuid-2", "7790999", 2000, "2026-08-12T10:01:00Z")),
+        )
+
+        val aEnviar = PlanDeSincronizacion.aEnviar(locales, setOf("uuid-1"))
+
+        assertEquals(listOf("uuid-2"), aEnviar.map { it.uuid })
     }
 
     @Test
@@ -231,7 +248,7 @@ class PlanDeSincronizacionTest {
         )
 
         val cerrados = PlanDeSincronizacion.cerradosPorAltaRechazada(
-            locales, "7790999", "La unidad «XX» no está en el catálogo",
+            locales, setOf("uuid-1"), "La unidad «XX» no está en el catálogo",
         )
 
         assertEquals(1, cerrados.size)
@@ -244,6 +261,23 @@ class PlanDeSincronizacionTest {
     }
 
     @Test
+    fun `cerrar es por conteo y no por codigo`() {
+        // El mismo caso de arriba, del lado del cierre y peor: cerrar por
+        // codigo tira conteos de un articulo del maestro que el servidor
+        // habria aceptado, y de esos no se vuelve.
+        val locales = listOf(
+            ConteoLocal(EventoConteo("uuid-1", "7790999", 6000, "2026-08-12T10:00:00Z")),
+            ConteoLocal(EventoConteo("uuid-2", "7790999", 2000, "2026-08-12T10:01:00Z")),
+        )
+
+        val cerrados = PlanDeSincronizacion.cerradosPorAltaRechazada(
+            locales, setOf("uuid-1"), "La unidad «XX» no está en el catálogo",
+        )
+
+        assertEquals(listOf("uuid-1"), cerrados.map { it.evento.uuid })
+    }
+
+    @Test
     fun `cerrar los conteos de un alta rechazada no toca a los que ya subieron`() {
         val locales = listOf(
             ConteoLocal(
@@ -252,7 +286,9 @@ class PlanDeSincronizacionTest {
             ),
         )
 
-        val cerrados = PlanDeSincronizacion.cerradosPorAltaRechazada(locales, "7790999", "no")
+        val cerrados = PlanDeSincronizacion.cerradosPorAltaRechazada(
+            locales, setOf("uuid-1"), "no",
+        )
 
         assertEquals(emptyList<ConteoLocal>(), cerrados)
     }
