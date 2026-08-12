@@ -120,6 +120,11 @@ private fun App(base: BaseLocal) {
                 pendientes = pendientes,
                 fichaAbierta = hallazgo is Hallazgo.Encontrado,
                 avisoDeDesconocido = avisoDesconocido,
+                // Provisorio hasta la Task 7, que lo reemplaza por abrir la
+                // ficha del alta. En nulo, la franja roja avisa igual pero sin
+                // el botón: la pantalla y sus tests ya lo tienen, el operario
+                // todavía no lo ve.
+                alDarDeAlta = null,
                 alLeer = { codigo ->
                     // La cámara avisa una lectura por cuadro: sin esta guarda
                     // se abrirían decenas de fichas del mismo código.

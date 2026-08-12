@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,6 +31,8 @@ fun PantallaEscaneo(
     pendientes: Int,
     fichaAbierta: Boolean,
     avisoDeDesconocido: String?,
+    /** Qué hacer con el código desconocido. Nulo si no hay ninguno. */
+    alDarDeAlta: (() -> Unit)?,
     alLeer: (String) -> Unit,
     ficha: @Composable () -> Unit,
 ) {
@@ -60,11 +63,23 @@ fun PantallaEscaneo(
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
                 ) {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.onError,
+                    Row(
                         modifier = Modifier.padding(12.dp),
-                    )
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.onError,
+                            modifier = Modifier.weight(1f),
+                        )
+                        // Dar de alta es un acto deliberado: la ficha no se
+                        // abre sola porque un codigo mal leido tambien llega
+                        // como desconocido.
+                        alDarDeAlta?.let { darDeAlta ->
+                            Button(onClick = darDeAlta) { Text("Darlo de alta") }
+                        }
+                    }
                 }
             }
         }
