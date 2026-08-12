@@ -59,34 +59,55 @@ fun PantallaEscaneo(
             )
 
             avisoDeDesconocido?.let {
-                Surface(
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            it,
-                            color = MaterialTheme.colorScheme.onError,
-                            modifier = Modifier.weight(1f),
-                        )
-                        // Dar de alta es un acto deliberado: la ficha no se
-                        // abre sola porque un codigo mal leido tambien llega
-                        // como desconocido.
-                        alDarDeAlta?.let { darDeAlta ->
-                            Button(onClick = darDeAlta) { Text("Darlo de alta") }
-                        }
-                    }
-                }
+                FranjaDeDesconocido(
+                    aviso = it,
+                    alDarDeAlta = alDarDeAlta,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
         }
 
         if (fichaAbierta) {
             Surface(tonalElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
                 ficha()
+            }
+        }
+    }
+}
+
+/**
+ * La franja roja del codigo que no esta en el maestro.
+ *
+ * Vive aparte de `PantallaEscaneo` para poder probarse: la pantalla monta la
+ * camara y CameraX no arranca sin celular, asi que adentro el boton no lo
+ * cubriria ningun test. Y es el unico camino de entrada al alta: si el boton
+ * desaparece, la ficha queda inalcanzable y el codigo desconocido se pierde.
+ */
+@Composable
+internal fun FranjaDeDesconocido(
+    aviso: String,
+    /** Que hacer con el codigo desconocido. Nulo si no hay a donde ir. */
+    alDarDeAlta: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.error,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                aviso,
+                color = MaterialTheme.colorScheme.onError,
+                modifier = Modifier.weight(1f),
+            )
+            // Dar de alta es un acto deliberado: la ficha no se abre sola
+            // porque un codigo mal leido tambien llega como desconocido.
+            alDarDeAlta?.let { darDeAlta ->
+                Button(onClick = darDeAlta) { Text("Darlo de alta") }
             }
         }
     }

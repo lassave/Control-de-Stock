@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performTextInput
 import com.controldestock.datos.UnidadEntidad
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,6 +35,7 @@ class FichaDeAltaTest {
     )
 
     private var alta: List<Any?>? = null
+    private var cancelado = false
 
     private fun abrir(catalogo: List<UnidadEntidad> = unidades) {
         compose.setContent {
@@ -41,7 +43,7 @@ class FichaDeAltaTest {
                 codigo = "7790999",
                 unidades = catalogo,
                 ubicaciones = listOf("P-1"),
-                alCancelar = {},
+                alCancelar = { cancelado = true },
                 alConfirmar = { descripcion, unidad, ubicacion, milesimas, observaciones ->
                     alta = listOf(descripcion, unidad, ubicacion, milesimas, observaciones)
                 },
@@ -193,6 +195,36 @@ class FichaDeAltaTest {
         tocar("Dar de alta")
 
         assertEquals(listOf("Pack por 6", "UN", null, 6000, null), alta)
+    }
+
+    @Test
+    fun `lo que el operario escribe en observaciones viaja con el alta`() {
+        // «Caja rota» es justo el dato que explica un conteo raro: si se
+        // pierde en el camino, nadie se entera de que se perdió.
+        abrir()
+        escribirQueEs("Pack por 6")
+        compose.onNodeWithText("Observaciones (opcional)")
+            .performScrollTo()
+            .performTextInput("Caja rota")
+        tocar("6")
+
+        tocar("Dar de alta")
+
+        assertEquals(listOf("Pack por 6", "UN", null, 6000, "Caja rota"), alta)
+    }
+
+    @Test
+    fun `cancelar cierra la ficha sin dar de alta nada`() {
+        // La salida del operario que se dio cuenta de que el código estaba
+        // mal leído: cancelar tiene que cancelar, no cargar.
+        abrir()
+        escribirQueEs("Pack por 6")
+        tocar("6")
+
+        tocar("Cancelar")
+
+        assertNull(alta)
+        assertTrue(cancelado)
     }
 
     @Test

@@ -60,8 +60,17 @@ fun FichaDeAlta(
     unidades: List<UnidadEntidad>,
     ubicaciones: List<String>,
     alCancelar: () -> Unit,
-    // Última para que quede como lambda final en la llamada.
-    alConfirmar: (String, String, String?, Int, String?) -> Unit,
+    // Última para que quede como lambda final en la llamada. Los parámetros
+    // van con nombre: son cinco posicionales y dos `String` pegados, así que
+    // una descripción cambiada por la unidad compila igual y recién se
+    // descubre cuando el servidor rechaza el alta.
+    alConfirmar: (
+        descripcion: String,
+        unidad: String,
+        ubicacion: String?,
+        milesimas: Int,
+        observaciones: String?,
+    ) -> Unit,
 ) {
     var descripcion by remember { mutableStateOf("") }
     var unidad by remember {
