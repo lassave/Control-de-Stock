@@ -146,6 +146,11 @@ private fun App(base: BaseLocal) {
                         articulo = encontrado.articulo,
                         admiteDecimales = encontrado.admiteDecimales,
                         ubicaciones = ubicaciones,
+                        // Provisorio hasta la Task 7, que lo reemplaza por
+                        // `contador.conteosDe(encontrado.articulo)`. Con la
+                        // lista vacía el aviso de repetido no se dispara nunca
+                        // en la app: la ficha lo tiene y sus tests lo cubren,
+                        // pero el operario todavía no lo ve.
                         previos = emptyList(),
                         alCancelar = { hallazgo = null },
                     ) { milesimas, ubicacionReal, observaciones ->

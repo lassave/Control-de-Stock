@@ -172,7 +172,10 @@ fun FichaDelArticulo(
     }
 
     confirmarRepetido?.let { (milesimas, repetido) ->
-        val donde = ubicacionReal ?: articulo.ubicacion ?: "sin ubicación"
+        // Sin ubicación la frase se corta antes del «en»: «en sin ubicación»
+        // no es castellano. Detrás de dos puntos, como en el encabezado de la
+        // ficha, el mismo literal se lee bien; adentro de una oración no.
+        val donde = (ubicacionReal ?: articulo.ubicacion)?.let { " en $it" }.orEmpty()
 
         AlertDialog(
             onDismissRequest = { confirmarRepetido = null },
@@ -180,7 +183,7 @@ fun FichaDelArticulo(
             text = {
                 Text(
                     "Ya cargaste ${Cantidades.aTexto(repetido.milesimas)} ${articulo.unidad} " +
-                        "de este producto en $donde a las ${horaLocal(repetido.cuando)}. " +
+                        "de este producto$donde a las ${horaLocal(repetido.cuando)}. " +
                         "¿Sumás otra carga?",
                 )
             },

@@ -11,8 +11,11 @@ import com.controldestock.datos.ArticuloEntidad
 import com.controldestock.datos.textoDeBusqueda
 import com.controldestock.nucleo.ConteoLocal
 import com.controldestock.nucleo.EventoConteo
+import java.util.TimeZone
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,6 +34,26 @@ class FichaDelArticuloTest {
 
     @get:Rule
     val compose = createComposeRule()
+
+    private lateinit var zonaOriginal: TimeZone
+
+    /**
+     * La zona queda fija para que el test diga lo mismo en cualquier máquina.
+     *
+     * `horaLocal` toma la del sistema, así que sin fijarla la aserción de la
+     * hora daría verde acá y rojo en otra PC —o al revés, taparía que se sacó
+     * la conversión de zona— por dónde corre y no por lo que hace el código.
+     */
+    @Before
+    fun fijarLaZonaDelDeposito() {
+        zonaOriginal = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("America/Argentina/Buenos_Aires"))
+    }
+
+    @After
+    fun devolverLaZona() {
+        TimeZone.setDefault(zonaOriginal)
+    }
 
     private val tornillos = ArticuloEntidad(
         id = 1, idOrden = 1, sku = "A-1", descripcion = "Tornillos",
@@ -121,13 +144,41 @@ class FichaDelArticuloTest {
     }
 
     @Test
-    fun `el aviso dice cuanto y cuando se cargo`() {
+    fun `el aviso dice cuanto, donde y a que hora se cargo`() {
+        // El texto entero, y no un pedazo: la hora se guarda en UTC y se
+        // muestra en la del depósito. Un «13:32» cuando el reloj del operario
+        // marca las 10:32 le haría creer que ese conteo lo cargó otro.
         abrirFichaConteada()
         teclear("6")
 
         tocar("Confirmar")
 
-        compose.onNodeWithText("Ya cargaste 24 UN", substring = true).assertExists()
+        compose.onNodeWithText(
+            "Ya cargaste 24 UN de este producto en P-1 a las 10:32. ¿Sumás otra carga?",
+        ).assertExists()
+    }
+
+    @Test
+    fun `el aviso de un articulo sin ubicacion se lee bien`() {
+        // «de este producto en sin ubicación a las 10:32» no es castellano.
+        // Detrás de dos puntos el mismo literal funciona, adentro de una
+        // oración no, y el caso no es raro: un artículo sin lugar asignado se
+        // repite consigo mismo igual que cualquier otro.
+        compose.setContent {
+            FichaDelArticulo(
+                articulo = tornillos.copy(ubicacion = null), admiteDecimales = false,
+                ubicaciones = emptyList(), previos = yaContado,
+                alCancelar = {},
+                alConfirmar = { _, _, _ -> },
+            )
+        }
+        teclear("6")
+
+        tocar("Confirmar")
+
+        compose.onNodeWithText(
+            "Ya cargaste 24 UN de este producto a las 10:32. ¿Sumás otra carga?",
+        ).assertExists()
     }
 
     @Test
