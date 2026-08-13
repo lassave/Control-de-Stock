@@ -1,5 +1,6 @@
 package com.controldestock.ui
 
+import com.controldestock.Hallazgo
 import com.controldestock.datos.VinculacionEntidad
 
 /**
@@ -26,3 +27,23 @@ sealed class Pantalla {
  */
 fun pantallaSegun(vinculacion: VinculacionEntidad?): Pantalla =
     if (vinculacion == null) Pantalla.Vinculando else Pantalla.Escaneando
+
+/**
+ * Si esta lectura hay que anunciarla con sonido y vibración.
+ *
+ * La cámara avisa una lectura por cuadro. Con un código que está en el
+ * maestro eso no molesta: al abrirse su ficha el escaneo se pausa solo. Con
+ * uno desconocido no se pausa nada, y la misma etiqueta quieta frente al
+ * celular vuelve a sonar en cada cuadro. Un timbre repetido veinte veces
+ * deja de avisar y pasa a estorbar, que es la forma más rápida de enseñarle
+ * al operario a ignorarlo.
+ *
+ * No se pierde información al callarlo: la franja sigue mostrando el código.
+ *
+ * @param codigoEnLaFranja el desconocido que ya está en pantalla, si hay uno.
+ */
+fun hayQueAnunciar(hallazgo: Hallazgo, codigoEnLaFranja: String?): Boolean =
+    when (hallazgo) {
+        is Hallazgo.Encontrado -> true
+        is Hallazgo.Desconocido -> hallazgo.codigo != codigoEnLaFranja
+    }

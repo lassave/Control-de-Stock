@@ -37,6 +37,7 @@ import com.controldestock.ui.Pantalla
 import com.controldestock.ui.PantallaEscaneo
 import com.controldestock.ui.PantallaVinculacion
 import com.controldestock.ui.Tema
+import com.controldestock.ui.hayQueAnunciar
 import com.controldestock.ui.pantallaSegun
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
@@ -192,16 +193,21 @@ private fun App(base: BaseLocal) {
                                 // ya eligió, que es lo único que él vio.
                                 if (hallazgo != null || altaDe != null) return@launch
 
+                                // El mismo desconocido, cuadro tras cuadro, no
+                                // se vuelve a anunciar: la franja ya lo está
+                                // mostrando.
+                                val anunciar = hayQueAnunciar(h, codigoDesconocido)
+
                                 when (h) {
                                     is Hallazgo.Encontrado -> {
-                                        avisos.leido()
+                                        if (anunciar) avisos.leido()
                                         avisoDesconocido = null
                                         codigoDesconocido = null
                                         previos = previosDelArticulo.orEmpty()
                                         hallazgo = h
                                     }
                                     is Hallazgo.Desconocido -> {
-                                        avisos.desconocido()
+                                        if (anunciar) avisos.desconocido()
                                         codigoDesconocido = h.codigo
                                         avisoDesconocido =
                                             "Este código no está en el conteo: ${h.codigo}"
