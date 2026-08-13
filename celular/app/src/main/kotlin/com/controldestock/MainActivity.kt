@@ -31,6 +31,7 @@ import com.controldestock.nucleo.DatosDelQr
 import com.controldestock.nucleo.RelojDelSistema
 import com.controldestock.red.ClienteServidor
 import com.controldestock.ui.AvisoSonoro
+import com.controldestock.ui.EstadoDeSubida
 import com.controldestock.ui.FichaDeAlta
 import com.controldestock.ui.FichaDelArticulo
 import com.controldestock.ui.Pantalla
@@ -87,6 +88,12 @@ private fun App(base: BaseLocal) {
     // que la ficha se vaya de la pantalla. Sin esto, un doble toque guarda dos
     // veces.
     val guardando = remember { AtomicBoolean(false) }
+    var estadoDeSubida by remember {
+        mutableStateOf<EstadoDeSubida>(EstadoDeSubida.Quieto)
+    }
+    // Lo mismo para subir: entre el toque y el cambio de estado hay un cuadro,
+    // y el input se reparte antes de recomponer.
+    val subiendo = remember { AtomicBoolean(false) }
     val contexto = LocalContext.current
     val avisos = remember { AvisoSonoro(contexto) }
     val contador = remember { Contador(base, RelojDelSistema.DEL_SISTEMA) }
@@ -95,6 +102,22 @@ private fun App(base: BaseLocal) {
     }
 
     DisposableEffect(Unit) { onDispose { avisos.cerrar() } }
+
+    /**
+     * Sube lo pendiente y deja el indicador contando lo que pasó.
+     *
+     * La usan las tres sincronizaciones —la del conteo, la del alta y la que
+     * pide el operario— a propósito: con un estado por cada una, el operario
+     * vería «3 sin subir» mientras esos tres están viajando.
+     */
+    suspend fun subir(): ResultadoDeSync {
+        estadoDeSubida = EstadoDeSubida.Subiendo
+        val resultado = sincronizador.sincronizar()
+        pendientes = base.conteoDao().cantidadPendientes()
+        estadoDeSubida =
+            if (resultado.huboError) EstadoDeSubida.NoPudo else EstadoDeSubida.Quieto
+        return resultado
+    }
 
     LaunchedEffect(Unit) {
         vinculacion.value = base.vinculacionDao().actual()
@@ -156,6 +179,21 @@ private fun App(base: BaseLocal) {
                         // hacer es el alta.
                         hallazgo = null
                         altaDe = codigo
+                    }
+                },
+                estadoDeSubida = estadoDeSubida,
+                alSubir = {
+                    // La bandera se toma en el toque, sincrónicamente: entre
+                    // el toque y el cambio de estado hay un cuadro, y el
+                    // input se reparte antes de recomponer.
+                    if (subiendo.compareAndSet(false, true)) {
+                        alcance.launch {
+                            try {
+                                subir()
+                            } finally {
+                                subiendo.set(false)
+                            }
+                        }
                     }
                 },
                 alLeer = { codigo ->
@@ -250,8 +288,7 @@ private fun App(base: BaseLocal) {
                                 // poder seguir contando. Y fuera de la guarda
                                 // por lo mismo: esperando treinta segundos de
                                 // timeout, el conteo siguiente se perdería.
-                                sincronizador.sincronizar()
-                                pendientes = base.conteoDao().cantidadPendientes()
+                                subir()
                             }
                         }
                     }
@@ -304,8 +341,7 @@ private fun App(base: BaseLocal) {
                                     guardando.set(false)
                                 }
 
-                                val resultado = sincronizador.sincronizar()
-                                pendientes = base.conteoDao().cantidadPendientes()
+                                val resultado = subir()
 
                                 // El servidor ya conocía ese código: lo dio de
                                 // alta otro operario hace un minuto, o coincide

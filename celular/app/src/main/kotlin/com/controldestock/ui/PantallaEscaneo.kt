@@ -3,12 +3,14 @@ package com.controldestock.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,6 +18,72 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.controldestock.camara.VistaDeCamara
+
+/** En qué anda la subida de lo que todavía no viajó. */
+sealed class EstadoDeSubida {
+    /** Nada en curso: el indicador dice cuántos faltan. */
+    object Quieto : EstadoDeSubida()
+
+    object Subiendo : EstadoDeSubida()
+
+    /** El último intento no pudo. Se toca para reintentar. */
+    object NoPudo : EstadoDeSubida()
+}
+
+/**
+ * Cuántos conteos faltan subir, y el botón para subirlos.
+ *
+ * Informa y resuelve en el mismo lugar a propósito: es donde el operario ya
+ * mira para saber si le falta algo, así que es donde tiene que poder tocar
+ * para resolverlo. Antes de esto, la única forma de que subiera lo pendiente
+ * era confirmar un conteo: el que terminaba de contar y volvía a la zona con
+ * señal tenía que inventarse un escaneo, o esperar sin saber cuánto.
+ *
+ * Vive aparte de `PantallaEscaneo` para poder probarse: la pantalla monta la
+ * cámara y CameraX no arranca sin celular.
+ */
+@Composable
+internal fun IndicadorDePendientes(
+    pendientes: Int,
+    estado: EstadoDeSubida,
+    alSubir: () -> Unit,
+) {
+    val texto = when {
+        estado is EstadoDeSubida.Subiendo -> "Subiendo…"
+        estado is EstadoDeSubida.NoPudo -> "No se pudo subir"
+        pendientes == 0 -> "Todo al día"
+        else -> "$pendientes sin subir"
+    }
+
+    val color = when {
+        estado is EstadoDeSubida.NoPudo -> MaterialTheme.colorScheme.error
+        estado is EstadoDeSubida.Subiendo -> Ambar
+        pendientes == 0 -> Verde
+        else -> Ambar
+    }
+
+    // Tocar mientras ya está subiendo no haría nada, y un botón que no hace
+    // nada enseña a desconfiar del botón.
+    val tocable = when (estado) {
+        is EstadoDeSubida.Subiendo -> false
+        is EstadoDeSubida.NoPudo -> true
+        is EstadoDeSubida.Quieto -> pendientes > 0
+    }
+
+    if (tocable) {
+        // Con forma de botón: un texto suelto en el encabezado no parece
+        // tocable, y este es el único lugar donde el operario puede pedir
+        // que suba lo que falta.
+        OutlinedButton(
+            onClick = alSubir,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+        ) {
+            Text(texto, style = MaterialTheme.typography.bodySmall, color = color)
+        }
+    } else {
+        Text(texto, style = MaterialTheme.typography.bodySmall, color = color)
+    }
+}
 
 /**
  * La pantalla principal: la cámara siempre activa.
@@ -34,6 +102,8 @@ fun PantallaEscaneo(
     /** Qué hacer con el código desconocido. Nulo si no hay ninguno. */
     alDarDeAlta: (() -> Unit)?,
     alLeer: (String) -> Unit,
+    estadoDeSubida: EstadoDeSubida,
+    alSubir: () -> Unit,
     /**
      * La cámara. Se reemplaza en los tests: CameraX no arranca sin celular,
      * y sin este hueco la pantalla entera queda sin cubrir, incluido el botón
@@ -53,10 +123,10 @@ fun PantallaEscaneo(
         ) {
             Text(pasada, style = MaterialTheme.typography.titleMedium)
             Text(operario, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                if (pendientes == 0) "Todo al día" else "$pendientes sin subir",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (pendientes == 0) Verde else Ambar,
+            IndicadorDePendientes(
+                pendientes = pendientes,
+                estado = estadoDeSubida,
+                alSubir = alSubir,
             )
         }
 

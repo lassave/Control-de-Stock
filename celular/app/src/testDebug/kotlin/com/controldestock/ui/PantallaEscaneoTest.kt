@@ -42,6 +42,8 @@ class PantallaEscaneoTest {
                 avisoDeDesconocido = aviso,
                 alDarDeAlta = { abrio = true },
                 alLeer = {},
+                estadoDeSubida = EstadoDeSubida.Quieto,
+                alSubir = {},
                 camara = { _, _ -> },
             ) {}
         }
@@ -81,6 +83,8 @@ class PantallaEscaneoTest {
                 avisoDeDesconocido = null,
                 alDarDeAlta = null,
                 alLeer = {},
+                estadoDeSubida = EstadoDeSubida.Quieto,
+                alSubir = {},
                 camara = { esta, _ -> activo += esta },
             ) {
                 Box { Text("La ficha") }
