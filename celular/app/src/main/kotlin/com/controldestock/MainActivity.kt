@@ -81,6 +81,11 @@ private fun App(base: BaseLocal) {
     // Bandera común y no estado de Compose: no tiene nada que redibujar, y
     // tiene que valer en el instante en que se toma, no en el próximo cuadro.
     val leyendo = remember { AtomicBoolean(false) }
+    // Lo mismo para confirmar: entre el toque y el cierre de la ficha hay una
+    // transacción y un cuadro de recomposición, y el toque se aplica antes de
+    // que la ficha se vaya de la pantalla. Sin esto, un doble toque guarda dos
+    // veces.
+    val guardando = remember { AtomicBoolean(false) }
     val contexto = LocalContext.current
     val avisos = remember { AvisoSonoro(contexto) }
     val contador = remember { Contador(base, RelojDelSistema.DEL_SISTEMA) }
@@ -217,22 +222,31 @@ private fun App(base: BaseLocal) {
                         previos = previos,
                         alCancelar = { hallazgo = null },
                     ) { milesimas, ubicacionReal, observaciones ->
-                        alcance.launch {
-                            contador.registrar(
-                                encontrado.articulo, milesimas, ubicacionReal, observaciones,
-                            )
-                            avisos.cargado()
-                            hallazgo = null
-                            pendientes = base.conteoDao().cantidadPendientes()
+                        if (guardando.compareAndSet(false, true)) {
+                            alcance.launch {
+                                try {
+                                    contador.registrar(
+                                        encontrado.articulo, milesimas, ubicacionReal,
+                                        observaciones,
+                                    )
+                                    avisos.cargado()
+                                    hallazgo = null
+                                    pendientes = base.conteoDao().cantidadPendientes()
+                                } finally {
+                                    guardando.set(false)
+                                }
 
-                            // Intento inmediato: con señal, el tablero se
-                            // entera en el momento. Sin señal no pasa nada y
-                            // el trabajo periódico lo sube más tarde. Va
-                            // después de cerrar la ficha a propósito: al
-                            // revés, el operario esperaría a la red para
-                            // poder seguir contando.
-                            sincronizador.sincronizar()
-                            pendientes = base.conteoDao().cantidadPendientes()
+                                // Intento inmediato: con señal, el tablero se
+                                // entera en el momento. Sin señal no pasa nada y
+                                // el trabajo periódico lo sube más tarde. Va
+                                // después de cerrar la ficha a propósito: al
+                                // revés, el operario esperaría a la red para
+                                // poder seguir contando. Y fuera de la guarda
+                                // por lo mismo: esperando treinta segundos de
+                                // timeout, el conteo siguiente se perdería.
+                                sincronizador.sincronizar()
+                                pendientes = base.conteoDao().cantidadPendientes()
+                            }
                         }
                     }
                 }
@@ -244,45 +258,65 @@ private fun App(base: BaseLocal) {
                         ubicaciones = ubicaciones,
                         alCancelar = { altaDe = null },
                     ) { descripcion, unidad, ubicacion, milesimas, observaciones ->
-                        alcance.launch {
-                            // Con nombre: son dos `String` pegados y un alta
-                            // con la unidad en la descripción compila igual, y
-                            // se descubre cuando el servidor la rechaza y el
-                            // conteo ya está hecho.
-                            contador.darDeAlta(
-                                codigo = codigo,
-                                descripcion = descripcion,
-                                unidad = unidad,
-                                ubicacion = ubicacion,
-                                milesimas = milesimas,
-                                observaciones = observaciones,
-                            )
-                            avisos.cargado()
-                            altaDe = null
-                            codigoDesconocido = null
-                            avisoDesconocido = null
-                            // La ubicación nueva pasa a estar disponible para
-                            // corregir en las fichas siguientes.
-                            ubicaciones = contador.ubicaciones()
-                            pendientes = base.conteoDao().cantidadPendientes()
-
-                            val resultado = sincronizador.sincronizar()
-                            pendientes = base.conteoDao().cantidadPendientes()
-
-                            // El servidor ya conocía ese código: lo dio de alta
-                            // otro operario hace un minuto, o coincide con el
-                            // SKU de uno del maestro. La descripción que
-                            // escribió este operario se descartó, así que
-                            // merece enterarse mientras sigue mirando. Se busca
-                            // por código porque en la misma subida pueden
-                            // viajar varias altas juntas, y el aviso habla del
-                            // producto que acaba de tener en la mano.
-                            resultado.yaExistian
-                                .firstOrNull { it.codigo == codigo }
-                                ?.let {
-                                    avisoDesconocido =
-                                        "Ese código ya estaba: ${it.descripcion}"
+                        // Sin esta guarda, un toque repetido crea dos artículos
+                        // locales con el mismo código: la tabla de códigos los
+                        // acepta a los dos —su clave es (código, artículo)— y
+                        // después `porCodigo` elige uno cualquiera de los dos.
+                        // El aviso de repetido pasa a ver la mitad de la
+                        // historia, y arriba el servidor junta las dos altas en
+                        // un artículo con los dos conteos: el SKU queda contado
+                        // dos veces, que es justo lo que el aviso existe para
+                        // evitar.
+                        if (guardando.compareAndSet(false, true)) {
+                            alcance.launch {
+                                try {
+                                    // Con nombre: son dos `String` pegados y un
+                                    // alta con la unidad en la descripción
+                                    // compila igual, y se descubre cuando el
+                                    // servidor la rechaza y el conteo ya está
+                                    // hecho.
+                                    contador.darDeAlta(
+                                        codigo = codigo,
+                                        descripcion = descripcion,
+                                        unidad = unidad,
+                                        ubicacion = ubicacion,
+                                        milesimas = milesimas,
+                                        observaciones = observaciones,
+                                    )
+                                    avisos.cargado()
+                                    altaDe = null
+                                    codigoDesconocido = null
+                                    avisoDesconocido = null
+                                    // La ubicación nueva pasa a estar disponible
+                                    // para corregir en las fichas siguientes.
+                                    ubicaciones = contador.ubicaciones()
+                                    pendientes = base.conteoDao().cantidadPendientes()
+                                } finally {
+                                    // Antes de la red: si la guarda esperara al
+                                    // sincronizado, el conteo siguiente se
+                                    // perdería sin que el operario se entere.
+                                    guardando.set(false)
                                 }
+
+                                val resultado = sincronizador.sincronizar()
+                                pendientes = base.conteoDao().cantidadPendientes()
+
+                                // El servidor ya conocía ese código: lo dio de
+                                // alta otro operario hace un minuto, o coincide
+                                // con el SKU de uno del maestro. La descripción
+                                // que escribió este operario se descartó, así
+                                // que merece enterarse mientras sigue mirando.
+                                // Se busca por código porque en la misma subida
+                                // pueden viajar varias altas juntas, y el aviso
+                                // habla del producto que acaba de tener en la
+                                // mano.
+                                resultado.yaExistian
+                                    .firstOrNull { it.codigo == codigo }
+                                    ?.let {
+                                        avisoDesconocido =
+                                            "Ese código ya estaba: ${it.descripcion}"
+                                    }
+                            }
                         }
                     }
                 }
