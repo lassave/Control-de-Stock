@@ -72,7 +72,7 @@ def test_los_estados_usan_texto_ademas_de_color():
         assert estado in contenido
 
 
-DATOS_DEL_SERVIDOR = re.compile(r"\b(fila|sesion|operario|vista|resultado)\.")
+DATOS_DEL_SERVIDOR = re.compile(r"\b(fila|sesion|operario|vista|resultado|estado)\.")
 
 # Solo se auditan las plantillas que arman marcado. Lo que va por
 # `textContent` no interpreta HTML, y escaparlo ahí mostraría «&amp;» en
@@ -234,10 +234,28 @@ def test_la_version_del_apk_se_escribe_como_texto_y_no_como_marcado():
     Por `textContent` no interpreta HTML y no hace falta escaparlo; armado
     como marcado, un archivo con `<b>` adentro entraría al panel.
     """
-    contenido = _cuerpo_de(
-        (RUTA_PANEL / "app.js").read_text(encoding="utf-8"), "cargarInstalacion"
-    )
+    js_crudo = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+    contenido = _cuerpo_de(js_crudo, "cargarInstalacion")
 
-    assert "version-apk" in contenido
-    assert "textContent" in contenido
-    assert "innerHTML" not in contenido
+    # Sacar comentarios para que no contaminen la búsqueda
+    lineas = [linea.split("//")[0] for linea in contenido.split("\n")]
+    sin_comentarios = "\n".join(lineas)
+
+    # Tiene que tocar version-apk
+    assert 'version-apk' in sin_comentarios, "No se asigna nada a version-apk"
+
+    # Aislar la línea exacta que asigna a version-apk y exigir .textContent
+    for linea in lineas:
+        if "version-apk" in linea:
+            assert ".textContent" in linea, (
+                f"La asignación a version-apk no usa textContent: {linea.strip()}"
+            )
+            # Prohibir toda la familia de métodos inseguros
+            metodos_inseguros = ["innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"]
+            for metodo in metodos_inseguros:
+                assert metodo not in linea, (
+                    f"Se usa {metodo} en línea con version-apk: {linea.strip()}"
+                )
+            break
+    else:
+        assert False, "No se encuentra asignación a version-apk"
