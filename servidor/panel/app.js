@@ -352,13 +352,17 @@ function descripcionDeLaVersion(estado) {
   // nada a quien lo lee.
   const cuando = (estado.publicado || "").replace("T", " ").replace("Z", "");
 
-  if (estado.version === "") {
-    if (cuando) return `Publicada el ${cuando}`;
-    return "Sin información de versión";
+  // Si version no viene o viene vacía, tratar como desconocida. Normalizar
+  // también para evitar "Versión undefined" o "Versión null" en pantalla.
+  const version = (estado.version || "").trim();
+
+  if (!version) {
+    if (cuando) return `Versión desconocida · publicada el ${cuando}`;
+    return "No sabemos qué versión es";
   }
 
-  if (cuando) return `Versión ${estado.version} · publicada el ${cuando}`;
-  return `Versión ${estado.version}`;
+  if (cuando) return `Versión ${version} · publicada el ${cuando}`;
+  return `Versión ${version}`;
 }
 
 async function cargarOperarios() {
