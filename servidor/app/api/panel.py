@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
-from app import red
+from app import red, reloj
 from app.repos import operarios, sesiones
 from app.servicios import exportacion, importacion, tablero, vinculacion
 
@@ -242,12 +242,40 @@ def _url_de_instalacion(request):
     return f"{base}/app.apk"
 
 
+def _version_publicada():
+    """Qué versión dice ser el APK que hay, o vacío si nadie lo dijo.
+
+    Lo escribe la publicación, en el mismo movimiento en que copia el APK: la
+    versión vive adentro del APK, en un formato binario que solo saben leer
+    las herramientas del SDK de Android, y en la PC del cliente no están.
+
+    La ruta se arma acá adentro y no como constante del módulo: los tests
+    reemplazan `RUTA_APK` para apuntarlo a un archivo temporal, y una
+    constante calculada al importar seguiría mirando la carpeta de verdad.
+    """
+    archivo = RUTA_APK.parent / "app.apk.txt"
+    if not archivo.exists():
+        return ""
+    return archivo.read_text(encoding="utf-8").strip()
+
+
 @router.get("/instalacion")
 def estado_de_instalacion(request: Request):
-    """Si hay APK para instalar y desde qué dirección se baja."""
+    """Si hay APK para instalar, desde qué dirección se baja y cuál es.
+
+    La fecha sale del archivo y no de un dato aparte: no la escribe nadie,
+    así que no puede quedar desactualizada. La versión sí la escribe la
+    publicación, y si falta se informa vacía en vez de inventarla.
+    """
     if not RUTA_APK.exists():
-        return {"disponible": False, "url": ""}
-    return {"disponible": True, "url": _url_de_instalacion(request)}
+        return {"disponible": False, "url": "", "version": "", "publicado": ""}
+
+    return {
+        "disponible": True,
+        "url": _url_de_instalacion(request),
+        "version": _version_publicada(),
+        "publicado": reloj.desde_epoch(RUTA_APK.stat().st_mtime),
+    }
 
 
 @router.get("/instalacion/qr")

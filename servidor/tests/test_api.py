@@ -598,3 +598,55 @@ def test_el_qr_de_instalacion_es_svg(cliente, con_apk):
 
 def test_el_qr_de_instalacion_sin_apk_devuelve_404(cliente, sin_apk):
     assert cliente.get("/api/instalacion/qr").status_code == 404
+
+
+def test_la_instalacion_informa_la_version_publicada(cliente, con_apk):
+    """El responsable tiene que poder mirar el panel y saber si el cliente
+    tiene la versión nueva o la vieja, sin desinstalar nada para comparar."""
+    con_apk.with_name("app.apk.txt").write_text("2026-08-13 (build 42)", encoding="utf-8")
+
+    cuerpo = cliente.get("/api/instalacion").json()
+
+    assert cuerpo["version"] == "2026-08-13 (build 42)"
+
+
+def test_sin_el_archivo_de_version_igual_se_informa_cuando_se_publico(cliente, con_apk):
+    """Alguien copió un APK a mano. La fecha sale del archivo, así que no
+    puede desactualizarse, y responde la misma pregunta."""
+    cuerpo = cliente.get("/api/instalacion").json()
+
+    assert cuerpo["version"] == ""
+    assert cuerpo["publicado"].endswith("Z")
+
+
+def test_la_fecha_de_publicacion_es_la_del_archivo(cliente, con_apk):
+    import os
+    from datetime import datetime, timezone
+
+    # Construida y no escrita a mano: un número de época puesto a ojo se
+    # equivoca de día y el test pasa a probar la aritmética del que lo
+    # escribió.
+    momento = datetime(2026, 8, 13, 12, 0, 0, tzinfo=timezone.utc).timestamp()
+    os.utime(con_apk, (momento, momento))
+
+    cuerpo = cliente.get("/api/instalacion").json()
+
+    assert cuerpo["publicado"] == "2026-08-13T12:00:00Z"
+
+
+def test_sin_apk_no_se_informa_ninguna_version(cliente, sin_apk):
+    cuerpo = cliente.get("/api/instalacion").json()
+
+    assert cuerpo["disponible"] is False
+    assert cuerpo["version"] == ""
+    assert cuerpo["publicado"] == ""
+
+
+def test_una_version_con_saltos_de_linea_no_ensucia_el_panel(cliente, con_apk):
+    """El archivo lo escribe la publicación, pero es un archivo del disco:
+    el que llegue con un salto de línea de más no puede romper el renglón."""
+    con_apk.with_name("app.apk.txt").write_text(
+        "2026-08-13 (build 42)\n", encoding="utf-8"
+    )
+
+    assert cliente.get("/api/instalacion").json()["version"] == "2026-08-13 (build 42)"
