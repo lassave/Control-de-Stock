@@ -109,7 +109,18 @@ fun FichaDeAlta(
         }
 
         when (val r = ReglasDeCarga.validar(texto, unidad?.admiteDecimales == 1)) {
-            is ResultadoDeCarga.Valida -> cargar(r.milesimas)
+            is ResultadoDeCarga.Valida ->
+                if (r.milesimas == 0) {
+                    // El cero se ataja acá y no en `ReglasDeCarga`: en la
+                    // ficha de un artículo del maestro significa «acá no hay
+                    // ninguno», que es un dato del inventario. Acá sería
+                    // inventar una fila con nada adentro, y como nada se edita
+                    // ni se borra, queda para siempre en el maestro del cliente
+                    // y en la exportación.
+                    aviso = "Escribí cuántos hay: un producto nuevo no se da de alta en cero"
+                } else {
+                    cargar(r.milesimas)
+                }
             is ResultadoDeCarga.PideConfirmacion -> confirmarDecimal = r
             is ResultadoDeCarga.Invalida -> aviso = r.motivo
         }

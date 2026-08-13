@@ -152,6 +152,25 @@ class FichaDeAltaTest {
     }
 
     @Test
+    fun `en cero no se da de alta`() {
+        // Nada se edita ni se borra, así que un alta en cero es un fantasma
+        // permanente en el maestro del cliente y en la exportación. Y no hay
+        // caso legítimo: el producto está en la mano del operario, que para
+        // eso lo escaneó. En la ficha de un artículo del maestro el cero sí
+        // vale —significa «acá no hay ninguno»—, pero eso es un dato del
+        // inventario y esto sería inventar una fila.
+        abrir()
+        escribirQueEs("Pack por 6")
+        tocar("0")
+
+        tocar("Dar de alta")
+
+        assertNull(alta)
+        compose.onNodeWithText("Escribí cuántos hay: un producto nuevo no se da de alta en cero")
+            .assertExists()
+    }
+
+    @Test
     fun `la cantidad tiene que ser una cantidad`() {
         // Una coma sola no es un número, y el alta no valida nada río abajo:
         // si pasa de acá, el conteo queda con una cantidad que nadie tecleó.

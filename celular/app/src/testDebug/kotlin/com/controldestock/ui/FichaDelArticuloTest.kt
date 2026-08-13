@@ -241,6 +241,29 @@ class FichaDelArticuloTest {
     }
 
     @Test
+    fun `el cero se carga porque quiere decir que no hay ninguno`() {
+        // «Cero» es de los datos más valiosos del inventario: dice que el
+        // estante está vacío, que no es lo mismo que no haberlo contado. El
+        // alta rápida sí lo rechaza —ahí sería inventar una fila—, y la
+        // asimetría es a propósito: si alguien se lleva esta regla a
+        // `ReglasDeCarga`, este test es el que avisa.
+        var cargado: Int? = null
+        compose.setContent {
+            FichaDelArticulo(
+                articulo = tornillos, admiteDecimales = false,
+                ubicaciones = emptyList(), previos = emptyList(),
+                alCancelar = {},
+                alConfirmar = { milesimas, _, _ -> cargado = milesimas },
+            )
+        }
+        teclear("0")
+
+        tocar("Confirmar")
+
+        assertEquals(0, cargado)
+    }
+
+    @Test
     fun `corregir a otra ubicacion no dispara el aviso`() {
         // El mismo producto sí puede estar en dos estantes, y ahí los conteos
         // suman: avisar sería enseñarle al operario a ignorar el cartel.
