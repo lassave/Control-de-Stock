@@ -38,6 +38,7 @@ import com.controldestock.ui.Pantalla
 import com.controldestock.ui.PantallaEscaneo
 import com.controldestock.ui.PantallaVinculacion
 import com.controldestock.ui.Tema
+import com.controldestock.ui.estadoTrasSubir
 import com.controldestock.ui.hayQueAnunciar
 import com.controldestock.ui.pantallaSegun
 import kotlinx.coroutines.launch
@@ -109,13 +110,14 @@ private fun App(base: BaseLocal) {
      * La usan las tres sincronizaciones —la del conteo, la del alta y la que
      * pide el operario— a propósito: con un estado por cada una, el operario
      * vería «3 sin subir» mientras esos tres están viajando.
+     *
+     * El error, en cambio, es solo de la que él pidió: ver `estadoTrasSubir`.
      */
-    suspend fun subir(): ResultadoDeSync {
+    suspend fun subir(loPidioElOperario: Boolean = false): ResultadoDeSync {
         estadoDeSubida = EstadoDeSubida.Subiendo
         val resultado = sincronizador.sincronizar()
         pendientes = base.conteoDao().cantidadPendientes()
-        estadoDeSubida =
-            if (resultado.huboError) EstadoDeSubida.NoPudo else EstadoDeSubida.Quieto
+        estadoDeSubida = estadoTrasSubir(resultado.huboError, loPidioElOperario)
         return resultado
     }
 
@@ -189,7 +191,7 @@ private fun App(base: BaseLocal) {
                     if (subiendo.compareAndSet(false, true)) {
                         alcance.launch {
                             try {
-                                subir()
+                                subir(loPidioElOperario = true)
                             } finally {
                                 subiendo.set(false)
                             }

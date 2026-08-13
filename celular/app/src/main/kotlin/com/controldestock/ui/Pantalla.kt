@@ -47,3 +47,17 @@ fun hayQueAnunciar(hallazgo: Hallazgo, codigoEnLaFranja: String?): Boolean =
         is Hallazgo.Encontrado -> true
         is Hallazgo.Desconocido -> hallazgo.codigo != codigoEnLaFranja
     }
+
+/**
+ * Cómo queda el indicador después de intentar subir.
+ *
+ * El error se muestra solo si la subida la pidió el operario. Cada conteo
+ * dispara una sincronización, así que contando sin señal —el caso normal del
+ * depósito— todas fallan: mostrar «No se pudo subir» ahí taparía el dato que
+ * él necesita, cuántos lleva sin subir, para decirle algo que ya sabe.
+ *
+ * Cuando lo pidió, en cambio, el silencio sería peor: tocó un botón y tiene
+ * que saber en qué quedó.
+ */
+fun estadoTrasSubir(huboError: Boolean, loPidioElOperario: Boolean): EstadoDeSubida =
+    if (huboError && loPidioElOperario) EstadoDeSubida.NoPudo else EstadoDeSubida.Quieto

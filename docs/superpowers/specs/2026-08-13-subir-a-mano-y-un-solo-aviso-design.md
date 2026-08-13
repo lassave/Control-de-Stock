@@ -81,9 +81,21 @@ Tener dos estados para lo mismo —uno para la automática y otro para la
 manual— haría que el operario vea «3 sin subir» mientras esos tres están
 viajando.
 
+**El error, en cambio, es solo de la sincronización que él pidió.** Cada
+conteo dispara una, así que contando sin señal —el caso normal del depósito—
+todas fallan: si el error se mostrara igual, el indicador diría «No se pudo
+subir» todo el tiempo, tapando el dato que el operario necesita —cuántos
+lleva sin subir— para decirle algo que ya sabe, que no hay WiFi. Cuando la
+subida la pidió él, el silencio sería lo malo: tocó un botón y tiene que
+saber en qué quedó.
+
+*(Esta regla salió de probarlo en el celular: el diseño original hacía que
+cualquier sincronización mostrara el error, y contando sin señal el indicador
+quedaba en «No se pudo subir» en vez de decir cuántos faltaban.)*
+
 **El aviso de que no pudo dura hasta el intento siguiente**: se va cuando el
-operario vuelve a tocar, o cuando una sincronización automática sube lo que
-faltaba. No se limpia solo con el tiempo: si falló, que se vea que falló.
+operario vuelve a tocar, o cuando una sincronización posterior termina. No se
+limpia solo con el tiempo: si falló, que se vea que falló.
 
 ## Cómo se prueba
 

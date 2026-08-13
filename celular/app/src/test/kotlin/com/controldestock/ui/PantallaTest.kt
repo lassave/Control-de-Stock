@@ -62,6 +62,34 @@ class PantallaTest {
     }
 
     @Test
+    fun `una subida que salio bien deja el indicador contando`() {
+        assertEquals(
+            EstadoDeSubida.Quieto,
+            estadoTrasSubir(huboError = false, loPidioElOperario = true),
+        )
+    }
+
+    @Test
+    fun `el error solo se muestra si lo pidio el operario`() {
+        assertEquals(
+            EstadoDeSubida.NoPudo,
+            estadoTrasSubir(huboError = true, loPidioElOperario = true),
+        )
+    }
+
+    @Test
+    fun `una sincronizacion automatica que falla no reprocha nada`() {
+        // Contando sin señal, cada conteo dispara una sincronización que va a
+        // fallar. Mostrar «No se pudo subir» ahí taparía el dato que el
+        // operario necesita —cuántos lleva sin subir— para decirle algo que
+        // ya sabe: que no hay WiFi.
+        assertEquals(
+            EstadoDeSubida.Quieto,
+            estadoTrasSubir(huboError = true, loPidioElOperario = false),
+        )
+    }
+
+    @Test
     fun `un codigo que esta en el maestro se anuncia siempre`() {
         // No necesita la excepción: al abrirse su ficha el escaneo se pausa
         // solo, así que no hay repetición que evitar.
