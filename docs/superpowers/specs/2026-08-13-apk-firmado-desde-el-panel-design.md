@@ -7,8 +7,9 @@ Fecha: 2026-08-13
 El panel ya tiene todo lo necesario para repartir la app: la pestaña de
 Operarios trae un bloque con un QR de instalación y un enlace de descarga,
 y el servidor entrega el archivo en `/app.apk`. Está escondido porque el
-panel lo muestra solo cuando encuentra `app.apk` en la carpeta del proyecto,
-y ese archivo no existe.
+panel lo muestra solo cuando encuentra el archivo **en `servidor/app.apk`**
+—esa carpeta y no la raíz del proyecto: la ruta la arma `panel.py` desde su
+propia ubicación— y ese archivo no existe.
 
 No existe porque **el proyecto no tiene configuración de firma**. Hoy
 `assembleRelease` produce un APK sin firmar, que Android no instala. El único

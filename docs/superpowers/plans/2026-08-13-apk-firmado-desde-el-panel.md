@@ -59,7 +59,10 @@ Gradle       C:\Gradle\gradle-8.7\bin\gradle.bat
 
 ## Lo que ya existe y se consume
 
-- `RUTA_APK = <raíz del proyecto>/app.apk` en `servidor/app/api/panel.py:21`.
+- `RUTA_APK = servidor/app.apk` en `servidor/app/api/panel.py:21`. **Ojo con
+  esto**: la ruta se arma desde la ubicación del propio `panel.py`
+  (`Path(__file__).parent.parent.parent`), y eso cae en `servidor/`, **no** en
+  la raíz del proyecto. Verificado ejecutándolo.
 - `GET /api/instalacion` → `{"disponible": bool, "url": str}`, y
   `GET /api/instalacion/qr` → el SVG. Los dos ya andan y tienen tests.
 - `GET /app.apk` entrega el archivo, en `servidor/app/main.py`.
@@ -323,10 +326,11 @@ Expected: PASS
 
 - [ ] **Step 6: Verificarlo en el navegador**
 
-Levantar el servidor, dejar un archivo cualquiera como `app.apk` en la raíz
-del proyecto junto a un `app.apk.txt` que diga `2026-08-13 (build 42)`, abrir
-el panel en la pestaña de Operarios y confirmar que aparecen el QR y el
-renglón con la versión y la fecha. Después borrar los dos archivos de prueba.
+Levantar el servidor, dejar un archivo cualquiera como **`servidor/app.apk`**
+—esa carpeta y no la raíz: ver «Lo que ya existe»— junto a un
+`servidor/app.apk.txt` que diga `2026-08-13 (build 42)`, abrir el panel en la
+pestaña de Operarios y confirmar que aparecen el QR y el renglón con la
+versión y la fecha. Después borrar los dos archivos de prueba.
 
 ```powershell
 .\"Iniciar servidor.bat"
@@ -525,11 +529,17 @@ tasks.register("publicar") {
     doLast {
         val compilado = layout.buildDirectory
             .file("outputs/apk/release/app-release.apk").get().asFile
-        val destino = File(rootDir.parentFile, "app.apk")
+
+        // El panel busca el APK en `servidor/app.apk`, no en la raíz del
+        // proyecto: la ruta la arma `panel.py` desde su propia ubicación.
+        // Dejarlo en la raíz lo deja invisible, y el síntoma es que el bloque
+        // de instalación no aparece, sin decir por qué.
+        val carpetaDelServidor = File(rootDir.parentFile, "servidor")
+        val destino = File(carpetaDelServidor, "app.apk")
         val version = "$versionPublicada (build ${contarCommits()})"
 
         compilado.copyTo(destino, overwrite = true)
-        File(rootDir.parentFile, "app.apk.txt").writeText(version, Charsets.UTF_8)
+        File(carpetaDelServidor, "app.apk.txt").writeText(version, Charsets.UTF_8)
 
         println("")
         println("Publicada la version $version")
@@ -659,12 +669,12 @@ pause
 
 - [ ] **Step 2: Probarlo tal como se usa**
 
-Borrar el `app.apk` y el `app.apk.txt` que dejó la Task 3, y hacer doble clic
-en `Publicar app.bat` desde el Explorador —no desde una terminal, que es como
-se va a usar—.
+Borrar el `servidor/app.apk` y el `servidor/app.apk.txt` que dejó la Task 3, y
+hacer doble clic en `Publicar app.bat` desde el Explorador —no desde una
+terminal, que es como se va a usar—.
 
 Expected: compila, imprime la versión publicada, y los dos archivos vuelven a
-aparecer en la raíz.
+aparecer en `servidor/`.
 
 - [ ] **Step 3: El panel lo ofrece**
 
