@@ -351,8 +351,14 @@ function descripcionDeLaVersion(estado) {
   // Mismo formato de fecha que el tablero: sin la T ni la Z, que no le dicen
   // nada a quien lo lee.
   const cuando = (estado.publicado || "").replace("T", " ").replace("Z", "");
-  if (!estado.version) return `Publicada el ${cuando}`;
-  return `Versión ${estado.version} · publicada el ${cuando}`;
+
+  if (estado.version === "") {
+    if (cuando) return `Publicada el ${cuando}`;
+    return "Sin información de versión";
+  }
+
+  if (cuando) return `Versión ${estado.version} · publicada el ${cuando}`;
+  return `Versión ${estado.version}`;
 }
 
 async function cargarOperarios() {
