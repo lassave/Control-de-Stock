@@ -310,12 +310,26 @@ private fun App(base: BaseLocal) {
                                 // pueden viajar varias altas juntas, y el aviso
                                 // habla del producto que acaba de tener en la
                                 // mano.
-                                resultado.yaExistian
-                                    .firstOrNull { it.codigo == codigo }
-                                    ?.let {
-                                        avisoDesconocido =
-                                            "Ese código ya estaba: ${it.descripcion}"
-                                    }
+                                //
+                                // Y solo si la pantalla sigue como la dejó el
+                                // alta: sincronizar puede tardar treinta
+                                // segundos contra una red que no contesta, y
+                                // para entonces el operario ya está en otro
+                                // producto. Una franja roja sobre la ficha de
+                                // otra cosa no le dice nada, le hace desconfiar
+                                // de lo que tiene adelante.
+                                val siguePudiendoLeerse =
+                                    hallazgo == null && altaDe == null &&
+                                        avisoDesconocido == null
+
+                                if (siguePudiendoLeerse) {
+                                    resultado.yaExistian
+                                        .firstOrNull { it.codigo == codigo }
+                                        ?.let {
+                                            avisoDesconocido =
+                                                "Ese código ya estaba: ${it.descripcion}"
+                                        }
+                                }
                             }
                         }
                     }
