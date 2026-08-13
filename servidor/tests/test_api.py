@@ -692,3 +692,33 @@ def test_archivo_de_version_multilinea_o_muy_largo_queda_en_una_linea(cliente, c
 
     assert version == "2026-08-13 (build 42)"
     assert "\n" not in version
+
+
+def test_directorio_donde_va_version_no_rompe_instalacion(cliente, con_apk):
+    """Si en lugar del archivo hay una carpeta (o el archivo está bloqueado
+    por antivirus), en Windows levanta PermissionError, no IsADirectoryError.
+    La captura debe ser OSError, que es el padre de ambos. Si no, /api/instalacion
+    devuelve 500 y el panel no puede mostrar el QR ni el enlace."""
+    directorio = con_apk.with_name("app.apk.txt")
+    directorio.mkdir()
+
+    cuerpo = cliente.get("/api/instalacion").json()
+
+    assert cuerpo["disponible"] is True
+    assert cuerpo["version"] == ""
+
+
+def test_version_muy_larga_se_trunca_a_largo_sensato(cliente, con_apk):
+    """Una sola línea de 3 MB pasa entera sin el tope. El panel comparte
+    el renglón con el QR: renderizar 3 millones de caracteres lo rompe."""
+    archivo = con_apk.with_name("app.apk.txt")
+    # Una línea con 10.000 caracteres (mucho más que una versión razonable)
+    version_larga = "2026-08-13 (build 42)" + "x" * 10000
+    archivo.write_text(version_larga, encoding="utf-8")
+
+    version = cliente.get("/api/instalacion").json()["version"]
+
+    # La versión debe truncarse a un largo sensato. Un número de versión
+    # típico no excede 100 caracteres; permitimos hasta 200 para ser generoso.
+    assert len(version) <= 200
+    assert version.startswith("2026-08-13 (build 42)")
