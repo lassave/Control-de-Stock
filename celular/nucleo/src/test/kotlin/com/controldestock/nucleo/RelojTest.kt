@@ -53,6 +53,16 @@ class RelojTest {
     }
 
     @Test
+    fun `una fecha que no se entiende se muestra sin cerrar la app`() {
+        // `horaLocal` existe solo para mostrar, pero se llama al armar el
+        // cartel del repetido, o sea adentro de la confirmación de un conteo.
+        // Una fecha con otro formato tiene que dar un renglón raro, no
+        // llevarse puesta la app justo cuando el operario confirma.
+        assertEquals("--:--", horaLocal("ayer a la tarde"))
+        assertEquals("--:--", horaLocal(""))
+    }
+
+    @Test
     fun `la hora se muestra con dos digitos`() {
         // «9:05» y «09:05» se leen distinto de reojo, que es como se lee en
         // el depósito.

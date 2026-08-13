@@ -6,6 +6,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
 /**
  * La hora, detrás de una interfaz para poder fijarla en los tests.
@@ -51,4 +52,12 @@ private val SOLO_LA_HORA = DateTimeFormatter.ofPattern("HH:mm")
  * horas menos.
  */
 fun horaLocal(instante: String, zona: ZoneId = ZoneId.systemDefault()): String =
-    Instant.parse(instante).atZone(zona).format(SOLO_LA_HORA)
+    try {
+        Instant.parse(instante).atZone(zona).format(SOLO_LA_HORA)
+    } catch (error: DateTimeParseException) {
+        // Esto se llama al armar el cartel del repetido, o sea adentro de la
+        // confirmación de un conteo. Una fecha guardada con otro formato tiene
+        // que costar un renglón raro y no la app cerrándose con el conteo a
+        // medio confirmar: es texto para mirar, no un dato del inventario.
+        "--:--"
+    }
