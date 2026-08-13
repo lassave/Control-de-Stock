@@ -218,9 +218,12 @@ class PlanDeSincronizacionTest {
             ConteoLocal(EventoConteo("uuid-$it", "779000$it", 1000, "2026-08-12T10:0$it:00Z"))
         }
 
-        val aEnviar = PlanDeSincronizacion.aEnviar(locales, setOf("uuid-de-otro"))
+        // El uuid retenido tiene que ser uno de estos tres: con uno de
+        // afuera, el test pasa igual contra una implementacion que ignore la
+        // retencion por completo.
+        val aEnviar = PlanDeSincronizacion.aEnviar(locales, setOf("uuid-3"))
 
-        assertEquals(3, aEnviar.size)
+        assertEquals(listOf("uuid-1", "uuid-2"), aEnviar.map { it.uuid })
     }
 
     @Test
