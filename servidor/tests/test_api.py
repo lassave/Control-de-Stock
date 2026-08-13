@@ -650,3 +650,45 @@ def test_una_version_con_saltos_de_linea_no_ensucia_el_panel(cliente, con_apk):
     )
 
     assert cliente.get("/api/instalacion").json()["version"] == "2026-08-13 (build 42)"
+
+
+def test_archivo_de_version_en_utf16_se_informa_como_ausente(cliente, con_apk):
+    """PowerShell Out-File escribe UTF-16 por defecto. Cmd escribe cp1252.
+    Si el archivo no es UTF-8, no se puede leer sin romper /api/instalacion.
+    La regla es: si falta o no se puede leer, se informa vacía."""
+    archivo = con_apk.with_name("app.apk.txt")
+    archivo.write_bytes("2026-08-13 (build 42)".encode("utf-16"))
+
+    cuerpo = cliente.get("/api/instalacion").json()
+
+    assert cuerpo["version"] == ""
+    assert cuerpo["disponible"] is True
+
+
+def test_archivo_de_version_con_bom_se_limpia(cliente, con_apk):
+    """Set-Content -Encoding UTF8 de PowerShell antepone BOM.
+    U+FEFF no es espacio en blanco, así que strip() no lo toca.
+    La versión viajaría con un carácter invisible adelante, rompiendo
+    cualquier comparación («¿es la misma versión?»)."""
+    archivo = con_apk.with_name("app.apk.txt")
+    # Escribo los bytes crudos: BOM UTF-8 (EF BB BF) + contenido
+    archivo.write_bytes(b'\xef\xbb\xbf2026-08-13 (build 42)')
+
+    cuerpo = cliente.get("/api/instalacion").json()
+
+    assert cuerpo["version"] == "2026-08-13 (build 42)"
+    assert "﻿" not in cuerpo["version"]
+
+
+def test_archivo_de_version_multilinea_o_muy_largo_queda_en_una_linea(cliente, con_apk):
+    """El docstring promete que no puede romper el renglón. Strip limpia
+    las puntas pero adentro pasa cualquier cosa: varias líneas, un archivo
+    de 3 MB. El panel debe quedarse con la primera línea y un largo sensato."""
+    archivo = con_apk.with_name("app.apk.txt")
+    contenido = "2026-08-13 (build 42)\nSEGUNDA LINEA\nTERCERA LINEA"
+    archivo.write_text(contenido, encoding="utf-8")
+
+    version = cliente.get("/api/instalacion").json()["version"]
+
+    assert version == "2026-08-13 (build 42)"
+    assert "\n" not in version

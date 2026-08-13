@@ -256,7 +256,29 @@ def _version_publicada():
     archivo = RUTA_APK.parent / "app.apk.txt"
     if not archivo.exists():
         return ""
-    return archivo.read_text(encoding="utf-8").strip()
+
+    try:
+        # Si el archivo no es UTF-8 (PowerShell puede escribir UTF-16, cmd cp1252),
+        # no se puede leer sin romper /api/instalacion. La regla es: si no se puede
+        # leer, se informa vacía.
+        contenido = archivo.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
+        # El archivo desapareció entre el exists() y read_text(), o es un
+        # directorio, o no es UTF-8: se informa como ausente.
+        return ""
+
+    # Eliminar BOM UTF-8 (U+FEFF) si está presente. PowerShell Set-Content
+    # -Encoding UTF8 lo antepone.
+    if contenido.startswith('﻿'):
+        contenido = contenido[1:]
+
+    # Tomar solo la primera línea y limpiar espacios en blanco.
+    # El archivo puede tener varias líneas o ser muy largo. El panel
+    # comparte el renglón con el QR: una versión multilinea o de 3 MB
+    # la rompe.
+    primera_linea = contenido.split('\n')[0].strip()
+
+    return primera_linea
 
 
 @router.get("/instalacion")
