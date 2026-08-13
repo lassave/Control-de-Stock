@@ -340,7 +340,19 @@ async function cargarInstalacion() {
   // apretar F5. Poniéndolo recién cuando hay APK, aparece siempre entero.
   if (estado.disponible) {
     $("#qr-instalacion").src = "/api/instalacion/qr";
+    // Por textContent: la versión sale de un archivo del disco, y un
+    // archivo es dato como cualquier otro.
+    $("#version-apk").textContent = descripcionDeLaVersion(estado);
   }
+}
+
+/** Qué versión está ofreciendo el panel, en una línea legible. */
+function descripcionDeLaVersion(estado) {
+  // Mismo formato de fecha que el tablero: sin la T ni la Z, que no le dicen
+  // nada a quien lo lee.
+  const cuando = (estado.publicado || "").replace("T", " ").replace("Z", "");
+  if (!estado.version) return `Publicada el ${cuando}`;
+  return `Versión ${estado.version} · publicada el ${cuando}`;
 }
 
 async function cargarOperarios() {

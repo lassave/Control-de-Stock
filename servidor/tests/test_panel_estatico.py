@@ -226,3 +226,18 @@ def test_esconder_con_oculta_le_gana_a_las_reglas_de_cada_bloque():
                 f"«{clase}» define display después de `.oculta`: "
                 "esconderlo no va a tener efecto"
             )
+
+
+def test_la_version_del_apk_se_escribe_como_texto_y_no_como_marcado():
+    """Sale de un archivo del disco, así que es dato como cualquier otro.
+
+    Por `textContent` no interpreta HTML y no hace falta escaparlo; armado
+    como marcado, un archivo con `<b>` adentro entraría al panel.
+    """
+    contenido = _cuerpo_de(
+        (RUTA_PANEL / "app.js").read_text(encoding="utf-8"), "cargarInstalacion"
+    )
+
+    assert "version-apk" in contenido
+    assert "textContent" in contenido
+    assert "innerHTML" not in contenido
