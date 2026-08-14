@@ -1,8 +1,84 @@
+import java.time.LocalDate
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
+}
+
+/**
+ * La firma vive fuera del proyecto: esta carpeta se copia a la PC del
+ * cliente, y la firma es lo único que impide que un tercero publique una
+ * actualización que los celulares acepten como nuestra.
+ */
+val archivoDeFirma = File(
+    System.getenv("CONTROL_DE_STOCK_FIRMA")
+        ?: "C:/clientes/claves/control-de-stock.properties",
+)
+
+/**
+ * Solo el release necesita la clave y el número de versión de verdad.
+ *
+ * Sin esta distinción, cualquier compilación de debug —o sea todas las de
+ * todos los días— exigiría la clave y el historial de git.
+ *
+ * "publicar" cuenta como release aunque su propio nombre no lleve "elease":
+ * depende de assembleRelease, pero taskNames solo trae lo que se tipeó en la
+ * línea de comandos, no las tareas de las que depende. Sin este agregado,
+ * `gradle :app:publicar` compila con la firma de debug sin avisar.
+ */
+val esRelease = gradle.startParameter.taskNames.any {
+    it.contains("elease") || it.contains("ublicar")
+}
+
+fun exigirLaFirma(): Properties {
+    if (!archivoDeFirma.exists()) {
+        throw GradleException(
+            "Falta el archivo con la clave para firmar la app:\n" +
+                "  ${archivoDeFirma.absolutePath}\n\n" +
+                "Copiá celular/claves-de-ejemplo.properties a esa ruta y completá " +
+                "las contraseñas, o poné otra ruta en la variable de entorno " +
+                "CONTROL_DE_STOCK_FIRMA.\n\n" +
+                "Sin firma, Android no instala la app.",
+        )
+    }
+    return Properties().apply { archivoDeFirma.inputStream().use { load(it) } }
+}
+
+/**
+ * El número de versión sale de cuántos commits lleva el repositorio.
+ *
+ * Sube solo, así que no hay forma de olvidarse ni de publicar dos veces el
+ * mismo número — y Android rechaza una actualización cuyo número no sea
+ * mayor que el instalado, con un error que no explica nada.
+ */
+fun contarCommits(): Int {
+    val proceso = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+        .directory(rootDir)
+        .redirectErrorStream(true)
+        .start()
+    val salida = proceso.inputStream.bufferedReader().readText().trim()
+    val numero = salida.toIntOrNull()
+
+    if (proceso.waitFor() != 0 || numero == null) {
+        throw GradleException(
+            "No se pudo averiguar el número de versión con git:\n  $salida\n\n" +
+                "La app se publica desde una copia del repositorio, con git " +
+                "disponible. Un número inventado produce un APK que no se " +
+                "instala encima del anterior, y eso se descubre recién en el " +
+                "celular del operario.",
+        )
+    }
+    return numero
+}
+
+// LocalDate importado arriba: escrito como "java.time.LocalDate" acá adentro
+// no compila, porque el plugin de Android agrega una propiedad "java" al
+// proyecto que tapa el paquete del mismo nombre.
+val versionPublicada: String by lazy {
+    LocalDate.now().toString()
 }
 
 android {
@@ -13,8 +89,28 @@ android {
         applicationId = "com.controldestock"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // En debug queda el 1 de siempre: el número solo importa al publicar,
+        // y pedirle git a cada compilación del día a día es un estorbo.
+        versionCode = if (esRelease) contarCommits() else 1
+        versionName = if (esRelease) versionPublicada else "desarrollo"
+    }
+
+    signingConfigs {
+        create("publicacion") {
+            if (esRelease) {
+                val claves = exigirLaFirma()
+                storeFile = File(claves.getProperty("almacen"))
+                storePassword = claves.getProperty("clave")
+                keyAlias = claves.getProperty("alias")
+                keyPassword = claves.getProperty("claveDelAlias")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("publicacion")
+        }
     }
 
     compileOptions {
@@ -86,4 +182,37 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.12.2")
     testImplementation("androidx.test:core:1.5.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
+}
+
+/**
+ * Deja el APK donde el panel lo busca, con su versión al lado.
+ *
+ * El panel sirve `<raíz>/app.apk`, y la versión va en un archivo aparte
+ * porque adentro del APK está en un formato binario que solo saben leer las
+ * herramientas del SDK, que en la PC del cliente no están. Los dos los
+ * escribe esta tarea, en el mismo movimiento, así no pueden separarse.
+ */
+tasks.register("publicar") {
+    dependsOn("assembleRelease")
+
+    doLast {
+        val compilado = layout.buildDirectory
+            .file("outputs/apk/release/app-release.apk").get().asFile
+
+        // El panel busca el APK en `servidor/app.apk`, no en la raíz del
+        // proyecto: la ruta la arma `panel.py` desde su propia ubicación.
+        // Dejarlo en la raíz lo deja invisible, y el síntoma es que el bloque
+        // de instalación no aparece, sin decir por qué.
+        val carpetaDelServidor = File(rootDir.parentFile, "servidor")
+        val destino = File(carpetaDelServidor, "app.apk")
+        val version = "$versionPublicada (build ${contarCommits()})"
+
+        compilado.copyTo(destino, overwrite = true)
+        File(carpetaDelServidor, "app.apk.txt").writeText(version, Charsets.UTF_8)
+
+        println("")
+        println("Publicada la version $version")
+        println("Queda en ${destino.absolutePath}")
+        println("El panel ya la ofrece en la pestania de Operarios.")
+    }
 }
