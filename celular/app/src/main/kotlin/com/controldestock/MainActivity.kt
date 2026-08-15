@@ -141,10 +141,11 @@ private fun App(base: BaseLocal) {
         //
         // La bandera se toma en el mismo golpe que la lectura, así hay una
         // sola búsqueda en vuelo por vez y no un chorro de consultas por
-        // cuadro. Mira lo mismo que decide `fichaAbierta`: si mirara otra
-        // cosa, la cámara seguiría entregando lecturas con una ficha en
-        // pantalla.
-        val laToma = hallazgo == null && altaDe == null &&
+        // cuadro. Usa `fichaAbierta`, la misma función que decide qué hay
+        // que tapar en pantalla: mira las tres causas —hallazgo, altaDe e
+        // ingresandoAMano—, así una lectura en vuelo no se cuela mientras
+        // el operario tiene el diálogo de código a mano abierto.
+        val laToma = !fichaAbierta(hallazgo, altaDe, ingresandoAMano) &&
             leyendo.compareAndSet(false, true)
 
         if (laToma) {
@@ -159,11 +160,11 @@ private fun App(base: BaseLocal) {
                         ?.let { contador.conteosDe(it.articulo) }
 
                     // Lo que valía al leer puede no valer más: si mientras
-                    // tanto se abrió una ficha o el alta, esta lectura
-                    // llegó tarde y se descarta —si no, se aplica encima de
-                    // lo que el operario ya eligió, que es lo único que él
-                    // vio.
-                    if (hallazgo != null || altaDe != null) return@launch
+                    // tanto se abrió una ficha, el alta o el diálogo de
+                    // código a mano, esta lectura llegó tarde y se
+                    // descarta —si no, se aplica encima de lo que el
+                    // operario ya eligió, que es lo único que él vio.
+                    if (fichaAbierta(hallazgo, altaDe, ingresandoAMano)) return@launch
 
                     // El mismo desconocido, cuadro tras cuadro, no se
                     // vuelve a anunciar: la franja ya lo está mostrando.
@@ -401,6 +402,19 @@ private fun App(base: BaseLocal) {
 
             if (ingresandoAMano) {
                 DialogoCodigoAMano(
+                    // El orden importa: `ingresandoAMano` tiene que quedar
+                    // en `false` antes de llamar a `leerCodigo`, porque esa
+                    // función arranca revisando `fichaAbierta` y con el
+                    // diálogo todavía "abierto" se bloquearía a sí misma.
+                    //
+                    // Queda una ventana angosta y preexistente: si una
+                    // lectura de cámara ya está en vuelo (`leyendo` en
+                    // `true`, esperando la consulta a la base) justo cuando
+                    // el operario confirma, este `leerCodigo` no toma la
+                    // guarda —`compareAndSet` falla— y el código tipeado se
+                    // descarta en silencio. Es corta (dura lo que tarda una
+                    // consulta) y no la introduce este arreglo; no hace
+                    // falta cerrarla acá.
                     alConfirmar = { codigo ->
                         ingresandoAMano = false
                         leerCodigo(codigo)

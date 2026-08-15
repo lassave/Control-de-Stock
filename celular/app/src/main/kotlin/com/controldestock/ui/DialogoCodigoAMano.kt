@@ -3,6 +3,8 @@ package com.controldestock.ui
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,7 +38,7 @@ fun DialogoCodigoAMano(alConfirmar: (String) -> Unit, alCancelar: () -> Unit) {
         onDismissRequest = alCancelar,
         title = { Text("Código a mano") },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 Text(
                     // No es "0" como en el visor de cantidad: un código
                     // vacío no es un código de valor cero, es que todavía
