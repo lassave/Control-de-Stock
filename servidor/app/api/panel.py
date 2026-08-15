@@ -7,7 +7,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
 from app import red, reloj
-from app.repos import operarios, sesiones
+from app.repos import asignaciones, operarios, sesiones
 from app.servicios import exportacion, importacion, tablero, vinculacion
 
 router = APIRouter(prefix="/api")
@@ -161,9 +161,19 @@ def ver_resumen(sesion_id: int, request: Request):
         raise _no_encontrada(error) from error
 
 
+@router.get("/sesiones/{sesion_id}/ubicaciones")
+def listar_ubicaciones(sesion_id: int, request: Request):
+    con = _con(request)
+    try:
+        sesiones.obtener(con, sesion_id)
+    except ValueError as error:
+        raise _no_encontrada(error) from error
+    return asignaciones.ubicaciones_distintas(con, sesion_id)
+
+
 @router.get("/operarios")
 def listar_operarios(request: Request):
-    return operarios.listar(_con(request))
+    return asignaciones.operarios_con_ubicaciones(_con(request))
 
 
 @router.post("/operarios")
@@ -173,6 +183,40 @@ async def crear_operario(request: Request):
         return operarios.crear(_con(request), cuerpo["nombre"], cuerpo.get("pin"))
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@router.put("/sesiones/{sesion_id}/operarios/{operario_id}/asignacion")
+async def asignar_ubicaciones(sesion_id: int, operario_id: int, request: Request):
+    con = _con(request)
+    cuerpo = await request.json()
+
+    ubicaciones_pedidas = cuerpo.get("ubicaciones")
+    if not isinstance(ubicaciones_pedidas, list):
+        raise HTTPException(
+            status_code=400, detail="«ubicaciones» tiene que ser una lista"
+        )
+
+    try:
+        sesion = sesiones.obtener(con, sesion_id)
+    except ValueError as error:
+        raise _no_encontrada(error) from error
+
+    if sesion["estado"] != "abierta":
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede asignar: la sesión ya está cerrada",
+        )
+
+    if operarios.obtener(con, operario_id) is None:
+        raise HTTPException(
+            status_code=404, detail=f"No existe el operario {operario_id}"
+        )
+
+    pasada = sesiones.pasada_abierta(con, sesion_id)
+    guardadas = asignaciones.reemplazar(
+        con, pasada["id"], operario_id, ubicaciones_pedidas
+    )
+    return {"ubicaciones": guardadas}
 
 
 @router.get("/operarios/{operario_id}/qr")

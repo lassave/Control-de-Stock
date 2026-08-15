@@ -32,6 +32,21 @@ def importar(cliente, sesion_id):
     )
 
 
+CSV_CON_UBICACION = (
+    "sku,detalle,ubic\n"
+    "A,Tornillo,Deposito A\n"
+    "B,Tuerca,Deposito B\n"
+).encode("utf-8")
+
+
+def importar_con_ubicacion(cliente, sesion_id):
+    return cliente.post(
+        f"/api/sesiones/{sesion_id}/maestro",
+        files={"archivo": ("maestro.csv", CSV_CON_UBICACION, "text/csv")},
+        data={"mapeo": '{"sku": "sku", "descripcion": "detalle", "ubicacion": "ubic"}'},
+    )
+
+
 def test_crear_sesion(cliente):
     respuesta = cliente.post("/api/sesiones", json={"nombre": "Cliente X"})
 
@@ -722,3 +737,90 @@ def test_version_muy_larga_se_trunca_a_largo_sensato(cliente, con_apk):
     # típico no excede 100 caracteres; permitimos hasta 200 para ser generoso.
     assert len(version) <= 200
     assert version.startswith("2026-08-13 (build 42)")
+
+
+def test_ubicaciones_de_la_sesion_abierta(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+
+    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/ubicaciones")
+
+    assert respuesta.status_code == 200
+    assert respuesta.json() == ["Deposito A", "Deposito B"]
+
+
+def test_ubicaciones_de_sesion_inexistente_da_404(cliente):
+    assert cliente.get("/api/sesiones/9999/ubicaciones").status_code == 404
+
+
+def test_operarios_traen_ubicaciones_asignadas_vacias_por_defecto(cliente, sesion):
+    cliente.post("/api/operarios", json={"nombre": "Juan"})
+
+    respuesta = cliente.get("/api/operarios")
+
+    assert respuesta.json()[0]["ubicaciones_asignadas"] == []
+
+
+def test_asignar_ubicaciones_a_un_operario(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito A"]},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["ubicaciones"] == ["Deposito A"]
+
+    lista = cliente.get("/api/operarios").json()
+    juan = next(o for o in lista if o["id"] == operario["id"])
+    assert juan["ubicaciones_asignadas"] == ["Deposito A"]
+
+
+def test_asignar_reemplaza_lo_anterior(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito A"]},
+    )
+
+    cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito B"]},
+    )
+
+    lista = cliente.get("/api/operarios").json()
+    juan = next(o for o in lista if o["id"] == operario["id"])
+    assert juan["ubicaciones_asignadas"] == ["Deposito B"]
+
+
+def test_asignar_a_un_operario_inexistente_da_404(cliente, sesion):
+    respuesta = cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/9999/asignacion",
+        json={"ubicaciones": []},
+    )
+    assert respuesta.status_code == 404
+
+
+def test_asignar_con_la_sesion_cerrada_da_409(cliente, sesion):
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    cliente.post(f"/api/sesiones/{sesion['id']}/cerrar")
+
+    respuesta = cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": []},
+    )
+
+    assert respuesta.status_code == 409
+
+
+def test_asignar_sin_lista_de_ubicaciones_da_400(cliente, sesion):
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={},
+    )
+
+    assert respuesta.status_code == 400

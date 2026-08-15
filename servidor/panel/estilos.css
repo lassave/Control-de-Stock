@@ -226,3 +226,12 @@ thead th {
 .mapeo { margin-top: 1rem; }
 .error { color: var(--rojo); }
 .aviso { color: var(--tenue); }
+
+dialog { max-width: 28rem; border: 1px solid var(--borde); border-radius: 8px; }
+
+#sectores-lista {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+}

@@ -259,3 +259,13 @@ def test_la_version_del_apk_se_escribe_como_texto_y_no_como_marcado():
             assert metodo not in asignacion, (
                 f"Se usa {metodo} en asignación: {asignacion}"
             )
+
+
+def test_el_panel_ofrece_asignar_sectores():
+    """Sin esto no hay forma de repartir ubicaciones desde el panel."""
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="dialogo-sectores"' in html
+    assert "showModal" in js
+    assert "/asignacion" in js

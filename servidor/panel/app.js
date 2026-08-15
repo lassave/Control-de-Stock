@@ -314,7 +314,12 @@ async function confirmarImportacion() {
 
 // --- Operarios -------------------------------------------------------------
 
-function dibujarOperario(operario) {
+function dibujarOperario(operario, haySesion) {
+  // Sin sesión abierta no hay pasada a la cual asignar nada: el enlace no
+  // aparece.
+  const sectores = haySesion
+    ? `<button class="secundario" data-sectores="${esc(operario.id)}">Sectores</button>`
+    : "";
   // El token es lo único con lo que se vincula un celular. Va en un campo
   // de solo lectura para poder seleccionarlo y copiarlo: son 43 caracteres
   // al azar y copiarlos a ojo es garantía de error. El QR lo evita del
@@ -329,12 +334,59 @@ function dibujarOperario(operario) {
           <button class="secundario" data-copiar="${esc(operario.token_dispositivo)}">
             Copiar
           </button>
+          ${sectores}
         </div>
         <p class="ayuda">Escaneá este código desde la app para vincular el celular.</p>
       </div>
       <img class="qr" src="/api/operarios/${esc(operario.id)}/qr"
            alt="Código QR de vinculación de ${esc(operario.nombre)}">
     </li>`;
+}
+
+/** Una casilla de ubicación para el diálogo de sectores, tildada si ya está asignada. */
+function dibujarCasillaUbicacion(ubicacion, asignadas) {
+  const marcada = asignadas.includes(ubicacion) ? " checked" : "";
+  return `<label class="casilla">
+    <input type="checkbox" value="${esc(ubicacion)}"${marcada}> ${esc(ubicacion)}
+  </label>`;
+}
+
+async function abrirSectores(operarioId) {
+  const operario = estado.operarios.find((o) => String(o.id) === String(operarioId));
+  if (!operario || !estado.sesion) return;
+
+  const ubicaciones = await pedir(`/api/sesiones/${estado.sesion.id}/ubicaciones`);
+
+  // Por textContent: es el nombre de una persona, dato como cualquier otro.
+  $("#sectores-titulo").textContent = `Sectores de ${operario.nombre}`;
+  $("#sectores-lista").innerHTML = ubicaciones.length
+    ? ubicaciones.map((u) => dibujarCasillaUbicacion(u, operario.ubicaciones_asignadas)).join("")
+    : "<p>El maestro todavía no tiene ubicaciones cargadas.</p>";
+
+  $("#dialogo-sectores").dataset.operario = operarioId;
+  $("#dialogo-sectores").showModal();
+}
+
+async function guardarSectores() {
+  const dialogo = $("#dialogo-sectores");
+  const operarioId = dialogo.dataset.operario;
+  const ubicaciones = [...dialogo.querySelectorAll("input[type=checkbox]:checked")]
+    .map((casilla) => casilla.value);
+
+  try {
+    await pedir(
+      `/api/sesiones/${estado.sesion.id}/operarios/${operarioId}/asignacion`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ubicaciones }),
+      },
+    );
+    dialogo.close();
+    await cargarOperarios();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 async function cargarInstalacion() {
@@ -373,7 +425,11 @@ function descripcionDeLaVersion(estado) {
 
 async function cargarOperarios() {
   const lista = await pedir("/api/operarios");
-  $("#lista-operarios").innerHTML = lista.map(dibujarOperario).join("")
+  // Se guarda para poder buscar por id al abrir el diálogo de sectores:
+  // el click solo trae el id, no todo el operario.
+  estado.operarios = lista;
+  $("#lista-operarios").innerHTML =
+    lista.map((o) => dibujarOperario(o, !!estado.sesion)).join("")
     || "<li>Todavía no hay operarios.</li>";
   await cargarInstalacion();
 }
@@ -444,7 +500,11 @@ function conectarEventos() {
 
   $("#lista-operarios").addEventListener("click", (evento) => {
     if (evento.target.dataset.copiar) copiarToken(evento.target);
+    if (evento.target.dataset.sectores) abrirSectores(evento.target.dataset.sectores);
   });
+
+  $("#guardar-sectores").addEventListener("click", guardarSectores);
+  $("#cerrar-sectores").addEventListener("click", () => $("#dialogo-sectores").close());
 
   $("#form-operario").addEventListener("submit", async (evento) => {
     evento.preventDefault();
