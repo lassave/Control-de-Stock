@@ -88,3 +88,25 @@ Gradle       C:\Gradle\gradle-8.7\bin\gradle.bat
 SDK 34, build-tools 34.0.0, platform-tools. Verificado compilando un APK.
 Las pruebas de escaneo se hacen en un celular real por USB (`adb devices`);
 no hay emulador instalado.
+
+## Publicar una versión firmada
+
+Doble clic en `Publicar app.bat`, o desde `celular/`:
+
+```powershell
+C:\Gradle\gradle-8.7\bin\gradle.bat :app:publicar --no-daemon
+```
+
+La firma se lee de `C:\clientes\claves\control-de-stock.properties`, o de la
+ruta que indique la variable de entorno `CONTROL_DE_STOCK_FIRMA`. Sin ese
+archivo, o con las contraseñas sin completar, la compilación de release
+falla a propósito con un mensaje que explica qué falta.
+`celular/claves-de-ejemplo.properties` documenta el formato del archivo, sin
+secretos. La clave real y su backup nunca entran al repositorio.
+
+El número de versión sale solo de `git rev-list --count HEAD`, así que
+**esta rama hay que mergearla con fast-forward o merge normal, nunca
+squash**: un squash-merge dejaría a `master` con menos commits que los que
+ya tiene instalados un celular real, y la próxima publicación quedaría por
+debajo del número ya instalado — Android la rechazaría con un error que no
+explica nada.

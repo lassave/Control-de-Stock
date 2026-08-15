@@ -44,7 +44,26 @@ fun exigirLaFirma(): Properties {
                 "Sin firma, Android no instala la app.",
         )
     }
-    return Properties().apply { archivoDeFirma.inputStream().use { load(it) } }
+    val claves = Properties().apply { archivoDeFirma.inputStream().use { load(it) } }
+
+    val faltantes = listOf("almacen", "clave", "alias", "claveDelAlias")
+        .filter { claves.getProperty(it).isNullOrBlank() }
+    if (faltantes.isNotEmpty()) {
+        throw GradleException(
+            "El archivo de firma le falta completar: ${faltantes.joinToString(", ")}\n" +
+                "  ${archivoDeFirma.absolutePath}\n\n" +
+                "Es el archivo que quedó al copiar celular/claves-de-ejemplo.properties " +
+                "sin completar las contraseñas.",
+        )
+    }
+    if (!File(claves.getProperty("almacen")).exists()) {
+        throw GradleException(
+            "El archivo de firma señala un almacén de claves que no existe:\n" +
+                "  ${claves.getProperty("almacen")}\n\n" +
+                "Revisá la propiedad \"almacen\" en:\n  ${archivoDeFirma.absolutePath}",
+        )
+    }
+    return claves
 }
 
 /**
@@ -204,6 +223,14 @@ tasks.register("publicar") {
         // Dejarlo en la raíz lo deja invisible, y el síntoma es que el bloque
         // de instalación no aparece, sin decir por qué.
         val carpetaDelServidor = File(rootDir.parentFile, "servidor")
+        if (!File(carpetaDelServidor, "app/api/panel.py").exists()) {
+            throw GradleException(
+                "No encontré la carpeta del servidor donde esperaba:\n" +
+                    "  ${carpetaDelServidor.absolutePath}\n\n" +
+                    "Ahí es donde panel.py busca el APK. Si la estructura de " +
+                    "carpetas del proyecto cambió, hay que actualizar esta tarea.",
+            )
+        }
         val destino = File(carpetaDelServidor, "app.apk")
         val version = "$versionPublicada (build ${contarCommits()})"
 

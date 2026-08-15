@@ -3,7 +3,7 @@
 Lo que se decidió no arreglar todavía, con el motivo. Sale de las revisiones
 de cada rama: es lo que alguien ya miró, entendió y difirió a propósito.
 
-Actualizado: 2026-08-13, al cerrar la rama del alta rápida.
+Actualizado: 2026-08-15, al cerrar la rama del APK firmado.
 
 ## Al entregar
 
@@ -97,6 +97,38 @@ array JSON válido da 500. El de altas sí lo cubre.
 en el mismo directorio: la primera corrida después de subir la versión de la
 base falla con un error de deserialización que no dice nada de la causa. Va a
 morder en la versión 3.
+
+## APK firmado
+
+**El respaldo de `C:\clientes\claves\` es parte de la entrega.** Si se
+pierde, ningún celular con la app instalada puede volver a actualizarse sin
+desinstalar, y desinstalar borra los conteos que todavía no subieron. Lo
+guarda Pablo (el desarrollador), en su gestor de contraseñas más una copia
+de la carpeta completa fuera de esta máquina.
+
+**Que la app avise sola cuando hay una versión nueva**, en vez de que
+alguien tenga que ir a escanear el QR de instalación otra vez. Quedó afuera
+a propósito, es la extensión natural de este plan.
+
+**El control de escapado del panel es una lista blanca de nombres de
+variable, no una que detecte el peligro.** `estado` se agregó porque la
+revisión de esta rama lo encontró por señalamiento explícito en la
+bitácora, no porque el test lo hubiera detectado solo. Cualquier
+interpolación adentro de una plantilla con `<` que no pase por una de las
+variables de la lista pasa sin auditar. Conviene invertirlo: auditar toda
+interpolación adentro de una plantilla con marcado salvo que esté envuelta
+en un escape explícito, y poner la lista blanca del lado de las
+excepciones.
+
+**Nada conecta la ruta que escribe Gradle con la que lee Python.** El
+nombre `servidor/app.apk` y `servidor/app.apk.txt` está escrito a mano en
+`celular/app/build.gradle.kts` y en `servidor/app/api/panel.py`, en dos
+lenguajes, sin ningún test que cruce los dos. Si `celular/` cambia de
+lugar, `publicar` puede terminar escribiendo en una carpeta que nadie lee,
+y el único síntoma es que el bloque de instalación no aparece. La tarea
+`publicar` ahora verifica que la carpeta de destino sea la del servidor
+(ver arriba), lo cual mitiga el síntoma pero no reemplaza una prueba real
+de punta a punta.
 
 ## Textos
 
