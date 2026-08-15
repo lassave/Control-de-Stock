@@ -125,6 +125,7 @@ def _consulta_base():
             ) AS observaciones,
             SUM(v.cantidad) AS total,
             COUNT(v.uuid) AS cantidad_conteos,
+            MAX(v.fuera_asignacion) AS fuera_asignacion,
             MAX(v.timestamp_servidor) AS fecha
         FROM articulo a
         LEFT JOIN ultima_pasada u ON u.articulo_id = a.id
@@ -178,6 +179,9 @@ def _armar_fila(fila, sesion):
         "dif_valorizada": dif_valorizada,
         "estado": estado,
         "posible_error_carga": posible_error,
+        # MAX() sobre un LEFT JOIN sin conteos da NULL, y bool(None) es
+        # False: un artículo sin contar no puede estar fuera de asignación.
+        "fuera_asignacion": bool(fila["fuera_asignacion"]),
         "fecha": fila["fecha"],
         "observaciones": fila["observaciones"],
         "origen": fila["origen"],

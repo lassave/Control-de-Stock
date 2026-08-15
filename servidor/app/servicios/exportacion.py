@@ -22,7 +22,7 @@ COLUMNAS_RESUMEN = [
 COLUMNAS_DETALLE = [
     "fecha", "fecha_sincronizacion", "pasada", "operario", "sku",
     "descripcion", "unidad", "cantidad", "ubicacion", "ubicacion_real",
-    "observaciones", "anulado",
+    "observaciones", "anulado", "fuera_asignacion",
 ]
 
 
@@ -90,6 +90,7 @@ def detalle(con, sesion_id, filtros=None):
         """
         SELECT c.uuid, c.cantidad, c.ubicacion_real, c.observaciones,
                c.timestamp_dispositivo, c.timestamp_servidor, c.anula_uuid,
+               c.fuera_asignacion,
                a.id AS articulo_id, a.sku, a.descripcion, a.unidad, a.ubicacion,
                o.nombre AS operario, p.numero AS pasada_numero
         FROM conteo c
@@ -127,5 +128,6 @@ def detalle(con, sesion_id, filtros=None):
             "ubicacion_real": fila["ubicacion_real"] or "",
             "observaciones": fila["observaciones"] or "",
             "anulado": "SI" if (es_anulacion or fila["uuid"] in anulados) else "",
+            "fuera_asignacion": "SI" if fila["fuera_asignacion"] else "",
         })
     return _escribir(COLUMNAS_DETALLE, filas)

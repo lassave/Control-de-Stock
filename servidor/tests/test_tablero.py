@@ -1,6 +1,6 @@
 import pytest
 
-from app.repos import conteos, operarios, sesiones
+from app.repos import asignaciones, conteos, operarios, sesiones
 from app.servicios import importacion, tablero
 
 
@@ -307,3 +307,28 @@ def test_resumen_de_sesion_vacia_no_divide_por_cero(con):
 
     assert resumen["articulos"] == 0
     assert resumen["avance_pct"] == 0
+
+
+def test_marca_fuera_de_asignacion(con, escenario):
+    pasada = sesiones.pasada_abierta(con, escenario["sesion_id"])
+    asignaciones.reemplazar(con, pasada["id"], escenario["juan"]["id"], ["P-2"])
+
+    contar(con, escenario, "A", 24000, "u-1")  # A está en P-1, Juan tiene P-2
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+    assert fila["fuera_asignacion"] is True
+
+
+def test_sin_marca_cuando_coincide_la_asignacion(con, escenario):
+    pasada = sesiones.pasada_abierta(con, escenario["sesion_id"])
+    asignaciones.reemplazar(con, pasada["id"], escenario["juan"]["id"], ["P-1"])
+
+    contar(con, escenario, "A", 24000, "u-1")
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+    assert fila["fuera_asignacion"] is False
+
+
+def test_sin_contar_no_se_marca(con, escenario):
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "B")
+    assert fila["fuera_asignacion"] is False

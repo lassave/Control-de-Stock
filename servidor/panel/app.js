@@ -73,6 +73,11 @@ function dibujarFila(fila) {
     ? `<span class="marca" title="Revisar antes de recontar: ` +
       `${esc(fila.posible_error_carga)}">⌨ ${esc(fila.posible_error_carga)}</span>`
     : "";
+  const marcaAsignacion = fila.fuera_asignacion
+    ? `<span class="marca" title="Alguno de los conteos de este artículo se ` +
+      `hizo fuera de la ubicación asignada al operario. El detalle exportado ` +
+      `dice quién y dónde.">⚑ fuera de sector</span>`
+    : "";
   const fecha = (fila.fecha || "").replace("T", " ").replace("Z", "");
 
   return `
@@ -92,6 +97,7 @@ function dibujarFila(fila) {
       <td>
         <span class="estado ${clase}">${esc(fila.estado)}</span>
         ${marca}
+        ${marcaAsignacion}
       </td>
       <td>${esc(fecha)}</td>
       <td>${esc(fila.observaciones)}</td>

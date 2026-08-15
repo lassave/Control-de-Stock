@@ -3,7 +3,7 @@ import io
 
 import pytest
 
-from app.repos import conteos, operarios, sesiones
+from app.repos import asignaciones, conteos, operarios, sesiones
 from app.servicios import exportacion, importacion
 
 
@@ -105,7 +105,7 @@ def test_detalle_tiene_las_columnas_del_spec(con, escenario):
     assert list(filas[0].keys()) == [
         "fecha", "fecha_sincronizacion", "pasada", "operario", "sku",
         "descripcion", "unidad", "cantidad", "ubicacion", "ubicacion_real",
-        "observaciones", "anulado",
+        "observaciones", "anulado", "fuera_asignacion",
     ]
 
 
@@ -167,3 +167,23 @@ def test_los_acentos_sobreviven(con, escenario):
     texto = exportacion.resumen_por_sku(con, escenario["sesion_id"])
 
     assert "Cañería" in texto
+
+
+def test_detalle_sin_asignacion_no_marca(con, escenario):
+    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+
+    assert filas[0]["fuera_asignacion"] == ""
+
+
+def test_detalle_marca_fuera_de_asignacion(con, escenario):
+    pasada = sesiones.pasada_abierta(con, escenario["sesion_id"])
+    asignaciones.reemplazar(con, pasada["id"], escenario["juan"]["id"], ["Otro deposito"])
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+        "uuid": "u-2", "codigo": "B", "cantidad": 50000,
+        "timestamp_dispositivo": "2026-08-10T10:10:00Z",
+    })
+
+    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+    fila_b = next(f for f in filas if f["sku"] == "B")
+
+    assert fila_b["fuera_asignacion"] == "SI"
