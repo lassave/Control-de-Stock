@@ -355,16 +355,20 @@ async function abrirSectores(operarioId) {
   const operario = estado.operarios.find((o) => String(o.id) === String(operarioId));
   if (!operario || !estado.sesion) return;
 
-  const ubicaciones = await pedir(`/api/sesiones/${estado.sesion.id}/ubicaciones`);
+  try {
+    const ubicaciones = await pedir(`/api/sesiones/${estado.sesion.id}/ubicaciones`);
 
-  // Por textContent: es el nombre de una persona, dato como cualquier otro.
-  $("#sectores-titulo").textContent = `Sectores de ${operario.nombre}`;
-  $("#sectores-lista").innerHTML = ubicaciones.length
-    ? ubicaciones.map((u) => dibujarCasillaUbicacion(u, operario.ubicaciones_asignadas)).join("")
-    : "<p>El maestro todavía no tiene ubicaciones cargadas.</p>";
+    // Por textContent: es el nombre de una persona, dato como cualquier otro.
+    $("#sectores-titulo").textContent = `Sectores de ${operario.nombre}`;
+    $("#sectores-lista").innerHTML = ubicaciones.length
+      ? ubicaciones.map((u) => dibujarCasillaUbicacion(u, operario.ubicaciones_asignadas)).join("")
+      : "<p>El maestro todavía no tiene ubicaciones cargadas.</p>";
 
-  $("#dialogo-sectores").dataset.operario = operarioId;
-  $("#dialogo-sectores").showModal();
+    $("#dialogo-sectores").dataset.operario = operarioId;
+    $("#dialogo-sectores").showModal();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 async function guardarSectores() {

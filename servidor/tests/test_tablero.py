@@ -332,3 +332,33 @@ def test_sin_marca_cuando_coincide_la_asignacion(con, escenario):
 def test_sin_contar_no_se_marca(con, escenario):
     fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "B")
     assert fila["fuera_asignacion"] is False
+
+
+def test_fuera_de_asignacion_de_una_pasada_vieja_no_contamina_la_vigente(con, escenario):
+    """Un reconteo es su propio reparto: lo de antes no puede seguir marcando."""
+    pasada_1 = sesiones.pasada_abierta(con, escenario["sesion_id"])
+    asignaciones.reemplazar(con, pasada_1["id"], escenario["juan"]["id"], ["P-2"])
+    contar(con, escenario, "A", 24000, "u-1")  # A está en P-1: fuera de asignación en la pasada 1
+
+    abrir_conteo_2(con, escenario["sesion_id"])
+    contar(con, escenario, "A", 24000, "u-2")  # nadie asignado todavía en la pasada 2
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+    assert fila["fuera_asignacion"] is False
+
+
+def test_marca_si_alguno_de_varios_conteos_esta_fuera_de_asignacion(con, escenario):
+    """Dos personas cuentan lo mismo: una fuera de lo suyo alcanza para marcar."""
+    pasada = sesiones.pasada_abierta(con, escenario["sesion_id"])
+    asignaciones.reemplazar(con, pasada["id"], escenario["juan"]["id"], ["P-1"])
+    ana = operarios.crear(con, "Ana")
+    asignaciones.reemplazar(con, pasada["id"], ana["id"], ["P-2"])
+
+    contar(con, escenario, "A", 10000, "u-1")  # Juan, en su ubicación asignada
+    conteos.registrar(con, escenario["sesion_id"], ana["id"], {
+        "uuid": "u-2", "codigo": "A", "cantidad": 5000,
+        "timestamp_dispositivo": "2026-08-10T10:05:00Z",
+    })  # Ana, fuera de la suya: A está en P-1 y ella tiene asignado P-2
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+    assert fila["fuera_asignacion"] is True

@@ -23,11 +23,18 @@ Dejá la ventana negra abierta mientras dure el conteo.
   se indica en pantalla qué columna es cada campo. El separador y la
   codificación se detectan solos.
 - **Operarios**: cada uno recibe un token, que es con lo que se vincula su
-  dispositivo.
+  dispositivo. Con una sesión abierta, el botón «Sectores» de cada persona
+  abre un cuadro para elegir qué ubicaciones le tocan en el conteo en
+  curso. No es obligatorio ni bloquea nada: es para repartir el trabajo y
+  saber después si alguien contó algo que no le tocaba.
 - **Tablero**: se refresca solo cada cuatro segundos, conservando los
-  filtros y la posición de la pantalla.
+  filtros y la posición de la pantalla. Un artículo con algún conteo hecho
+  fuera del sector asignado a quien lo contó queda marcado con «⚑ fuera de
+  sector».
 - **Exportar**: resumen por SKU y detalle escaneo por escaneo, los dos con
-  los filtros que estén puestos en el tablero.
+  los filtros que estén puestos en el tablero. El detalle trae una columna
+  `fuera_asignacion` (`SI` o vacío) que dice, escaneo por escaneo, cuáles
+  se hicieron fuera del sector asignado.
 
 El conteo es a ciegas: ninguna respuesta al celular incluye el stock del
 sistema ni el costo.
