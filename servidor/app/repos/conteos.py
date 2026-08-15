@@ -8,7 +8,7 @@ otra fila que anula la anterior. Eso vuelve la sincronización idempotente
 import sqlite3
 
 from app import reloj
-from app.repos import sesiones
+from app.repos import asignaciones, sesiones
 
 CAMPOS_PUBLICOS = (
     "a.id, a.id_orden, a.tipo, a.material, a.sku, a.descripcion, "
@@ -65,6 +65,29 @@ def _ya_registrado(con, uuid):
     return con.execute(
         "SELECT 1 FROM conteo WHERE uuid = ?", (uuid,)
     ).fetchone() is not None
+
+
+def _fuera_de_asignacion(con, pasada_id, operario_id, ubicacion_efectiva):
+    """Si este conteo cae fuera de lo que tiene asignado el operario.
+
+    Se calcula una sola vez, al guardar: es un hecho de este conteo, no una
+    pregunta que se vuelve a hacer cada vez que alguien mira el tablero. Si
+    más tarde cambia el reparto, los conteos ya hechos no cambian de opinión.
+    """
+    if ubicacion_efectiva is None:
+        # Nada con qué comparar: ni el artículo ni la corrección del
+        # operario dicen dónde estaba.
+        return 0
+
+    asignadas = asignaciones.de_operario(con, pasada_id, operario_id)
+    if not asignadas:
+        # Sin ninguna asignación cargada no hay restricción: si se marcara
+        # todo, el tablero se llenaría de avisos el primer día que se usa
+        # la función, antes de terminar de repartir sectores a todo el
+        # equipo.
+        return 0
+
+    return 0 if ubicacion_efectiva in asignadas else 1
 
 
 def registrar(con, sesion_id, operario_id, evento):
@@ -156,18 +179,23 @@ def registrar(con, sesion_id, operario_id, evento):
 
     pasada = sesiones.pasada_abierta(con, sesion_id)
 
+    # La ubicación real prevalece sobre la del maestro: es la que el
+    # operario corrigió a mano, y es la que de verdad recorrió.
+    ubicacion_efectiva = evento.get("ubicacion_real") or articulo["ubicacion"]
+    fuera = _fuera_de_asignacion(con, pasada["id"], operario_id, ubicacion_efectiva)
+
     con.execute(
         """
         INSERT INTO conteo (
             uuid, sesion_id, pasada_id, articulo_id, cantidad, operario_id,
             ubicacion_real, observaciones, fuera_asignacion,
             timestamp_dispositivo, timestamp_servidor, anula_uuid
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             evento["uuid"], sesion_id, pasada["id"], articulo["id"],
             cantidad, operario_id,
-            evento.get("ubicacion_real"), evento.get("observaciones"),
+            evento.get("ubicacion_real"), evento.get("observaciones"), fuera,
             evento["timestamp_dispositivo"], reloj.ahora(), anula,
         ),
     )

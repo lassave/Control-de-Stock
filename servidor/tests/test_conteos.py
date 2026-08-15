@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from app.repos import conteos, operarios, sesiones
+from app.repos import asignaciones, conteos, operarios, sesiones
 from app.servicios import importacion
 
 
@@ -320,3 +320,86 @@ def test_de_operario_devuelve_lo_mas_reciente_primero(con, escenario):
     propios = conteos.de_operario(con, escenario["sesion_id"], escenario["juan"]["id"])
 
     assert [c["uuid"] for c in propios] == ["u-3", "u-2", "u-1"]
+
+
+def test_sin_asignacion_no_se_marca(con, escenario):
+    conteos.registrar(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        evento("u-1", ubicacion_real="Deposito A"),
+    )
+
+    fila = con.execute(
+        "SELECT fuera_asignacion FROM conteo WHERE uuid = 'u-1'"
+    ).fetchone()
+    assert fila["fuera_asignacion"] == 0
+
+
+def test_contar_en_la_ubicacion_asignada_no_se_marca(con, escenario):
+    pasada = sesiones.pasada_abierta(con, escenario["sesion_id"])
+    asignaciones.reemplazar(
+        con, pasada["id"], escenario["juan"]["id"], ["Deposito A"]
+    )
+
+    conteos.registrar(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        evento("u-1", ubicacion_real="Deposito A"),
+    )
+
+    fila = con.execute(
+        "SELECT fuera_asignacion FROM conteo WHERE uuid = 'u-1'"
+    ).fetchone()
+    assert fila["fuera_asignacion"] == 0
+
+
+def test_contar_fuera_de_lo_asignado_se_marca(con, escenario):
+    pasada = sesiones.pasada_abierta(con, escenario["sesion_id"])
+    asignaciones.reemplazar(
+        con, pasada["id"], escenario["juan"]["id"], ["Deposito A"]
+    )
+
+    conteos.registrar(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        evento("u-1", ubicacion_real="Deposito B"),
+    )
+
+    fila = con.execute(
+        "SELECT fuera_asignacion FROM conteo WHERE uuid = 'u-1'"
+    ).fetchone()
+    assert fila["fuera_asignacion"] == 1
+
+
+def test_sin_ubicacion_conocida_no_se_marca(con, escenario):
+    """El artículo del escenario no tiene ubicación en el maestro, y este
+    evento tampoco trae una corrección: no hay con qué comparar."""
+    pasada = sesiones.pasada_abierta(con, escenario["sesion_id"])
+    asignaciones.reemplazar(
+        con, pasada["id"], escenario["juan"]["id"], ["Deposito A"]
+    )
+
+    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1"))
+
+    fila = con.execute(
+        "SELECT fuera_asignacion FROM conteo WHERE uuid = 'u-1'"
+    ).fetchone()
+    assert fila["fuera_asignacion"] == 0
+
+
+def test_usa_la_ubicacion_del_articulo_si_no_hay_correccion(con):
+    sesion_id = sesiones.crear(con, "Cliente Z")
+    contenido = "sku,detalle,ubic\nA,Tornillo,Deposito A\n".encode("utf-8")
+    importacion.importar(con, sesion_id, contenido, {
+        "sku": "sku", "descripcion": "detalle", "ubicacion": "ubic",
+    })
+    juan = operarios.crear(con, "Juan")
+    pasada = sesiones.pasada_abierta(con, sesion_id)
+    asignaciones.reemplazar(con, pasada["id"], juan["id"], ["Deposito B"])
+
+    conteos.registrar(con, sesion_id, juan["id"], {
+        "uuid": "u-1", "codigo": "A", "cantidad": 1000,
+        "timestamp_dispositivo": "2026-08-10T10:00:00Z",
+    })
+
+    fila = con.execute(
+        "SELECT fuera_asignacion FROM conteo WHERE uuid = 'u-1'"
+    ).fetchone()
+    assert fila["fuera_asignacion"] == 1
