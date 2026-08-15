@@ -22,6 +22,7 @@ def reemplazar(con, pasada_id, operario_id, ubicaciones):
             "DELETE FROM asignacion WHERE pasada_id = ? AND operario_id = ?",
             (pasada_id, operario_id),
         )
+        # executemany no existe en ConexionPorHilo: son pocos registros, un execute por fila alcanza.
         for u in limpias:
             con.execute(
                 "INSERT INTO asignacion (pasada_id, operario_id, ubicacion, "
