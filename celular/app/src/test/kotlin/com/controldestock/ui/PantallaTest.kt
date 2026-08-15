@@ -97,4 +97,38 @@ class PantallaTest {
 
         assertTrue(hayQueAnunciar(hallazgo, codigoEnLaFranja = "7790999"))
     }
+
+    @Test
+    fun `sin nada abierto no hay ficha`() {
+        assertFalse(fichaAbierta(hallazgo = null, altaDe = null, ingresandoAMano = false))
+    }
+
+    @Test
+    fun `un articulo encontrado abre la ficha`() {
+        val hallazgo = Hallazgo.Encontrado(tornillos, admiteDecimales = false, codigo = "7790999")
+
+        assertTrue(fichaAbierta(hallazgo, altaDe = null, ingresandoAMano = false))
+    }
+
+    @Test
+    fun `un desconocido no abre ninguna ficha`() {
+        // La franja roja no es una ficha: se dibuja al lado de la cámara,
+        // no la tapa. Si esto diera true, la cámara se pausaría con cada
+        // código desconocido, y no hay forma de que se reanude sola.
+        val hallazgo = Hallazgo.Desconocido("7790999")
+
+        assertFalse(fichaAbierta(hallazgo, altaDe = null, ingresandoAMano = false))
+    }
+
+    @Test
+    fun `el alta de un codigo cuenta como ficha abierta`() {
+        assertTrue(fichaAbierta(hallazgo = null, altaDe = "7790999", ingresandoAMano = false))
+    }
+
+    @Test
+    fun `ingresar el codigo a mano tambien pausa la camara`() {
+        // Sin esto, una lectura de cámara en el medio le pisa el código que
+        // el operario está tipeando.
+        assertTrue(fichaAbierta(hallazgo = null, altaDe = null, ingresandoAMano = true))
+    }
 }

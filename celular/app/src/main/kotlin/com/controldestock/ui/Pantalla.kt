@@ -61,3 +61,20 @@ fun hayQueAnunciar(hallazgo: Hallazgo, codigoEnLaFranja: String?): Boolean =
  */
 fun estadoTrasSubir(huboError: Boolean, loPidioElOperario: Boolean): EstadoDeSubida =
     if (huboError && loPidioElOperario) EstadoDeSubida.NoPudo else EstadoDeSubida.Quieto
+
+/**
+ * Si hay algo en pantalla que tiene que pausar la cámara.
+ *
+ * Tres causas compiten por la misma atención: la ficha de un artículo, el
+ * alta de uno nuevo, o el código que el operario está escribiendo a mano.
+ * Ninguna convive con una lectura de cámara que llegue en el medio. Antes
+ * de sumar la tercera esto se armaba en línea en `MainActivity.kt` con dos
+ * variables sueltas; agregar una tercera ahí sin una función que la cubra
+ * repite el patrón que ya costó tres defectos parecidos (ver
+ * `docs/superpowers/deuda-conocida.md`).
+ *
+ * Un `Hallazgo.Desconocido` no cuenta: la franja roja se dibuja al lado de
+ * la cámara, no la tapa.
+ */
+fun fichaAbierta(hallazgo: Hallazgo?, altaDe: String?, ingresandoAMano: Boolean): Boolean =
+    hallazgo is Hallazgo.Encontrado || altaDe != null || ingresandoAMano
