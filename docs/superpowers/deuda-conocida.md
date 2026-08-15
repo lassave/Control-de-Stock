@@ -3,7 +3,7 @@
 Lo que se decidió no arreglar todavía, con el motivo. Sale de las revisiones
 de cada rama: es lo que alguien ya miró, entendió y difirió a propósito.
 
-Actualizado: 2026-08-15, al cerrar la rama del APK firmado.
+Actualizado: 2026-08-15, al cerrar la rama del código a mano.
 
 ## Al entregar
 
@@ -40,6 +40,19 @@ el toque, no solo la bandera.
 o el permiso revocado desde Ajustes, cierran la app. Y la pantalla de escaneo
 monta la cámara sin volver a mirar el permiso, que se pide una sola vez al
 vincular. **Conviene atajarlo antes del APK firmado.**
+
+**El encabezado se puede apretar con un nombre de operario largo.** El botón
+«A mano» y el indicador de pendientes van en un `Row` sin peso al lado de
+`pasada` y `operario`, así que un nombre inusualmente largo podría empujarlos
+fuera de la pantalla —el único camino al ingreso manual—. No se verificó en
+un celular real con un nombre largo; si aparece, la solución es acotar los
+dos `Text` con `maxLines = 1` y `Modifier.weight(1f, fill = false)`.
+
+**`fichaAbierta` es el nombre de una función y de un parámetro en el mismo
+paquete.** La función pura vive en `ui/Pantalla.kt`; `PantallaEscaneo` tiene
+un parámetro con el mismo nombre. Compila sin ambigüedad, pero es doble
+sentido para quien lea `PantallaEscaneo.kt`. Conviene renombrar el parámetro
+—por ejemplo a `hayFichaAbierta`— la próxima vez que se toque ese archivo.
 
 ## Alta rápida
 
