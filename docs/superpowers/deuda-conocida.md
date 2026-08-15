@@ -3,7 +3,7 @@
 Lo que se decidió no arreglar todavía, con el motivo. Sale de las revisiones
 de cada rama: es lo que alguien ya miró, entendió y difirió a propósito.
 
-Actualizado: 2026-08-15, al cerrar la rama del código a mano.
+Actualizado: 2026-08-15, al cerrar la rama de asignación de sectores.
 
 ## Al entregar
 
@@ -133,6 +133,12 @@ interpolación adentro de una plantilla con marcado salvo que esté envuelta
 en un escape explícito, y poner la lista blanca del lado de las
 excepciones.
 
+*(Instancia concreta, rama de asignación de sectores: `dibujarCasillaUbicacion`
+interpola `ubicacion` —un nombre de ubicación del maestro, dato del
+cliente— y el guardián no lo puede ver porque exige un prefijo tipo
+`variable.algo`, y acá es una variable suelta. Está escapado a mano, bien,
+pero el guardián no lo hubiera detectado si no lo hubiera estado.)*
+
 **Nada conecta la ruta que escribe Gradle con la que lee Python.** El
 nombre `servidor/app.apk` y `servidor/app.apk.txt` está escrito a mano en
 `celular/app/build.gradle.kts` y en `servidor/app/api/panel.py`, en dos
@@ -142,6 +148,47 @@ y el único síntoma es que el bloque de instalación no aparece. La tarea
 `publicar` ahora verifica que la carpeta de destino sea la del servidor
 (ver arriba), lo cual mitiga el síntoma pero no reemplaza una prueba real
 de punta a punta.
+
+## Asignación de sectores
+
+**`GET /api/operarios` puede devolver 500 si una sesión abierta se queda sin
+pasada abierta.** `asignaciones.operarios_con_ubicaciones` llama a
+`sesiones.pasada_abierta` sin atajar el `ValueError` que tira si no hay
+ninguna. Hoy es inalcanzable: `sesiones.crear` y `cerrar` abren y cierran
+sesión y pasada juntas, atómicamente, y no hay otro código que toque
+`pasada`. El reconteo (pasada 2, 3...) que el propio diseño de este plan
+menciona como futuro es exactamente lo que abriría una ventana entre cerrar
+una pasada y abrir la siguiente — y el radio de la falla es un endpoint
+global, no algo acotado. Vale la pena un `try/except ValueError` que
+devuelva listas vacías en vez de romper, cuando se construya el reconteo.
+
+**La ubicación asignada se guarda recortada, pero la del conteo no.**
+`asignaciones.reemplazar` hace `.strip()` a cada ubicación al guardar;
+`conteos.registrar` compara la ubicación efectiva del conteo tal cual
+llega, sin recortar. Hoy no muerde: el maestro ya viene recortado al
+importarse, el alta rápida también, y el celular solo ofrece ubicaciones
+que ya salieron recortadas del maestro. Pero `/api/dispositivo/conteos`
+acepta `ubicacion_real` como texto libre, así que un cliente que no sea el
+celular oficial —o un bug futuro ahí— podría mandar `" P-1 "` y marcarlo
+fuera de asignación por un espacio. Un `.strip()` en `conteos.py` antes de
+comparar lo cierra del todo.
+
+**La asignación no valida que la ubicación exista en el maestro, ni que el
+operario siga activo.** Es a propósito hasta cierto punto —la asignación es
+logística libre, no un dato con reglas de negocio duras— pero asignar una
+ubicación que no existe (typo, o quedó de un maestro viejo) marca fuera de
+asignación *todos* los conteos futuros de esa persona en silencio, sin que
+nadie se entere de por qué. Ninguno de los dos caminos es alcanzable desde
+el panel hoy (el selector solo ofrece ubicaciones reales, y
+`operarios_con_ubicaciones` ya filtra por activo), así que solo importa si
+se agrega otra forma de escribir en `asignacion`.
+
+**Un conteo anulado puede quedar con `fuera_asignacion = SI` en el CSV de
+detalle.** Es correcto —el conteo, cuando se hizo, estaba fuera de lo
+asignado— pero alguien que filtre el CSV solo por esa columna sin mirar
+también `anulado` va a contar de más. El tablero no tiene este problema: la
+consulta agregada ya excluye los conteos anulados antes de calcular la
+marca.
 
 ## Textos
 
