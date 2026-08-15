@@ -3,6 +3,7 @@ package com.controldestock.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -44,6 +45,8 @@ class PantallaEscaneoTest {
                 alLeer = {},
                 estadoDeSubida = EstadoDeSubida.Quieto,
                 alSubir = {},
+                puedeIngresarAMano = true,
+                alIngresarAMano = {},
                 camara = { _, _ -> },
             ) {}
         }
@@ -85,6 +88,8 @@ class PantallaEscaneoTest {
                 alLeer = {},
                 estadoDeSubida = EstadoDeSubida.Quieto,
                 alSubir = {},
+                puedeIngresarAMano = true,
+                alIngresarAMano = {},
                 camara = { esta, _ -> activo += esta },
             ) {
                 Box { Text("La ficha") }
@@ -95,5 +100,52 @@ class PantallaEscaneoTest {
         // corresponde.
         assertTrue("la cámara no se compuso nunca", activo.isNotEmpty())
         return activo
+    }
+
+    @Test
+    fun `el boton de ingreso a mano llama al callback cuando esta habilitado`() {
+        var abrio = false
+        compose.setContent {
+            PantallaEscaneo(
+                operario = "Ana",
+                pasada = "Pasada 1",
+                pendientes = 0,
+                fichaAbierta = false,
+                avisoDeDesconocido = null,
+                alDarDeAlta = null,
+                alLeer = {},
+                estadoDeSubida = EstadoDeSubida.Quieto,
+                alSubir = {},
+                puedeIngresarAMano = true,
+                alIngresarAMano = { abrio = true },
+                camara = { _, _ -> },
+            ) {}
+        }
+
+        compose.onNodeWithText("A mano").performClick()
+
+        assertTrue(abrio)
+    }
+
+    @Test
+    fun `el boton de ingreso a mano queda deshabilitado con algo mas abierto`() {
+        compose.setContent {
+            PantallaEscaneo(
+                operario = "Ana",
+                pasada = "Pasada 1",
+                pendientes = 0,
+                fichaAbierta = true,
+                avisoDeDesconocido = null,
+                alDarDeAlta = null,
+                alLeer = {},
+                estadoDeSubida = EstadoDeSubida.Quieto,
+                alSubir = {},
+                puedeIngresarAMano = false,
+                alIngresarAMano = {},
+                camara = { _, _ -> },
+            ) { }
+        }
+
+        compose.onNodeWithText("A mano").assertIsNotEnabled()
     }
 }

@@ -31,6 +31,7 @@ import com.controldestock.nucleo.DatosDelQr
 import com.controldestock.nucleo.RelojDelSistema
 import com.controldestock.red.ClienteServidor
 import com.controldestock.ui.AvisoSonoro
+import com.controldestock.ui.DialogoCodigoAMano
 import com.controldestock.ui.EstadoDeSubida
 import com.controldestock.ui.FichaDeAlta
 import com.controldestock.ui.FichaDelArticulo
@@ -39,6 +40,7 @@ import com.controldestock.ui.PantallaEscaneo
 import com.controldestock.ui.PantallaVinculacion
 import com.controldestock.ui.Tema
 import com.controldestock.ui.estadoTrasSubir
+import com.controldestock.ui.fichaAbierta
 import com.controldestock.ui.hayQueAnunciar
 import com.controldestock.ui.pantallaSegun
 import kotlinx.coroutines.launch
@@ -76,6 +78,10 @@ private fun App(base: BaseLocal) {
     // limpió. Guardando el código, el click se lo lleva desde la composición
     // y no queda forma de tener el alta abierta sin saber de qué código es.
     var altaDe by remember { mutableStateOf<String?>(null) }
+    // Cuenta como una ficha más para pausar la cámara: sin esto, una
+    // lectura de cámara en el medio le pisa el código que el operario está
+    // tipeando a mano.
+    var ingresandoAMano by remember { mutableStateOf(false) }
     var pendientes by remember { mutableStateOf(0) }
     var ubicaciones by remember { mutableStateOf<List<String>>(emptyList()) }
     var unidades by remember { mutableStateOf<List<UnidadEntidad>>(emptyList()) }
@@ -121,6 +127,70 @@ private fun App(base: BaseLocal) {
         return resultado
     }
 
+    /**
+     * Resuelve un código nuevo, venga de la cámara o escrito a mano: los
+     * dos entran por acá para heredar el mismo timbre, el mismo aviso de
+     * repetido y el mismo camino al alta rápida sin duplicar nada.
+     */
+    val leerCodigo: (String) -> Unit = { codigo ->
+        // La cámara avisa una lectura por cuadro, y esta guarda sola no
+        // alcanza: decide acá, pero el estado se escribe recién cuando la
+        // corrutina vuelve de la base. En esa ventana entra el barrido que
+        // hace el operario al bajar el celular para tocar «Darlo de alta»,
+        // y la lectura de otro estante se aplica encima de lo que ya tocó.
+        //
+        // La bandera se toma en el mismo golpe que la lectura, así hay una
+        // sola búsqueda en vuelo por vez y no un chorro de consultas por
+        // cuadro. Mira lo mismo que decide `fichaAbierta`: si mirara otra
+        // cosa, la cámara seguiría entregando lecturas con una ficha en
+        // pantalla.
+        val laToma = hallazgo == null && altaDe == null &&
+            leyendo.compareAndSet(false, true)
+
+        if (laToma) {
+            alcance.launch {
+                try {
+                    // Todo lo que consulta la base va primero: después de
+                    // revalidar no puede quedar ninguna suspensión, o la
+                    // ventana se vuelve a abrir entre el control y la
+                    // escritura.
+                    val h = contador.buscar(codigo)
+                    val previosDelArticulo = (h as? Hallazgo.Encontrado)
+                        ?.let { contador.conteosDe(it.articulo) }
+
+                    // Lo que valía al leer puede no valer más: si mientras
+                    // tanto se abrió una ficha o el alta, esta lectura
+                    // llegó tarde y se descarta —si no, se aplica encima de
+                    // lo que el operario ya eligió, que es lo único que él
+                    // vio.
+                    if (hallazgo != null || altaDe != null) return@launch
+
+                    // El mismo desconocido, cuadro tras cuadro, no se
+                    // vuelve a anunciar: la franja ya lo está mostrando.
+                    val anunciar = hayQueAnunciar(h, codigoDesconocido)
+
+                    when (h) {
+                        is Hallazgo.Encontrado -> {
+                            if (anunciar) avisos.leido()
+                            avisoDesconocido = null
+                            codigoDesconocido = null
+                            previos = previosDelArticulo.orEmpty()
+                            hallazgo = h
+                        }
+                        is Hallazgo.Desconocido -> {
+                            if (anunciar) avisos.desconocido()
+                            codigoDesconocido = h.codigo
+                            avisoDesconocido =
+                                "Este código no está en el conteo: ${h.codigo}"
+                        }
+                    }
+                } finally {
+                    leyendo.set(false)
+                }
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         vinculacion.value = base.vinculacionDao().actual()
         pantalla = pantallaSegun(vinculacion.value)
@@ -163,11 +233,18 @@ private fun App(base: BaseLocal) {
 
         Pantalla.Escaneando -> {
             val quien = vinculacion.value
+            // Cuando la única causa es `ingresandoAMano`, `fichaAbierta`
+            // igual da true: `PantallaEscaneo` muestra la `Surface` de la
+            // ficha, pero el contenido que le pasamos (más abajo) no
+            // dibuja nada para ese caso, así que queda en 0dp de alto —no
+            // se ve nada raro en pantalla.
+            val hayAlgoAbierto = fichaAbierta(hallazgo, altaDe, ingresandoAMano)
+
             PantallaEscaneo(
                 operario = quien?.operarioNombre.orEmpty(),
                 pasada = quien?.pasadaEtiqueta.orEmpty(),
                 pendientes = pendientes,
-                fichaAbierta = hallazgo is Hallazgo.Encontrado || altaDe != null,
+                fichaAbierta = hayAlgoAbierto,
                 avisoDeDesconocido = avisoDesconocido,
                 alDarDeAlta = codigoDesconocido?.let { codigo ->
                     {
@@ -198,67 +275,9 @@ private fun App(base: BaseLocal) {
                         }
                     }
                 },
-                alLeer = { codigo ->
-                    // La cámara avisa una lectura por cuadro, y esta guarda
-                    // sola no alcanza: decide acá, pero el estado se escribe
-                    // recién cuando la corrutina vuelve de la base. En esa
-                    // ventana entra el barrido que hace el operario al bajar
-                    // el celular para tocar «Darlo de alta», y la lectura de
-                    // otro estante se aplica encima de lo que ya tocó.
-                    //
-                    // La bandera se toma en el mismo golpe que la lectura,
-                    // así hay una sola búsqueda en vuelo por vez y no un
-                    // chorro de consultas por cuadro.
-                    // Mira lo mismo que decide `fichaAbierta`: si mirara otra
-                    // cosa, la cámara seguiría entregando lecturas con una
-                    // ficha en pantalla.
-                    val laToma = hallazgo == null && altaDe == null &&
-                        leyendo.compareAndSet(false, true)
-
-                    if (laToma) {
-                        alcance.launch {
-                            try {
-                                // Todo lo que consulta la base va primero:
-                                // después de revalidar no puede quedar ninguna
-                                // suspensión, o la ventana se vuelve a abrir
-                                // entre el control y la escritura.
-                                val h = contador.buscar(codigo)
-                                val previosDelArticulo = (h as? Hallazgo.Encontrado)
-                                    ?.let { contador.conteosDe(it.articulo) }
-
-                                // Lo que valía al leer puede no valer más: si
-                                // mientras tanto se abrió una ficha o el alta,
-                                // esta lectura llegó tarde y se descarta —si
-                                // no, se aplica encima de lo que el operario
-                                // ya eligió, que es lo único que él vio.
-                                if (hallazgo != null || altaDe != null) return@launch
-
-                                // El mismo desconocido, cuadro tras cuadro, no
-                                // se vuelve a anunciar: la franja ya lo está
-                                // mostrando.
-                                val anunciar = hayQueAnunciar(h, codigoDesconocido)
-
-                                when (h) {
-                                    is Hallazgo.Encontrado -> {
-                                        if (anunciar) avisos.leido()
-                                        avisoDesconocido = null
-                                        codigoDesconocido = null
-                                        previos = previosDelArticulo.orEmpty()
-                                        hallazgo = h
-                                    }
-                                    is Hallazgo.Desconocido -> {
-                                        if (anunciar) avisos.desconocido()
-                                        codigoDesconocido = h.codigo
-                                        avisoDesconocido =
-                                            "Este código no está en el conteo: ${h.codigo}"
-                                    }
-                                }
-                            } finally {
-                                leyendo.set(false)
-                            }
-                        }
-                    }
-                },
+                puedeIngresarAMano = !hayAlgoAbierto,
+                alIngresarAMano = { ingresandoAMano = true },
+                alLeer = leerCodigo,
             ) {
                 (hallazgo as? Hallazgo.Encontrado)?.let { encontrado ->
                     FichaDelArticulo(
@@ -378,6 +397,16 @@ private fun App(base: BaseLocal) {
                         }
                     }
                 }
+            }
+
+            if (ingresandoAMano) {
+                DialogoCodigoAMano(
+                    alConfirmar = { codigo ->
+                        ingresandoAMano = false
+                        leerCodigo(codigo)
+                    },
+                    alCancelar = { ingresandoAMano = false },
+                )
             }
         }
     }

@@ -104,6 +104,9 @@ fun PantallaEscaneo(
     alLeer: (String) -> Unit,
     estadoDeSubida: EstadoDeSubida,
     alSubir: () -> Unit,
+    /** Si el operario puede abrir el ingreso de código a mano ahora mismo. */
+    puedeIngresarAMano: Boolean,
+    alIngresarAMano: () -> Unit,
     /**
      * La cámara. Se reemplaza en los tests: CameraX no arranca sin celular,
      * y sin este hueco la pantalla entera queda sin cubrir, incluido el botón
@@ -123,11 +126,23 @@ fun PantallaEscaneo(
         ) {
             Text(pasada, style = MaterialTheme.typography.titleMedium)
             Text(operario, style = MaterialTheme.typography.bodyMedium)
-            IndicadorDePendientes(
-                pendientes = pendientes,
-                estado = estadoDeSubida,
-                alSubir = alSubir,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = alIngresarAMano,
+                    enabled = puedeIngresarAMano,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                ) {
+                    Text("A mano", style = MaterialTheme.typography.bodySmall)
+                }
+                IndicadorDePendientes(
+                    pendientes = pendientes,
+                    estado = estadoDeSubida,
+                    alSubir = alSubir,
+                )
+            }
         }
 
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
