@@ -13,8 +13,8 @@ from app.repos import sesiones
 from app.servicios import tablero
 
 COLUMNAS_RESUMEN = [
-    "id_orden", "tipo", "material", "sku", "descripcion", "grupo",
-    "ubicacion", "ubicacion_real", "unidad", "stock_sistema",
+    "id_orden", "tipo", "material", "sku", "codigos_de_barra", "descripcion",
+    "grupo", "ubicacion", "ubicacion_real", "unidad", "stock_sistema",
     "ultimo_conteo", "dif", "costo_unitario", "dif_valorizada",
     "estado", "fecha", "observaciones",
 ]
@@ -53,6 +53,7 @@ def resumen_por_sku(con, sesion_id, filtros=None):
             "tipo": fila["tipo"] or "",
             "material": fila["material"] or "",
             "sku": fila["sku"],
+            "codigos_de_barra": fila["codigos_de_barra"] or "",
             "descripcion": fila["descripcion"],
             "grupo": fila["grupo"] or "",
             "ubicacion": fila["ubicacion"] or "",

@@ -37,8 +37,8 @@ def test_resumen_tiene_las_columnas_del_spec(con, escenario):
     filas = leer_csv(exportacion.resumen_por_sku(con, escenario["sesion_id"]))
 
     assert list(filas[0].keys()) == [
-        "id_orden", "tipo", "material", "sku", "descripcion", "grupo",
-        "ubicacion", "ubicacion_real", "unidad", "stock_sistema",
+        "id_orden", "tipo", "material", "sku", "codigos_de_barra", "descripcion",
+        "grupo", "ubicacion", "ubicacion_real", "unidad", "stock_sistema",
         "ultimo_conteo", "dif", "costo_unitario", "dif_valorizada",
         "estado", "fecha", "observaciones",
     ]
@@ -187,3 +187,10 @@ def test_detalle_marca_fuera_de_asignacion(con, escenario):
     fila_b = next(f for f in filas if f["sku"] == "B")
 
     assert fila_b["fuera_asignacion"] == "SI"
+
+
+def test_resumen_trae_los_codigos_de_barra(con, escenario):
+    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["sesion_id"]))
+    fila_a = next(f for f in filas if f["sku"] == "A")
+
+    assert fila_a["codigos_de_barra"] == "A"

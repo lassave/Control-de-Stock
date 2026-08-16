@@ -123,6 +123,18 @@ def _consulta_base():
                 FROM vigentes v3
                 WHERE v3.articulo_id = a.id AND v3.observaciones IS NOT NULL
             ) AS observaciones,
+            (
+                -- Ordenado en una subconsulta aparte: GROUP_CONCAT no
+                -- acepta ORDER BY en esta versión de SQLite, y sin orden
+                -- explícito el resultado podría cambiar entre una consulta
+                -- y la siguiente sin que nadie lo pidiera.
+                SELECT GROUP_CONCAT(codigo, ', ')
+                FROM (
+                    SELECT codigo FROM codigo_barras
+                    WHERE articulo_id = a.id
+                    ORDER BY id
+                )
+            ) AS codigos_de_barra,
             SUM(v.cantidad) AS total,
             COUNT(v.uuid) AS cantidad_conteos,
             MAX(v.fuera_asignacion) AS fuera_asignacion,
@@ -167,6 +179,7 @@ def _armar_fila(fila, sesion):
         "tipo": fila["tipo"],
         "material": fila["material"],
         "sku": fila["sku"],
+        "codigos_de_barra": fila["codigos_de_barra"],
         "descripcion": fila["descripcion"],
         "grupo": fila["grupo"],
         "ubicacion": fila["ubicacion"],

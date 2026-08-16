@@ -362,3 +362,40 @@ def test_marca_si_alguno_de_varios_conteos_esta_fuera_de_asignacion(con, escenar
 
     fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
     assert fila["fuera_asignacion"] is True
+
+
+def test_trae_el_codigo_de_barra_del_articulo(con, escenario):
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    # El maestro del escenario no trae columna de código: importacion.py usa
+    # el SKU como código cuando no viene ninguno.
+    assert fila["codigos_de_barra"] == "A"
+
+
+def test_trae_varios_codigos_en_el_orden_en_que_se_cargaron(con, escenario):
+    articulo_id = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
+        (escenario["sesion_id"],),
+    ).fetchone()["id"]
+    con.execute(
+        "INSERT INTO codigo_barras (articulo_id, codigo) VALUES (?, ?)",
+        (articulo_id, "7791111111111"),
+    )
+    con.commit()
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["codigos_de_barra"] == "A, 7791111111111"
+
+
+def test_sin_ningun_codigo_no_rompe_la_fila(con, escenario):
+    articulo_id = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
+        (escenario["sesion_id"],),
+    ).fetchone()["id"]
+    con.execute("DELETE FROM codigo_barras WHERE articulo_id = ?", (articulo_id,))
+    con.commit()
+
+    fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
+
+    assert fila["codigos_de_barra"] is None
