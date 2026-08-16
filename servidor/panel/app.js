@@ -86,6 +86,7 @@ function dibujarFila(fila) {
       <td>${esc(fila.tipo)}</td>
       <td>${esc(fila.material)}</td>
       <td>${esc(fila.sku)}</td>
+      <td>${esc(fila.codigos_de_barra)}</td>
       <td>${esc(fila.descripcion)}</td>
       <td>${esc(fila.grupo)}</td>
       <td>${esc(fila.ubicacion)}</td>
