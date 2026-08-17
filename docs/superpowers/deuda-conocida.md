@@ -107,9 +107,13 @@ traceback. El panel es nuestro propio JavaScript, así que hoy no pasa.
 array JSON válido da 500. El de altas sí lo cubre.
 
 **La carrera de KSP con los esquemas de Room.** `debug` y `release` escriben
-en el mismo directorio: la primera corrida después de subir la versión de la
-base falla con un error de deserialización que no dice nada de la causa. Va a
-morder en la versión 3.
+en el mismo directorio: correr las dos variantes en paralelo después de subir
+la versión de la base falla con un error de deserialización que no dice nada
+de la causa. El mitigante ya se usó dos veces sin problema (versión 3 y 4):
+generar el schema con una sola variante (`gradle :app:kspDebugKotlin`), copiar
+el `createSql` textual de ahí a la `Migration`, y recién después correr la
+suite completa. Sigue siendo manual — nada evita que alguien corra
+`gradle build` a secas en la próxima migración y pise el archivo.
 
 ## APK firmado
 
@@ -229,6 +233,28 @@ la lista del celular hereda la misma comparación exacta entre
 dos vienen del mismo maestro recortado, pero un espacio de más en cualquiera
 de los dos lados dejaría un artículo asignado sin aparecer en la lista de
 nadie.
+
+## Recuento por diferencias
+
+**No se puede cerrar un recuento individual sin cerrar toda la sesión.**
+Quedó afuera del diseño a propósito: un operario que terminó su recuento
+sigue «atado» a esa pasada —para `conteos.registrar` y para el bloqueo del
+celular— hasta que se cierra la sesión entera o se lo desasigna a mano desde
+el panel. Es una extensión chica si hace falta más adelante.
+
+**Un solo aviso sonoro para «desconocido» y para «fuera de pasada».** El
+diseño original lo dejó afuera a propósito: separarlos es un detalle menor,
+una sola tarea, si el cliente lo pide.
+
+**Ventana angosta entre vincularse y el primer refresco.** `Vinculador.vincular`
+guarda la pasada activa que devuelve `/api/dispositivo/vincular`, pero ese
+endpoint no manda `es_parcial` ni los SKU permitidos —no forman parte del
+contrato de vinculación, solo del de `mis-ubicaciones`—. Si el operario se
+vincula estando ya asignado a un recuento, por un instante el celular no
+bloquea nada, hasta que `refrescarListaAsignada()` corre justo después en el
+mismo flujo y corrige el estado. No se alcanzó a observar en la práctica —el
+refresco es parte de la misma vinculación, no un paso aparte— pero es una
+ventana real si algo entre medio llegara a fallar.
 
 ## Textos
 

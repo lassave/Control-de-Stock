@@ -36,6 +36,16 @@ Dejá la ventana negra abierta mientras dure el conteo.
   propios filtros y su propia exportación. Las ubicaciones que nadie tiene
   asignadas quedan marcadas «⚑ sin asignar»: es la forma de darse cuenta,
   antes de cerrar el inventario, de que hay un sector que nadie va a contar.
+- **Recuento**: al cerrar (o sin cerrar) el conteo, la pestaña lista los SKU
+  «A recontar» — los que quedaron fuera de la tolerancia configurada acá
+  mismo. Se marcan a mano los que van a recuento (arranca vacío, a
+  propósito) y «Abrir recuento» crea un Conteo 2 con esos SKU. Se le asigna
+  por ubicación a un operario, igual que en Operarios, y mientras ese
+  recuento esté abierto su celular **solo acepta contar esos SKU** — el
+  resto avisa sin bloquear la app. Pueden convivir varios recuentos abiertos
+  a la vez, pero un mismo operario nunca puede estar asignado a dos a la
+  vez. No hace falta volver a vincular el celular: en cuanto se refresca la
+  lista, «Lo mío» muestra la etiqueta de la pasada nueva.
 - **Exportar**: resumen por SKU, detalle escaneo por escaneo, y el reparto de
   la pestaña de avance — los tres con los filtros que estén puestos en su
   pantalla. El detalle trae una columna `fuera_asignacion` (`SI` o vacío) que
@@ -67,6 +77,12 @@ cualquier cosa como antes de que esta pantalla existiera. Un botón
 «Actualizar», y automáticamente al abrir la app o volver del fondo, piden al
 servidor la asignación vigente; sin señal se sigue mostrando la última que
 bajó.
+
+Debajo del título, «Lo mío» muestra en qué pasada está contando el operario
+—«Conteo 1», o «Conteo 2» si le tocó un recuento—. Durante un recuento el
+celular solo acepta los SKU que le marcaron: escanear cualquier otro avisa
+con un cartel («No corresponde a este conteo») sin bloquear la app y sin
+ofrecer darlo de alta, porque el artículo ya existe.
 
 ## La base de datos
 
