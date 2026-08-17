@@ -27,7 +27,7 @@ COLUMNAS_DETALLE = [
 ]
 
 COLUMNAS_REPARTO = [
-    "ubicacion", "id_orden", "sku", "descripcion",
+    "ubicacion", "sku", "descripcion",
     "asignado_a", "contado_por", "contado", "estado",
 ]
 
@@ -151,7 +151,6 @@ def reparto(con, sesion_id, filtros=None):
     for fila in reparto_servicio.filas(con, sesion_id, filtros):
         filas.append({
             "ubicacion": fila["ubicacion"] or "",
-            "id_orden": fila["id_orden"],
             "sku": fila["sku"],
             "descripcion": fila["descripcion"],
             "asignado_a": " | ".join(fila["asignado_a"]),

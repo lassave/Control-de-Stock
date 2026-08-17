@@ -127,3 +127,29 @@ def test_operarios_con_ubicaciones_sin_pasada_abierta_no_rompe(con, escenario):
     lista = asignaciones.operarios_con_ubicaciones(con)
 
     assert lista[0]["ubicaciones_asignadas"] == []
+
+
+def test_asignados_por_articulo(con, escenario):
+    """Es la funcion compartida que usan tanto el tablero como el reparto."""
+    asignaciones.reemplazar(
+        con, escenario["pasada_id"], escenario["juan"]["id"], ["Deposito A"]
+    )
+
+    articulo_a = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
+        (escenario["sesion_id"],),
+    ).fetchone()["id"]
+
+    resultado = asignaciones.asignados_por_articulo(con, escenario["sesion_id"])
+
+    assert resultado == {articulo_a: ["Juan"]}
+
+
+def test_asignados_por_articulo_sin_pasada_devuelve_vacio(con):
+    con.execute(
+        "INSERT INTO sesion (nombre, fecha_creacion) VALUES ('Suelta', ?)",
+        ("2026-08-17T10:00:00Z",),
+    )
+    sesion_id = con.execute("SELECT id FROM sesion WHERE nombre = 'Suelta'").fetchone()["id"]
+
+    assert asignaciones.asignados_por_articulo(con, sesion_id) == {}

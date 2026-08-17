@@ -61,6 +61,35 @@ def de_operario_en_sesion(con, sesion_id, operario_id):
     }
 
 
+def asignados_por_articulo(con, sesion_id):
+    """A quién le toca cada artículo, según su ubicación, en la última pasada.
+
+    Compartida entre `tablero` y `reparto`: la misma pregunta —quién es
+    responsable de este artículo— tiene que contestarse igual en los dos
+    lugares donde se muestra.
+    """
+    pasada = sesiones.ultima_pasada(con, sesion_id)
+    if pasada is None:
+        return {}
+
+    filas = con.execute(
+        """
+        SELECT a.id AS articulo_id, o.nombre
+        FROM articulo a
+        JOIN asignacion s ON s.ubicacion = a.ubicacion AND s.pasada_id = ?
+        JOIN operario o ON o.id = s.operario_id
+        WHERE a.sesion_id = ? AND a.fusionado_en IS NULL
+        ORDER BY a.id, o.nombre
+        """,
+        (pasada["id"], sesion_id),
+    ).fetchall()
+
+    resultado = {}
+    for fila in filas:
+        resultado.setdefault(fila["articulo_id"], []).append(fila["nombre"])
+    return resultado
+
+
 def ubicaciones_distintas(con, sesion_id):
     """Las ubicaciones del maestro de esta sesión, para elegir qué asignar."""
     filas = con.execute(

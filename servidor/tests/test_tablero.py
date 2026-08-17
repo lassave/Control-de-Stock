@@ -399,3 +399,17 @@ def test_sin_ningun_codigo_no_rompe_la_fila(con, escenario):
     fila = next(f for f in tablero.filas(con, escenario["sesion_id"]) if f["sku"] == "A")
 
     assert fila["codigos_de_barra"] is None
+
+
+# --- A quién le toca cada artículo, en el tablero principal -----------------
+
+def test_tablero_muestra_a_quien_le_toca(con, escenario):
+    pasada = sesiones.pasada_abierta(con, escenario["sesion_id"])
+    asignaciones.reemplazar(con, pasada["id"], escenario["juan"]["id"], ["P-1"])
+
+    filas = tablero.filas(con, escenario["sesion_id"])
+    fila_a = next(f for f in filas if f["sku"] == "A")
+    fila_c = next(f for f in filas if f["sku"] == "C")
+
+    assert fila_a["asignado_a"] == ["Juan"]
+    assert fila_c["asignado_a"] == []

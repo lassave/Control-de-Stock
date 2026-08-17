@@ -154,3 +154,68 @@ def test_las_asignaciones_salen_de_la_ultima_pasada_aunque_este_cerrada(con, esc
     assert fila_de(reparto.filas(con, escenario["sesion_id"]), "A")["asignado_a"] == [
         "Juan",
     ]
+
+
+# --- El resumen por operario --------------------------------------------------
+
+def operario_de(resultado, nombre):
+    return next(o for o in resultado if o["operario"] == nombre)
+
+
+def test_avance_por_operario_cuenta_lo_propio(con, escenario):
+    asignaciones.reemplazar(
+        con, escenario["pasada_id"], escenario["juan"]["id"], ["Deposito A", "Deposito B"]
+    )
+    contar(con, escenario, escenario["juan"], "A", 40000, "u1")
+
+    juan = operario_de(reparto.avance_por_operario(con, escenario["sesion_id"]), "Juan")
+
+    assert juan["total"] == 2
+    assert juan["contados"] == 1
+    assert juan["sin_contar"] == 1
+    assert juan["avance_pct"] == 50.0
+    assert juan["ubicaciones"] == ["Deposito A", "Deposito B"]
+
+
+def test_avance_por_operario_no_cuenta_lo_que_conto_otro(con, escenario):
+    """«Contado» es lo que hizo el propio operario, no cualquiera."""
+    asignaciones.reemplazar(
+        con, escenario["pasada_id"], escenario["juan"]["id"], ["Deposito A"]
+    )
+    contar(con, escenario, escenario["maria"], "A", 40000, "u1")
+
+    juan = operario_de(reparto.avance_por_operario(con, escenario["sesion_id"]), "Juan")
+
+    assert juan["contados"] == 0
+    assert juan["avance_pct"] == 0.0
+
+
+def test_avance_por_operario_omite_a_quien_no_tiene_nada_asignado(con, escenario):
+    resultado = reparto.avance_por_operario(con, escenario["sesion_id"])
+
+    assert [o["operario"] for o in resultado] == []
+
+
+def test_avance_por_operario_trae_el_detalle_ordenado(con, escenario):
+    asignaciones.reemplazar(
+        con, escenario["pasada_id"], escenario["juan"]["id"], ["Deposito A"]
+    )
+
+    juan = operario_de(reparto.avance_por_operario(con, escenario["sesion_id"]), "Juan")
+
+    assert [d["sku"] for d in juan["detalle"]] == ["A"]
+    assert juan["detalle"][0]["contado"] is False
+
+
+def test_avance_por_operario_respeta_los_filtros(con, escenario):
+    asignaciones.reemplazar(
+        con, escenario["pasada_id"], escenario["juan"]["id"], ["Deposito A", "Deposito B"]
+    )
+
+    juan = operario_de(
+        reparto.avance_por_operario(con, escenario["sesion_id"], {"ubicacion": "Deposito A"}),
+        "Juan",
+    )
+
+    assert juan["total"] == 1
+    assert [d["sku"] for d in juan["detalle"]] == ["A"]

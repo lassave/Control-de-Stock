@@ -6,38 +6,8 @@ escribirlos de nuevo acá garantizaría que tarde o temprano esta pestaña y el
 tablero digan cosas distintas del mismo SKU.
 """
 
-from app.repos import sesiones
+from app.repos import asignaciones
 from app.servicios.tablero import CTE_VIGENTES, filas as filas_del_tablero
-
-
-def _asignados_por_articulo(con, sesion_id):
-    """Operarios con esa ubicación asignada, en la última pasada de la sesión.
-
-    La última pasada y no la abierta a propósito: quién tiene qué se mira
-    sobre todo cuando el inventario ya cerró, y `pasada_abierta` tiraría
-    `ValueError` justo en ese momento.
-    """
-    sesion = sesiones.obtener(con, sesion_id)
-    pasada = sesiones.ultima_pasada(con, sesion_id)
-    if pasada is None:
-        return {}
-
-    filas = con.execute(
-        """
-        SELECT a.id AS articulo_id, o.nombre
-        FROM articulo a
-        JOIN asignacion s ON s.ubicacion = a.ubicacion AND s.pasada_id = ?
-        JOIN operario o ON o.id = s.operario_id
-        WHERE a.sesion_id = ? AND a.fusionado_en IS NULL
-        ORDER BY a.id, o.nombre
-        """,
-        (pasada["id"], sesion["id"]),
-    ).fetchall()
-
-    resultado = {}
-    for fila in filas:
-        resultado.setdefault(fila["articulo_id"], []).append(fila["nombre"])
-    return resultado
 
 
 def _contadores_por_articulo(con, sesion_id):
@@ -77,7 +47,7 @@ def filas(con, sesion_id, filtros=None):
     viajen en el archivo.
     """
     base = filas_del_tablero(con, sesion_id, filtros)
-    asignados = _asignados_por_articulo(con, sesion_id)
+    asignados = asignaciones.asignados_por_articulo(con, sesion_id)
     contadores = _contadores_por_articulo(con, sesion_id)
 
     return [
@@ -93,3 +63,52 @@ def filas(con, sesion_id, filtros=None):
         }
         for fila in base
     ]
+
+
+def avance_por_operario(con, sesion_id, filtros=None):
+    """El resumen de cada operario: cuánto le tocó, cuánto contó él mismo.
+
+    «Contado» es lo que el propio operario contó, no lo que contó cualquiera
+    —a diferencia de «contado_por» en `filas`—: es la misma pregunta que se
+    hace la pantalla «Lo mío» del celular, aplicada a todos a la vez. Solo
+    aparecen los operarios con al menos una ubicación asignada; uno sin nada
+    asignado no tiene ningún resumen que mostrar.
+    """
+    con_ubicaciones = asignaciones.operarios_con_ubicaciones(con)
+    todas = filas(con, sesion_id, filtros)
+
+    resultado = []
+    for operario in con_ubicaciones:
+        ubicaciones_asignadas = operario["ubicaciones_asignadas"]
+        if not ubicaciones_asignadas:
+            continue
+
+        nombre = operario["nombre"]
+        propias = sorted(
+            (fila for fila in todas if nombre in fila["asignado_a"]),
+            key=lambda fila: fila["id_orden"],
+        )
+        detalle = [
+            {
+                "ubicacion": fila["ubicacion"],
+                "sku": fila["sku"],
+                "descripcion": fila["descripcion"],
+                "estado": fila["estado"],
+                "contado": nombre in fila["contado_por"],
+            }
+            for fila in propias
+        ]
+        total = len(detalle)
+        contados = sum(1 for item in detalle if item["contado"])
+
+        resultado.append({
+            "operario": nombre,
+            "ubicaciones": ubicaciones_asignadas,
+            "total": total,
+            "contados": contados,
+            "sin_contar": total - contados,
+            "avance_pct": round(contados / total * 100, 1) if total else 0.0,
+            "detalle": detalle,
+        })
+
+    return resultado

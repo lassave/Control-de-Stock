@@ -202,7 +202,7 @@ def test_reparto_tiene_las_columnas_del_spec(con, escenario):
     filas = leer_csv(exportacion.reparto(con, escenario["sesion_id"]))
 
     assert list(filas[0].keys()) == [
-        "ubicacion", "id_orden", "sku", "descripcion",
+        "ubicacion", "sku", "descripcion",
         "asignado_a", "contado_por", "contado", "estado",
     ]
 

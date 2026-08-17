@@ -954,4 +954,23 @@ def test_exportar_reparto(cliente, sesion):
     respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/exportar/reparto")
 
     assert respuesta.status_code == 200
-    assert "ubicacion;id_orden;sku" in respuesta.text
+    assert "ubicacion;sku;descripcion" in respuesta.text
+
+
+def test_ver_avance_por_operario(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    asignar(cliente, sesion["id"], operario["id"], ["Deposito A"])
+
+    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/reparto/operarios")
+
+    assert respuesta.status_code == 200
+    operarios = respuesta.json()["operarios"]
+    assert operarios[0]["operario"] == "Juan"
+    assert operarios[0]["total"] == 1
+
+
+def test_ver_avance_por_operario_sesion_inexistente(cliente):
+    respuesta = cliente.get("/api/sesiones/999/reparto/operarios")
+
+    assert respuesta.status_code == 404

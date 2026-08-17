@@ -1,6 +1,6 @@
 """Cálculo del tablero: valor vigente, diferencia y estado de cada artículo."""
 
-from app.repos import sesiones
+from app.repos import asignaciones, sesiones
 
 SIN_CONTAR = "SIN CONTAR"
 CONSOLIDADO = "CONSOLIDADO"
@@ -157,7 +157,7 @@ def _consulta_base():
     """
 
 
-def _armar_fila(fila, sesion):
+def _armar_fila(fila, sesion, asignados):
     hubo_conteo = fila["cantidad_conteos"] > 0
     total = fila["total"] if hubo_conteo else None
     dif = total - fila["stock_sistema"] if hubo_conteo else None
@@ -203,6 +203,10 @@ def _armar_fila(fila, sesion):
         # MAX() sobre un LEFT JOIN sin conteos da NULL, y bool(None) es
         # False: un artículo sin contar no puede estar fuera de asignación.
         "fuera_asignacion": bool(fila["fuera_asignacion"]),
+        # Lista vacía = nadie tiene asignada la ubicación de este artículo,
+        # el caso que conviene resaltar: es lo que corre riesgo de no
+        # contarse.
+        "asignado_a": asignados.get(fila["id"], []),
         "fecha": fila["fecha"],
         "observaciones": fila["observaciones"],
         "origen": fila["origen"],
@@ -231,7 +235,8 @@ def filas(con, sesion_id, filtros=None):
     """Las filas del tablero, ya calculadas y filtradas."""
     sesion = sesiones.obtener(con, sesion_id)
     crudas = con.execute(_consulta_base(), (sesion_id,)).fetchall()
-    resultado = [_armar_fila(fila, sesion) for fila in crudas]
+    asignados = asignaciones.asignados_por_articulo(con, sesion_id)
+    resultado = [_armar_fila(fila, sesion, asignados) for fila in crudas]
 
     if filtros:
         resultado = [fila for fila in resultado if _pasa_filtros(fila, filtros)]

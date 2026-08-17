@@ -171,6 +171,24 @@ def ver_reparto(
         raise _no_encontrada(error) from error
 
 
+@router.get("/sesiones/{sesion_id}/reparto/operarios")
+def ver_avance_por_operario(
+    sesion_id: int,
+    request: Request,
+    tipo: str = "", material: str = "", grupo: str = "",
+    ubicacion: str = "", estado: str = "", texto: str = "",
+    solo_errores_carga: bool = False,
+):
+    con = _con(request)
+    filtros = _filtros(
+        tipo, material, grupo, ubicacion, estado, texto, solo_errores_carga
+    )
+    try:
+        return {"operarios": reparto.avance_por_operario(con, sesion_id, filtros)}
+    except ValueError as error:
+        raise _no_encontrada(error) from error
+
+
 @router.get("/sesiones/{sesion_id}/resumen")
 def ver_resumen(sesion_id: int, request: Request):
     try:
