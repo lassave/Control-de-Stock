@@ -45,6 +45,7 @@ import com.controldestock.nucleo.UbicacionAsignada
 @Composable
 fun PantallaMiLista(
     ubicaciones: List<UbicacionAsignada>,
+    pasada: String,
     actualizando: Boolean,
     avisoDeActualizacion: String?,
     pendientes: Int,
@@ -59,6 +60,11 @@ fun PantallaMiLista(
                 "PRODUCTOS ASIGNADOS",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
+            )
+            Text(
+                pasada,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             avisoDeActualizacion?.let {
                 Text(

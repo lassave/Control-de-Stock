@@ -307,6 +307,7 @@ private fun App(base: BaseLocal) {
 
         Pantalla.EnLaLista -> PantallaMiLista(
             ubicaciones = ubicacionesAsignadas,
+            pasada = vinculacion.value?.pasadaEtiqueta.orEmpty(),
             actualizando = actualizandoLista,
             avisoDeActualizacion = avisoDeActualizacion,
             pendientes = pendientes,

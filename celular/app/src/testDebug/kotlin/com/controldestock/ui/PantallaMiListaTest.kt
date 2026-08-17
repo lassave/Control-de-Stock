@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.controldestock.nucleo.RenglonAsignado
 import com.controldestock.nucleo.UbicacionAsignada
 import org.junit.Assert.assertTrue
@@ -26,6 +27,7 @@ class PantallaMiListaTest {
 
     private fun montar(
         ubicaciones: List<UbicacionAsignada> = emptyList(),
+        pasada: String = "Conteo 1",
         actualizando: Boolean = false,
         avisoDeActualizacion: String? = null,
         pendientes: Int = 0,
@@ -37,6 +39,7 @@ class PantallaMiListaTest {
         compose.setContent {
             PantallaMiLista(
                 ubicaciones = ubicaciones,
+                pasada = pasada,
                 actualizando = actualizando,
                 avisoDeActualizacion = avisoDeActualizacion,
                 pendientes = pendientes,
@@ -53,6 +56,13 @@ class PantallaMiListaTest {
         montar()
 
         compose.onNodeWithText("PRODUCTOS ASIGNADOS").assertIsDisplayed()
+    }
+
+    @Test
+    fun `la etiqueta de la pasada activa se muestra bajo el titulo`() {
+        montar(pasada = "Conteo 2")
+
+        compose.onNodeWithText("Conteo 2").assertIsDisplayed()
     }
 
     @Test
@@ -92,8 +102,12 @@ class PantallaMiListaTest {
             ),
         )
 
-        compose.onNodeWithText("CONTADO").assertIsDisplayed()
-        compose.onNodeWithText("5 UN", substring = true).assertIsDisplayed()
+        // Con scroll: en una ventana chica el renglón queda debajo de la
+        // tarjeta y de la etiqueta de la pasada, igual que en un celular real
+        // con poco alto disponible. `performScrollTo` es lo mismo que haría
+        // el dedo del operario.
+        compose.onNodeWithText("CONTADO").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("5 UN", substring = true).performScrollTo().assertIsDisplayed()
     }
 
     @Test
