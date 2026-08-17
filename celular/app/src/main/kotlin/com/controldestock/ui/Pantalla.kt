@@ -27,11 +27,15 @@ sealed class Pantalla {
 }
 
 /**
- * El operario abre la app para contar, no para ver un menú: si ya está
- * vinculado, la cámara arranca sin que tenga que tocar nada.
+ * A qué pantalla lleva estar (o no) vinculado.
+ *
+ * Antes iba directo a `Escaneando`: «el operario abre la app para contar, no
+ * para ver un menú». Con el reparto por ubicación esa premisa cambió — ahora
+ * hay algo que mirar antes de escanear, así que la app abre siempre en
+ * `EnLaLista`, y de ahí el operario pasa a contar con un toque.
  */
 fun pantallaSegun(vinculacion: VinculacionEntidad?): Pantalla =
-    if (vinculacion == null) Pantalla.Vinculando else Pantalla.Escaneando
+    if (vinculacion == null) Pantalla.Vinculando else Pantalla.EnLaLista
 
 /**
  * Si esta lectura hay que anunciarla con sonido y vibración.

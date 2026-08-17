@@ -2,6 +2,7 @@ package com.controldestock
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,13 +24,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.controldestock.datos.BaseLocal
 import com.controldestock.datos.UnidadEntidad
 import com.controldestock.datos.VinculacionEntidad
 import com.controldestock.nucleo.ConteoLocal
 import com.controldestock.nucleo.DatosDelQr
 import com.controldestock.nucleo.RelojDelSistema
+import com.controldestock.nucleo.UbicacionAsignada
 import com.controldestock.red.ClienteServidor
+import com.controldestock.red.ErrorDeServidor
+import com.controldestock.ui.Atras
 import com.controldestock.ui.AvisoSonoro
 import com.controldestock.ui.DialogoCodigoAMano
 import com.controldestock.ui.EstadoDeSubida
@@ -37,8 +43,10 @@ import com.controldestock.ui.FichaDeAlta
 import com.controldestock.ui.FichaDelArticulo
 import com.controldestock.ui.Pantalla
 import com.controldestock.ui.PantallaEscaneo
+import com.controldestock.ui.PantallaMiLista
 import com.controldestock.ui.PantallaVinculacion
 import com.controldestock.ui.Tema
+import com.controldestock.ui.atrasCierra
 import com.controldestock.ui.estadoTrasSubir
 import com.controldestock.ui.fichaAbierta
 import com.controldestock.ui.hayQueAnunciar
@@ -85,6 +93,9 @@ private fun App(base: BaseLocal) {
     var pendientes by remember { mutableStateOf(0) }
     var ubicaciones by remember { mutableStateOf<List<String>>(emptyList()) }
     var unidades by remember { mutableStateOf<List<UnidadEntidad>>(emptyList()) }
+    var ubicacionesAsignadas by remember { mutableStateOf<List<UbicacionAsignada>>(emptyList()) }
+    var actualizandoLista by remember { mutableStateOf(false) }
+    var avisoDeActualizacion by remember { mutableStateOf<String?>(null) }
     var previos by remember { mutableStateOf<List<ConteoLocal>>(emptyList()) }
     val vinculacion = remember { mutableStateOf<VinculacionEntidad?>(null) }
     // Bandera común y no estado de Compose: no tiene nada que redibujar, y
@@ -101,11 +112,61 @@ private fun App(base: BaseLocal) {
     // Lo mismo para subir: entre el toque y el cambio de estado hay un cuadro,
     // y el input se reparte antes de recomponer.
     val subiendo = remember { AtomicBoolean(false) }
+    // Y para actualizar la lista: un rebote rápido de fondo/primer plano no
+    // puede lanzar diez pedidos superpuestos de 10 segundos de timeout cada
+    // uno.
+    val actualizandoListaGuarda = remember { AtomicBoolean(false) }
     val contexto = LocalContext.current
     val avisos = remember { AvisoSonoro(contexto) }
     val contador = remember { Contador(base, RelojDelSistema.DEL_SISTEMA) }
     val sincronizador = remember {
         Sincronizador(base) { url, token -> ClienteServidor(url, token) }
+    }
+    val listaDeTrabajo = remember { ListaDeTrabajo(base) }
+
+    /**
+     * Pide al servidor las ubicaciones asignadas y arma la lista con lo que
+     * queda en la base local.
+     *
+     * La base se escribe solo si el pedido salió bien: una lista vacía que
+     * vino del servidor sí se escribe —es un dato—, pero un error nunca toca
+     * lo que ya había, porque escribir encima le borraría el reparto al
+     * operario. El aviso es discreto a propósito: nunca el texto crudo del
+     * servidor, que para este pedido puede hablar de un 409 que no es lo que
+     * parece.
+     *
+     * Lee la vinculación de la base y no del estado del composable: este
+     * efecto puede dispararse antes de que el `LaunchedEffect(Unit)` que la
+     * carga haya terminado.
+     */
+    suspend fun refrescarListaAsignada() {
+        if (!actualizandoListaGuarda.compareAndSet(false, true)) return
+        try {
+            actualizandoLista = true
+            val quien = base.vinculacionDao().actual()
+            if (quien != null) {
+                try {
+                    val cliente = ClienteServidor(quien.url, quien.token)
+                    val respuesta = cliente.misUbicaciones()
+                    listaDeTrabajo.guardar(respuesta.ubicaciones)
+                    avisoDeActualizacion = null
+                } catch (error: ErrorDeServidor) {
+                    avisoDeActualizacion =
+                        "No se pudo actualizar. Se muestra la última lista que bajó."
+                }
+            }
+            ubicacionesAsignadas = listaDeTrabajo.armar()
+        } finally {
+            actualizandoLista = false
+            actualizandoListaGuarda.set(false)
+        }
+    }
+
+    // Al arrancar y al volver del fondo. ON_START y no ON_RESUME: ese también
+    // dispara al cerrar un diálogo del sistema o al volver el foco tras el
+    // permiso de cámara, y ahí no se pidió ningún refresco.
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        alcance.launch { refrescarListaAsignada() }
     }
 
     DisposableEffect(Unit) { onDispose { avisos.cerrar() } }
@@ -198,15 +259,21 @@ private fun App(base: BaseLocal) {
         pendientes = base.conteoDao().cantidadPendientes()
         ubicaciones = contador.ubicaciones()
         unidades = contador.unidades()
+        // De la base local, sin red: para que la lista no arranque vacía
+        // mientras se espera la respuesta del servidor.
+        ubicacionesAsignadas = listaDeTrabajo.armar()
     }
 
     when (pantalla) {
         Pantalla.Cargando -> Aviso("Un momento…")
 
-        // Inalcanzable hasta que se cablee: `pantallaSegun` todavía no
-        // devuelve `EnLaLista`. Rama mínima solo para que el `when` compile
-        // mientras tanto.
-        Pantalla.EnLaLista -> Aviso("Un momento…")
+        Pantalla.EnLaLista -> PantallaMiLista(
+            ubicaciones = ubicacionesAsignadas,
+            actualizando = actualizandoLista,
+            avisoDeActualizacion = avisoDeActualizacion,
+            alActualizar = { alcance.launch { refrescarListaAsignada() } },
+            alContar = { pantalla = Pantalla.Escaneando },
+        )
 
         Pantalla.Vinculando -> PantallaVinculacion(
             vinculando = vinculando,
@@ -228,7 +295,11 @@ private fun App(base: BaseLocal) {
                             vinculacion.value = base.vinculacionDao().actual()
                             ubicaciones = contador.ubicaciones()
                             unidades = contador.unidades()
-                            pantalla = Pantalla.Escaneando
+                            pantalla = Pantalla.EnLaLista
+                            // Para que la primera entrada a la lista no esté
+                            // vacía: recién ahora hay un operario vinculado
+                            // del que pedir el reparto.
+                            refrescarListaAsignada()
                         }
                         is ResultadoDeVinculacion.Fallo -> error = r.mensaje
                     }
@@ -245,6 +316,19 @@ private fun App(base: BaseLocal) {
             // dibuja nada para ese caso, así que queda en 0dp de alto —no
             // se ve nada raro en pantalla.
             val hayAlgoAbierto = fichaAbierta(hallazgo, altaDe, ingresandoAMano)
+
+            // Se registra solo acá: en la lista, atrás sale de la app, que es
+            // lo que el operario espera. Volver a la lista con una ficha a
+            // medio cargar tiraría lo que tipeó, así que se cierra una cosa
+            // por vez, en el mismo orden que `atrasCierra` define.
+            BackHandler {
+                when (atrasCierra(hallazgo, altaDe, ingresandoAMano)) {
+                    Atras.CierraIngresoAMano -> ingresandoAMano = false
+                    Atras.CierraAlta -> altaDe = null
+                    Atras.CierraFicha -> hallazgo = null
+                    Atras.VuelveALaLista -> pantalla = Pantalla.EnLaLista
+                }
+            }
 
             PantallaEscaneo(
                 operario = quien?.operarioNombre.orEmpty(),
@@ -283,9 +367,7 @@ private fun App(base: BaseLocal) {
                 },
                 puedeIngresarAMano = !hayAlgoAbierto,
                 alIngresarAMano = { ingresandoAMano = true },
-                // Sin efecto todavía: se cablea junto con la navegación real
-                // a la lista, en el mismo commit que cambia `pantallaSegun`.
-                alVolver = {},
+                alVolver = { pantalla = Pantalla.EnLaLista },
                 alLeer = leerCodigo,
             ) {
                 (hallazgo as? Hallazgo.Encontrado)?.let { encontrado ->

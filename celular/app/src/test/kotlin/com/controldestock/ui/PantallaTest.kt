@@ -29,10 +29,10 @@ class PantallaTest {
     }
 
     @Test
-    fun `vinculado va derecho a escanear`() {
-        // El operario abre la app para contar, no para ver un menú: la cámara
-        // tiene que estar lista sin tocar nada.
-        assertEquals(Pantalla.Escaneando, pantallaSegun(vinculacion))
+    fun `vinculado cae en la lista de lo asignado`() {
+        // La lista es la casa de la app: el operario ve qué le toca antes de
+        // ir a contar, y de ahí pasa a la cámara con un toque.
+        assertEquals(Pantalla.EnLaLista, pantallaSegun(vinculacion))
     }
 
     @Test
