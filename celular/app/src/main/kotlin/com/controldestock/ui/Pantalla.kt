@@ -55,6 +55,7 @@ fun hayQueAnunciar(hallazgo: Hallazgo, codigoEnLaFranja: String?): Boolean =
     when (hallazgo) {
         is Hallazgo.Encontrado -> true
         is Hallazgo.Desconocido -> hallazgo.codigo != codigoEnLaFranja
+        is Hallazgo.FueraDePasada -> hallazgo.codigo != codigoEnLaFranja
     }
 
 /**

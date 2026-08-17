@@ -20,6 +20,13 @@ sealed class Hallazgo {
     ) : Hallazgo()
 
     data class Desconocido(val codigo: String) : Hallazgo()
+
+    /**
+     * El artículo existe, pero la pasada activa es un recuento y no lo tiene
+     * marcado. A diferencia de `Desconocido`, no ofrece «Darlo de alta»: el
+     * artículo ya existe, solo no toca en esta pasada.
+     */
+    data class FueraDePasada(val codigo: String, val descripcion: String) : Hallazgo()
 }
 
 /**
@@ -36,6 +43,13 @@ class Contador(
     suspend fun buscar(codigo: String): Hallazgo {
         val articulo = base.maestroDao().porCodigo(codigo)
             ?: return Hallazgo.Desconocido(codigo)
+
+        // El bloqueo es local, sin ida y vuelta al servidor: la pasada activa
+        // y sus SKU permitidos ya están guardados desde el último refresco.
+        val vinculacion = base.vinculacionDao().actual()
+        if (vinculacion?.esParcial == true && !base.pasadaItemDao().contiene(articulo.id)) {
+            return Hallazgo.FueraDePasada(codigo, articulo.descripcion)
+        }
 
         // Una unidad que no bajó en el maestro no puede dejar al operario sin
         // contar: se asume entera, que es el caso conservador.
@@ -56,6 +70,7 @@ class Contador(
         // servidor resuelve solo por código, y un artículo con código propio
         // no tiene una fila donde el código sea su SKU.
         val codigo = base.maestroDao().codigoDe(articulo.id) ?: articulo.sku
+        val vinculacion = base.vinculacionDao().actual()
 
         val evento = EventoConteo.nuevo(
             codigo = codigo,
@@ -66,7 +81,7 @@ class Contador(
         )
 
         base.conteoDao().guardar(
-            ConteoEntidad.de(evento, articulo.id, articulo.sesionId),
+            ConteoEntidad.de(evento, articulo.id, articulo.sesionId, vinculacion?.pasadaId ?: 0),
         )
     }
 

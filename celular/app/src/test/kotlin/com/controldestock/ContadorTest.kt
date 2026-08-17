@@ -241,6 +241,63 @@ class ContadorTest {
     }
 
     @Test
+    fun `fuera de un recuento parcial cualquier articulo del maestro se encuentra`() = runTest {
+        val hallazgo = contador().buscar("7790001")
+
+        assertTrue(hallazgo is Hallazgo.Encontrado)
+    }
+
+    @Test
+    fun `dentro de un recuento parcial un articulo no permitido queda fuera de pasada`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = "http://172.16.11.12:8000", token = "abc",
+                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                pasadaId = 2, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
+                esParcial = true,
+            ),
+        )
+        base.pasadaItemDao().reemplazar(listOf(2)) // solo Harina, no Fideos
+
+        val hallazgo = contador().buscar("7790001")
+
+        assertEquals(Hallazgo.FueraDePasada("7790001", "Fideos"), hallazgo)
+    }
+
+    @Test
+    fun `dentro de un recuento parcial un articulo permitido se encuentra igual`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = "http://172.16.11.12:8000", token = "abc",
+                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                pasadaId = 2, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
+                esParcial = true,
+            ),
+        )
+        base.pasadaItemDao().reemplazar(listOf(1)) // Fideos sí está
+
+        val hallazgo = contador().buscar("7790001")
+
+        assertTrue(hallazgo is Hallazgo.Encontrado)
+    }
+
+    @Test
+    fun `el conteo queda atado a la pasada activa del celular`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = "http://172.16.11.12:8000", token = "abc",
+                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                pasadaId = 5, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
+            ),
+        )
+        val articulo = (contador().buscar("7790001") as Hallazgo.Encontrado).articulo
+
+        contador().registrar(articulo, 1000, null, null)
+
+        assertEquals(5, base.conteoDao().todos().single().pasadaId)
+    }
+
+    @Test
     fun `los conteos de un articulo se pueden leer para avisar de repetidos`() = runTest {
         // Tres conteos y no uno: con uno solo, leer la tabla entera y sin
         // ordenar pasaría igual. Quien avisa del repetido se queda con el

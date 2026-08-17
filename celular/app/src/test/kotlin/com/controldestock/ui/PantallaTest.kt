@@ -62,6 +62,20 @@ class PantallaTest {
     }
 
     @Test
+    fun `un articulo fuera de la pasada activa nuevo se anuncia`() {
+        val hallazgo = Hallazgo.FueraDePasada("7790999", "Tornillos")
+
+        assertTrue(hayQueAnunciar(hallazgo, codigoEnLaFranja = null))
+    }
+
+    @Test
+    fun `el fuera de pasada que ya esta en la franja no se vuelve a anunciar`() {
+        val hallazgo = Hallazgo.FueraDePasada("7790999", "Tornillos")
+
+        assertFalse(hayQueAnunciar(hallazgo, codigoEnLaFranja = "7790999"))
+    }
+
+    @Test
     fun `una subida que salio bien deja el indicador contando`() {
         assertEquals(
             EstadoDeSubida.Quieto,

@@ -81,6 +81,11 @@ private fun App(base: BaseLocal) {
     var hallazgo by remember { mutableStateOf<Hallazgo?>(null) }
     var avisoDesconocido by remember { mutableStateOf<String?>(null) }
     var codigoDesconocido by remember { mutableStateOf<String?>(null) }
+    // Mismo tratamiento visual que el desconocido —franja no bloqueante—,
+    // pero en su propio par de variables: a diferencia de un desconocido,
+    // esto nunca ofrece «Darlo de alta», el artículo ya existe.
+    var avisoFueraDePasada by remember { mutableStateOf<String?>(null) }
+    var codigoFueraDePasada by remember { mutableStateOf<String?>(null) }
     // El alta guarda el código y no un «sí, está abierta»: el toque se aplica
     // un cuadro después de la composición que lo dibujó, así que un dedo que
     // llega tarde puede tocar el botón cuando `codigoDesconocido` ya se
@@ -237,23 +242,36 @@ private fun App(base: BaseLocal) {
                     // operario ya eligió, que es lo único que él vio.
                     if (fichaAbierta(hallazgo, altaDe, ingresandoAMano)) return@launch
 
-                    // El mismo desconocido, cuadro tras cuadro, no se
-                    // vuelve a anunciar: la franja ya lo está mostrando.
-                    val anunciar = hayQueAnunciar(h, codigoDesconocido)
-
+                    // El mismo desconocido, o el mismo fuera de pasada,
+                    // cuadro tras cuadro, no se vuelve a anunciar: la franja
+                    // ya lo está mostrando. Cada uno se compara contra su
+                    // propia franja, así una lectura no pisa el «no se
+                    // repite» de la otra.
                     when (h) {
                         is Hallazgo.Encontrado -> {
-                            if (anunciar) avisos.leido()
+                            if (hayQueAnunciar(h, codigoDesconocido)) avisos.leido()
                             avisoDesconocido = null
                             codigoDesconocido = null
+                            avisoFueraDePasada = null
+                            codigoFueraDePasada = null
                             previos = previosDelArticulo.orEmpty()
                             hallazgo = h
                         }
                         is Hallazgo.Desconocido -> {
-                            if (anunciar) avisos.desconocido()
+                            if (hayQueAnunciar(h, codigoDesconocido)) avisos.desconocido()
                             codigoDesconocido = h.codigo
                             avisoDesconocido =
                                 "Este código no está en el conteo: ${h.codigo}"
+                            avisoFueraDePasada = null
+                            codigoFueraDePasada = null
+                        }
+                        is Hallazgo.FueraDePasada -> {
+                            if (hayQueAnunciar(h, codigoFueraDePasada)) avisos.desconocido()
+                            codigoFueraDePasada = h.codigo
+                            avisoFueraDePasada =
+                                "No corresponde a este conteo: ${h.descripcion}"
+                            avisoDesconocido = null
+                            codigoDesconocido = null
                         }
                     }
                 } finally {
@@ -368,7 +386,9 @@ private fun App(base: BaseLocal) {
                 pasada = quien?.pasadaEtiqueta.orEmpty(),
                 pendientes = pendientes,
                 fichaAbierta = hayAlgoAbierto,
-                avisoDeDesconocido = avisoDesconocido,
+                // Los dos son la misma franja no bloqueante y nunca conviven:
+                // cada lectura limpia al otro antes de fijar el suyo.
+                avisoDeDesconocido = avisoDesconocido ?: avisoFueraDePasada,
                 alDarDeAlta = codigoDesconocido?.let { codigo ->
                     {
                         // Si en el mismo cuadro entró una lectura y abrió una
@@ -507,7 +527,7 @@ private fun App(base: BaseLocal) {
                                 // de lo que tiene adelante.
                                 val siguePudiendoLeerse =
                                     hallazgo == null && altaDe == null &&
-                                        avisoDesconocido == null
+                                        avisoDesconocido == null && avisoFueraDePasada == null
 
                                 if (siguePudiendoLeerse) {
                                     resultado.yaExistian
