@@ -974,3 +974,75 @@ def test_ver_avance_por_operario_sesion_inexistente(cliente):
     respuesta = cliente.get("/api/sesiones/999/reparto/operarios")
 
     assert respuesta.status_code == 404
+
+
+# --- Vincular resuelve la pasada activa del operario -------------------------
+
+def test_vincular_devuelve_la_pasada_activa_del_operario(cliente, sesion):
+    """Con un recuento abierto y el operario asignado ahí, /vincular tiene
+    que devolver ESA pasada, no la de numero mas alto por default."""
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    con = cliente.app.state.con
+    from app.repos import asignaciones as asignaciones_repo
+    from app.repos import pasada_item as pasada_item_repo
+
+    articulo_id = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? LIMIT 1", (sesion["id"],)
+    ).fetchone()["id"]
+    cursor = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion["id"], "2026-08-17T10:00:00Z"),
+    )
+    pasada_2_id = cursor.lastrowid
+    pasada_item_repo.agregar(con, pasada_2_id, [articulo_id])
+    asignaciones_repo.reemplazar(con, pasada_2_id, operario["id"], ["Deposito A"])
+    con.commit()
+
+    respuesta = cliente.post(
+        "/api/dispositivo/vincular",
+        headers={"X-Token": operario["token_dispositivo"]},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["pasada"]["id"] == pasada_2_id
+    assert respuesta.json()["pasada"]["numero"] == 2
+
+
+def test_vincular_sin_pasada_activa_devuelve_409(cliente, sesion):
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    con = cliente.app.state.con
+    con.execute(
+        "UPDATE pasada SET estado = 'cerrada' WHERE sesion_id = ?", (sesion["id"],)
+    )
+    con.commit()
+
+    respuesta = cliente.post(
+        "/api/dispositivo/vincular",
+        headers={"X-Token": operario["token_dispositivo"]},
+    )
+
+    assert respuesta.status_code == 409
+
+
+def test_vincular_operario_ajeno_al_recuento_sigue_en_la_general(cliente, sesion):
+    """El numero de pasada mas alto no puede ganar solo porque es el mas
+    alto: si el operario no esta asignado ahi, le toca la general."""
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    con = cliente.app.state.con
+    con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion["id"], "2026-08-17T10:00:00Z"),
+    )
+    con.commit()
+    # Juan no está asignado a la pasada 2.
+
+    respuesta = cliente.post(
+        "/api/dispositivo/vincular",
+        headers={"X-Token": operario["token_dispositivo"]},
+    )
+
+    assert respuesta.json()["pasada"]["numero"] == 1

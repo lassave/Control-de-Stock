@@ -58,10 +58,15 @@ def _contexto(request, token):
 @router.post("/vincular")
 def vincular(request: Request, x_token: str = Header(default="")):
     con, operario, sesion = _contexto(request, x_token)
+    try:
+        pasada = sesiones.pasada_activa_de_operario(con, sesion["id"], operario["id"])
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
     return {
         "operario": {"id": operario["id"], "nombre": operario["nombre"]},
         "sesion": {"id": sesion["id"], "nombre": sesion["nombre"]},
-        "pasada": sesiones.pasada_abierta(con, sesion["id"]),
+        "pasada": pasada,
     }
 
 
