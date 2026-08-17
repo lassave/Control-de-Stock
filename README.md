@@ -31,10 +31,15 @@ Dejá la ventana negra abierta mientras dure el conteo.
   filtros y la posición de la pantalla. Un artículo con algún conteo hecho
   fuera del sector asignado a quien lo contó queda marcado con «⚑ fuera de
   sector».
-- **Exportar**: resumen por SKU y detalle escaneo por escaneo, los dos con
-  los filtros que estén puestos en el tablero. El detalle trae una columna
-  `fuera_asignacion` (`SI` o vacío) que dice, escaneo por escaneo, cuáles
-  se hicieron fuera del sector asignado.
+- **Avance por ubicación**: una pestaña aparte con una fila por artículo —
+  ubicación, a quién le toca, quién lo contó, cuánto y estado—, con sus
+  propios filtros y su propia exportación. Las ubicaciones que nadie tiene
+  asignadas quedan marcadas «⚑ sin asignar»: es la forma de darse cuenta,
+  antes de cerrar el inventario, de que hay un sector que nadie va a contar.
+- **Exportar**: resumen por SKU, detalle escaneo por escaneo, y el reparto de
+  la pestaña de avance — los tres con los filtros que estén puestos en su
+  pantalla. El detalle trae una columna `fuera_asignacion` (`SI` o vacío) que
+  dice, escaneo por escaneo, cuáles se hicieron fuera del sector asignado.
 
 El conteo es a ciegas: ninguna respuesta al celular incluye el stock del
 sistema ni el costo.
@@ -53,6 +58,15 @@ página.
 Cada operario tiene además **su propio QR** en esa misma solapa, con el que se
 vincula su celular. Lleva adentro la dirección del servidor y su token, así no
 hay que tipear ninguno de los dos.
+
+Al vincularse, el celular abre siempre en **«Lo mío»**: la lista de las
+ubicaciones que le fueron asignadas, con sus artículos y un tilde en los que
+ya contó. Sin asignación, la lista sale vacía con un aviso, pero el botón
+«Contar» funciona igual — no se bloquea nada, y sigue pudiendo contar
+cualquier cosa como antes de que esta pantalla existiera. Un botón
+«Actualizar», y automáticamente al abrir la app o volver del fondo, piden al
+servidor la asignación vigente; sin señal se sigue mostrando la última que
+bajó.
 
 ## La base de datos
 

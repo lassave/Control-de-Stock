@@ -3,7 +3,7 @@
 Lo que se decidió no arreglar todavía, con el motivo. Sale de las revisiones
 de cada rama: es lo que alguien ya miró, entendió y difirió a propósito.
 
-Actualizado: 2026-08-15, al cerrar la rama de asignación de sectores.
+Actualizado: 2026-08-17, al cerrar la rama de la lista asignada en el celular.
 
 ## Al entregar
 
@@ -189,6 +189,46 @@ asignado— pero alguien que filtre el CSV solo por esa columna sin mirar
 también `anulado` va a contar de más. El tablero no tiene este problema: la
 consulta agregada ya excluye los conteos anulados antes de calcular la
 marca.
+
+## Lista asignada en el celular
+
+**Revincular con otro operario dentro de la misma sesión no limpia sus
+conteos pendientes.** `BaseLocal.vincularA` ahora limpia el reparto
+(`asignacion`) cuando cambia el operario, pero los conteos y el maestro solo
+se borran cuando cambia la *sesión* — es un defecto preexistente a esta rama,
+que el tilde de la lista vuelve visible: el operario nuevo puede ver tildado
+lo que contó el anterior. Arreglarlo de raíz —borrar también los conteos
+pendientes del operario saliente— perdería trabajo sin subir, así que es una
+decisión aparte, no un detalle de esta rama.
+
+**El guardián de escapado del panel sigue sin ver las variables sueltas.**
+La pestaña de reparto interpola `fila.asignado_a.map((n) => esc(n))` y
+`fila.contado_por.map((n) => esc(n))` en línea, precisamente para que el
+guardián —una lista blanca por nombre de variable— los vea. La cobertura real
+de que cada nombre se escape por separado se apoya en un test literal
+(`test_reparto_escapa_cada_nombre_por_separado`) que busca esa forma exacta
+en el texto de `app.js`, no en que el guardián lo detecte solo. Es la misma
+instancia del problema ya anotado más arriba con `dibujarCasillaUbicacion`.
+
+**El reparto del celular no se refresca en segundo plano.** Se pide al
+arrancar la app, al volver del fondo y a pedido con «Actualizar», pero no hay
+ningún trabajo periódico que lo traiga solo, a diferencia de los conteos
+—que suben cada 15 minutos por `TrabajoDeSincronizacion`—. Si el responsable
+reparte sectores mientras el operario tiene la app abierta en la pantalla de
+escaneo durante horas, no se entera hasta que vuelve a la lista.
+
+**Falta un filtro por operario en la pestaña de reparto.** Hoy se filtra por
+lo mismo que el tablero —tipo, material, grupo, ubicación, estado, texto—.
+Ver de un vistazo todo lo de un operario puntual, en vez de recorrer la tabla
+buscando su nombre, es el pedido obvio siguiente si el equipo crece.
+
+**El matcheo de ubicaciones sigue siendo igualdad exacta, sin `.strip()` del
+lado del conteo.** Ya estaba anotado para `fuera_asignacion` en el servidor;
+la lista del celular hereda la misma comparación exacta entre
+`articulo.ubicacion` y las ubicaciones asignadas. Hoy no muerde porque las
+dos vienen del mismo maestro recortado, pero un espacio de más en cualquiera
+de los dos lados dejaría un artículo asignado sin aparecer en la lista de
+nadie.
 
 ## Textos
 
