@@ -8,6 +8,12 @@ const estado = {
   filtros: {
     texto: "", estado: "", grupo: "", ubicacion: "", solo_errores_carga: false,
   },
+  // Separado de `filtros`: cada pestaña tiene sus propios controles, y
+  // compartir un solo objeto haría que filtrar el tablero cambie en
+  // silencio lo que exporta el reparto.
+  reparto: {
+    filtros: { texto: "", estado: "", ubicacion: "" },
+  },
 };
 
 const ESTADOS = {
@@ -163,11 +169,67 @@ async function refrescarTablero() {
 async function refrescarSinRomper() {
   try {
     await refrescarTablero();
+    await refrescarReparto();
     $("#sesion-actual").classList.remove("error");
   } catch (error) {
     $("#sesion-actual").classList.add("error");
     $("#sesion-actual").textContent = `Sin conexión con el servidor (${error.message})`;
   }
+}
+
+// --- Avance por ubicación ----------------------------------------------------
+
+function dibujarFilaReparto(fila) {
+  const clase = ESTADOS[fila.estado] || "";
+  const sinAsignar = fila.asignado_a.length === 0
+    ? `<span class="marca" title="Ninguna persona tiene esta ubicación ` +
+      `asignada.">⚑ sin asignar</span>`
+    : "";
+
+  return `
+    <tr>
+      <td>${esc(fila.ubicacion)}</td>
+      <td class="num">${esc(fila.id_orden)}</td>
+      <td>${esc(fila.sku)}</td>
+      <td>${esc(fila.descripcion)}</td>
+      <td>${fila.asignado_a.map((n) => esc(n)).join(", ")} ${sinAsignar}</td>
+      <td>${fila.contado_por.map((n) => esc(n)).join(", ")}</td>
+      <td class="num">${esc(milesimasATexto(fila.contado))}</td>
+      <td><span class="estado ${clase}">${esc(fila.estado)}</span></td>
+    </tr>`;
+}
+
+function parametrosDeFiltrosReparto() {
+  return new URLSearchParams(estado.reparto.filtros).toString();
+}
+
+function actualizarEnlaceExportacionReparto() {
+  if (!estado.sesion) return;
+  const parametros = parametrosDeFiltrosReparto();
+  $("#exportar-reparto").href =
+    `/api/sesiones/${estado.sesion.id}/exportar/reparto?${parametros}`;
+}
+
+async function refrescarReparto() {
+  if (!estado.sesion) return;
+  // Sin sesión no hay reparto que mostrar, y consultarlo con la pestaña
+  // escondida sería un pedido de más cada cuatro segundos para nadie.
+  if ($("#vista-reparto").classList.contains("oculta")) return;
+
+  const envoltorio = $("#reparto-envoltorio-tabla");
+  const scroll = envoltorio.scrollTop;
+
+  const datos = await pedir(
+    `/api/sesiones/${estado.sesion.id}/reparto?${parametrosDeFiltrosReparto()}`);
+
+  $("#reparto-tabla tbody").innerHTML = datos.filas.map(dibujarFilaReparto).join("");
+  actualizarEnlaceExportacionReparto();
+
+  completarOpciones($("#reparto-filtro-ubicacion"),
+    [...new Set(datos.filas.map((f) => f.ubicacion).filter(Boolean))].sort(),
+    "Todas las ubicaciones");
+
+  envoltorio.scrollTop = scroll;
 }
 
 // --- Sesiones --------------------------------------------------------------
@@ -194,9 +256,12 @@ async function cargarSesiones() {
   if (estado.sesion) {
     actualizarEnlacesDeExportacion();
     await refrescarTablero();
+    actualizarEnlaceExportacionReparto();
+    await refrescarReparto();
   } else {
     $("#tabla tbody").innerHTML = "";
     $("#metricas").innerHTML = "";
+    $("#reparto-tabla tbody").innerHTML = "";
   }
 }
 
@@ -465,6 +530,9 @@ function conectarEventos() {
       document.querySelectorAll(".vista")
         .forEach((vista) => vista.classList.add("oculta"));
       $(`#vista-${boton.dataset.vista}`).classList.remove("oculta");
+      // Sin esto, la pestaña recién abierta queda vacía hasta el próximo
+      // tick del refresco automático, hasta 4 segundos después.
+      if (boton.dataset.vista === "reparto") refrescarReparto();
     });
   });
 
@@ -495,6 +563,27 @@ function conectarEventos() {
       $(`#filtro-${campo}`).value = "";
     });
     refrescarSinRomper();
+  });
+
+  $("#reparto-filtro-texto").addEventListener("input", (evento) => {
+    estado.reparto.filtros.texto = evento.target.value;
+    refrescarReparto();
+  });
+
+  ["estado", "ubicacion"].forEach((campo) => {
+    $(`#reparto-filtro-${campo}`).addEventListener("change", (evento) => {
+      estado.reparto.filtros[campo] = evento.target.value;
+      refrescarReparto();
+    });
+  });
+
+  $("#reparto-limpiar-filtros").addEventListener("click", () => {
+    estado.reparto.filtros = { texto: "", estado: "", ubicacion: "" };
+    $("#reparto-filtro-texto").value = "";
+    ["estado", "ubicacion"].forEach((campo) => {
+      $(`#reparto-filtro-${campo}`).value = "";
+    });
+    refrescarReparto();
   });
 
   $("#archivo").addEventListener("change", (evento) => {

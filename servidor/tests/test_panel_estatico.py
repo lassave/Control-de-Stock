@@ -269,3 +269,25 @@ def test_el_panel_ofrece_asignar_sectores():
     assert 'id="dialogo-sectores"' in html
     assert "showModal" in js
     assert "/asignacion" in js
+
+
+def test_el_panel_tiene_la_pestana_de_reparto():
+    """Sin esto no hay forma de ver, en el panel, quién tiene qué."""
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+
+    assert 'data-vista="reparto"' in html
+    assert 'id="vista-reparto"' in html
+
+
+def test_reparto_exporta_con_los_filtros():
+    contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "exportar/reparto?" in contenido
+
+
+def test_reparto_escapa_cada_nombre_por_separado():
+    """Cada nombre se escapa antes de unirse, no la lista entera después."""
+    contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "asignado_a.map((n) => esc(n))" in contenido
+    assert "contado_por.map((n) => esc(n))" in contenido

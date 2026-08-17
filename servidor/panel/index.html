@@ -16,6 +16,7 @@
     <button data-vista="tablero" class="activa">Tablero</button>
     <button data-vista="maestro">Importar maestro</button>
     <button data-vista="operarios">Operarios</button>
+    <button data-vista="reparto">Avance por ubicación</button>
     <button data-vista="sesiones">Sesiones</button>
   </nav>
 
@@ -116,6 +117,40 @@
           <button id="guardar-sectores" type="button">Guardar</button>
         </menu>
       </dialog>
+    </section>
+
+    <section id="vista-reparto" class="vista oculta">
+      <h2>Avance por ubicación</h2>
+      <p class="ayuda">
+        A quién le toca cada ubicación y quién la contó. Las que nadie tiene
+        asignadas quedan marcadas: son las que corren riesgo de no contarse.
+      </p>
+
+      <div class="filtros">
+        <input id="reparto-filtro-texto" type="search" placeholder="Buscar por SKU o descripción">
+        <select id="reparto-filtro-estado">
+          <option value="">Todos los estados</option>
+          <option value="SIN CONTAR">Sin contar</option>
+          <option value="CONSOLIDADO">Consolidado</option>
+          <option value="A RECONTAR">A recontar</option>
+        </select>
+        <select id="reparto-filtro-ubicacion"><option value="">Todas las ubicaciones</option></select>
+        <button id="reparto-limpiar-filtros" class="secundario">Limpiar filtros</button>
+        <a id="exportar-reparto" class="boton secundario">Exportar</a>
+      </div>
+
+      <div class="tabla-envoltorio" id="reparto-envoltorio-tabla">
+        <table id="reparto-tabla">
+          <thead>
+            <tr>
+              <th>Ubicación</th><th>#</th><th>SKU</th><th>Descripción</th>
+              <th>Le toca a</th><th>Lo contó</th>
+              <th class="num">Cantidad</th><th>Estado</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <section id="vista-sesiones" class="vista oculta">
