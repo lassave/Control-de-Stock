@@ -125,6 +125,14 @@ class ContratoApiTest {
     }
 
     @Test
+    fun `parsea las ubicaciones asignadas`() {
+        val respuesta = json.decodeFromString<RespuestaMisUbicaciones>(leer("mis-ubicaciones"))
+
+        assertTrue(respuesta.ubicaciones.isNotEmpty())
+        assertTrue(respuesta.pasadaId > 0)
+    }
+
+    @Test
     fun `un campo nuevo del servidor no rompe el parseo`() {
         // El servidor puede agregar campos sin coordinar una versión de la
         // app. Ignorarlos es lo que permite actualizar de a un lado por vez.

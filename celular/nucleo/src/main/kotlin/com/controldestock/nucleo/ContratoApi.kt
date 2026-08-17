@@ -95,6 +95,12 @@ data class RespuestaConteos(
 )
 
 @Serializable
+data class RespuestaMisUbicaciones(
+    @SerialName("pasada_id") val pasadaId: Int,
+    val ubicaciones: List<String>,
+)
+
+@Serializable
 data class RespuestaAlta(
     val id: Int,
     @SerialName("id_orden") val idOrden: Int,

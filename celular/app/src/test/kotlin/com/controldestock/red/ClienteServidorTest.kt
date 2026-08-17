@@ -105,6 +105,33 @@ class ClienteServidorTest {
     }
 
     @Test
+    fun `pide las ubicaciones asignadas`() = runTest {
+        responder(contrato("mis-ubicaciones"))
+
+        val respuesta = cliente.misUbicaciones()
+
+        assertEquals("/api/dispositivo/mis-ubicaciones", servidor.takeRequest().path)
+        assertTrue(respuesta.ubicaciones.isNotEmpty())
+    }
+
+    @Test
+    fun `sin conteo abierto avisa y no rompe`() = runTest {
+        // Nadie pudo contestar el reparto: la app no toca lo que ya tenía
+        // guardado, así que alcanza con que esto llegue como un error
+        // manejable y no como una excepción cruda.
+        responder(
+            """{"detail":"El conteo no está abierto en este momento."}""",
+            HttpURLConnection.HTTP_CONFLICT,
+        )
+
+        val error = try {
+            cliente.misUbicaciones(); null
+        } catch (e: ErrorDeServidor) { e }
+
+        assertTrue(error!!.message!!.isNotEmpty())
+    }
+
+    @Test
     fun `un token invalido se explica y no se reintenta`() = runTest {
         // Reintentar con un token revocado no va a funcionar nunca: hay que
         // volver a escanear el QR.

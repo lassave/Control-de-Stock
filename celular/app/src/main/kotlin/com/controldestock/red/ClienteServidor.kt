@@ -5,6 +5,7 @@ import com.controldestock.nucleo.LoteDeConteos
 import com.controldestock.nucleo.RespuestaAlta
 import com.controldestock.nucleo.RespuestaConteos
 import com.controldestock.nucleo.RespuestaMaestro
+import com.controldestock.nucleo.RespuestaMisUbicaciones
 import com.controldestock.nucleo.RespuestaVinculacion
 import com.controldestock.nucleo.jsonDelContrato
 import com.controldestock.nucleo.paraEnviar
@@ -81,6 +82,16 @@ class ClienteServidor(
 
     suspend fun maestro(): RespuestaMaestro =
         interpretar(traer("/api/dispositivo/maestro"))
+
+    /**
+     * Las ubicaciones asignadas al operario en el conteo abierto.
+     *
+     * Un 409 acá no significa «cerrado para siempre»: la app no toca la
+     * lista que ya tenía guardada, así que reintentar más tarde es
+     * inofensivo aunque el mensaje diga que no se puede reintentar.
+     */
+    suspend fun misUbicaciones(): RespuestaMisUbicaciones =
+        interpretar(traer("/api/dispositivo/mis-ubicaciones"))
 
     suspend fun enviarConteos(eventos: List<EventoConteo>): RespuestaConteos {
         val lote = LoteDeConteos(eventos.map { it.paraEnviar() })
