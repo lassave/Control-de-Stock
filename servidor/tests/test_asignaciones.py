@@ -110,3 +110,20 @@ def test_operarios_con_ubicaciones_de_la_pasada_abierta(con, escenario):
     juan = next(o for o in lista if o["id"] == escenario["juan"]["id"])
 
     assert juan["ubicaciones_asignadas"] == ["Deposito A"]
+
+
+def test_operarios_con_ubicaciones_sin_pasada_abierta_no_rompe(con, escenario):
+    """Una sesión abierta cuyo conteo se cerró: hoy esto sale como 500.
+
+    Es inalcanzable desde el panel —crear y cerrar mueven sesión y pasada
+    juntas—, pero el reconteo lo va a abrir, y el radio de la falla es un
+    endpoint global. Sin asignaciones que mostrar, lista vacía.
+    """
+    con.execute(
+        "UPDATE pasada SET estado = 'cerrada' WHERE sesion_id = ?",
+        (escenario["sesion_id"],),
+    )
+
+    lista = asignaciones.operarios_con_ubicaciones(con)
+
+    assert lista[0]["ubicaciones_asignadas"] == []

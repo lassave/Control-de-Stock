@@ -105,3 +105,36 @@ def test_operar_sobre_una_sesion_inexistente_falla(con, operacion):
 def test_ahora_usa_el_formato_del_proyecto():
     """reloj es la única fuente del formato de fecha de todo el sistema."""
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", reloj.ahora())
+
+
+def test_ultima_pasada_devuelve_la_de_mayor_numero(con):
+    """El reparto se mira sobre todo cuando la sesión ya cerró."""
+    sesion_id = sesiones.crear(con, "Cliente Z")
+    con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion_id, "2026-08-16T10:00:00Z"),
+    )
+
+    assert sesiones.ultima_pasada(con, sesion_id)["numero"] == 2
+
+
+def test_ultima_pasada_no_le_importa_que_este_cerrada(con):
+    """`pasada_abierta` tira ValueError acá; esta tiene que contestar igual."""
+    sesion_id = sesiones.crear(con, "Cliente Z")
+    sesiones.cerrar(con, sesion_id)
+
+    pasada = sesiones.ultima_pasada(con, sesion_id)
+
+    assert pasada["numero"] == 1
+    assert pasada["estado"] == "cerrada"
+    assert pasada["etiqueta"] == "Conteo 1"
+
+
+def test_ultima_pasada_sin_ninguna_devuelve_nada(con):
+    con.execute(
+        "INSERT INTO sesion (nombre, fecha_creacion) VALUES ('Suelta', ?)",
+        ("2026-08-16T10:00:00Z",),
+    )
+    sesion_id = con.execute("SELECT id FROM sesion").fetchone()["id"]
+
+    assert sesiones.ultima_pasada(con, sesion_id) is None

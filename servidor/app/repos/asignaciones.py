@@ -60,17 +60,20 @@ def operarios_con_ubicaciones(con):
     pasada de la sesión abierta.
 
     Sin sesión abierta no hay pasada a la cual asignar nada, así que todos
-    quedan con la lista vacía.
+    quedan con la lista vacía. Lo mismo si la sesión está abierta pero su
+    pasada no: hoy eso no pasa —crear y cerrar mueven las dos juntas— pero
+    el reconteo va a abrir esa ventana, y este endpoint lo consume el panel
+    entero. Una lista vacía es una respuesta; un 500 no.
     """
     lista = operarios.listar(con)
 
     sesion = sesiones.sesion_abierta(con)
-    if sesion is None:
+    pasada = sesiones.ultima_pasada(con, sesion["id"]) if sesion else None
+    if pasada is None or pasada["estado"] != "abierta":
         for operario in lista:
             operario["ubicaciones_asignadas"] = []
         return lista
 
-    pasada = sesiones.pasada_abierta(con, sesion["id"])
     for operario in lista:
         operario["ubicaciones_asignadas"] = de_operario(
             con, pasada["id"], operario["id"]

@@ -70,6 +70,25 @@ def pasada_abierta(con, sesion_id):
     return pasada
 
 
+def ultima_pasada(con, sesion_id):
+    """La pasada de mayor número, esté abierta o cerrada. `None` si no hay.
+
+    `pasada_abierta` no sirve para mirar hacia atrás: tira `ValueError` en
+    cuanto la sesión se cierra, que es justo cuando alguien revisa quién
+    contó qué. Acá una sesión cerrada es un caso normal, no un error.
+    """
+    fila = con.execute(
+        "SELECT * FROM pasada WHERE sesion_id = ? ORDER BY numero DESC LIMIT 1",
+        (sesion_id,),
+    ).fetchone()
+    if fila is None:
+        return None
+
+    pasada = dict(fila)
+    pasada["etiqueta"] = etiqueta_pasada(pasada["numero"])
+    return pasada
+
+
 def cerrar(con, sesion_id):
     obtener(con, sesion_id)  # falla con un mensaje claro si no existe
     ahora = reloj.ahora()
