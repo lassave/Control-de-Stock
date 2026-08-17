@@ -874,7 +874,10 @@ def test_mis_ubicaciones_no_trae_nada_mas(cliente, sesion):
         headers={"X-Token": operario["token_dispositivo"]},
     ).json()
 
-    assert set(cuerpo) == {"pasada_id", "ubicaciones"}
+    assert set(cuerpo) == {
+        "pasada_id", "pasada_numero", "pasada_etiqueta", "es_parcial",
+        "articulos_permitidos", "ubicaciones",
+    }
 
 
 def test_mis_ubicaciones_con_token_inventado(cliente, sesion):

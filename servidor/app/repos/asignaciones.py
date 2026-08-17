@@ -44,19 +44,28 @@ def de_operario(con, pasada_id, operario_id):
 
 
 def de_operario_en_sesion(con, sesion_id, operario_id):
-    """Lo que le toca al operario en el conteo abierto de esta sesión.
+    """Lo que le toca al operario en su pasada activa de esta sesión.
 
-    Tira `ValueError` si la sesión no tiene un conteo abierto. Es a
-    propósito: quien pregunte tiene que decidir qué contestar, y para el
-    celular la respuesta correcta no es «no te toca nada» —eso le borraría
-    el reparto que ya tiene bajado— sino «ahora no puedo contestarte».
+    Tira `ValueError` si no tiene ninguna pasada activa. Es a propósito:
+    quien pregunte tiene que decidir qué contestar, y para el celular la
+    respuesta correcta no es «no te toca nada» —eso le borraría el reparto
+    que ya tiene bajado— sino «ahora no puedo contestarte».
+
+    `es_parcial` y `articulos_permitidos` le dicen al celular si está en un
+    recuento y, si es así, qué puede contar: sin eso no puede bloquear el
+    escaneo localmente, y el conteo tiene que andar sin señal.
     """
-    pasada = sesiones.ultima_pasada(con, sesion_id)
-    if pasada is None or pasada["estado"] != "abierta":
-        raise ValueError(f"La sesión {sesion_id} no tiene ningún conteo abierto")
+    from app.repos import pasada_item
+
+    pasada = sesiones.pasada_activa_de_operario(con, sesion_id, operario_id)
+    es_parcial = pasada_item.es_parcial(con, pasada["id"])
 
     return {
         "pasada_id": pasada["id"],
+        "pasada_numero": pasada["numero"],
+        "pasada_etiqueta": pasada["etiqueta"],
+        "es_parcial": es_parcial,
+        "articulos_permitidos": pasada_item.de_pasada(con, pasada["id"]) if es_parcial else [],
         "ubicaciones": de_operario(con, pasada["id"], operario_id),
     }
 

@@ -1,5 +1,9 @@
 {
   "pasada_id": 1,
+  "pasada_numero": 1,
+  "pasada_etiqueta": "Conteo 1",
+  "es_parcial": false,
+  "articulos_permitidos": [],
   "ubicaciones": [
     "P-1"
   ]

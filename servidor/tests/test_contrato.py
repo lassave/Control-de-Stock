@@ -175,7 +175,10 @@ def test_mis_ubicaciones_viene_envuelto_y_no_como_lista_pelada():
     """
     datos = leer("mis-ubicaciones")
 
-    assert set(datos) == {"pasada_id", "ubicaciones"}
+    assert set(datos) == {
+        "pasada_id", "pasada_numero", "pasada_etiqueta", "es_parcial",
+        "articulos_permitidos", "ubicaciones",
+    }
     assert isinstance(datos["ubicaciones"], list)
     assert datos["ubicaciones"], "capturalo con una ubicación asignada"
 

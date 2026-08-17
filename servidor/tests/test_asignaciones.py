@@ -153,3 +153,48 @@ def test_asignados_por_articulo_sin_pasada_devuelve_vacio(con):
     sesion_id = con.execute("SELECT id FROM sesion WHERE nombre = 'Suelta'").fetchone()["id"]
 
     assert asignaciones.asignados_por_articulo(con, sesion_id) == {}
+
+
+# --- de_operario_en_sesion trae la pasada activa, no siempre la general ----
+
+def test_de_operario_en_sesion_devuelve_la_pasada_general_sin_recuento(con, escenario):
+    asignaciones.reemplazar(
+        con, escenario["pasada_id"], escenario["juan"]["id"], ["Deposito A"]
+    )
+
+    resultado = asignaciones.de_operario_en_sesion(
+        con, escenario["sesion_id"], escenario["juan"]["id"]
+    )
+
+    assert resultado["pasada_id"] == escenario["pasada_id"]
+    assert resultado["pasada_numero"] == 1
+    assert resultado["pasada_etiqueta"] == "Conteo 1"
+    assert resultado["es_parcial"] is False
+    assert resultado["articulos_permitidos"] == []
+    assert resultado["ubicaciones"] == ["Deposito A"]
+
+
+def test_de_operario_en_sesion_devuelve_el_recuento_cuando_esta_asignado(con, escenario):
+    from app.repos import pasada_item
+
+    articulo_a = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
+        (escenario["sesion_id"],),
+    ).fetchone()["id"]
+    cursor = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+    )
+    pasada_2 = cursor.lastrowid
+    pasada_item.agregar(con, pasada_2, [articulo_a])
+    asignaciones.reemplazar(con, pasada_2, escenario["juan"]["id"], ["Deposito A"])
+
+    resultado = asignaciones.de_operario_en_sesion(
+        con, escenario["sesion_id"], escenario["juan"]["id"]
+    )
+
+    assert resultado["pasada_id"] == pasada_2
+    assert resultado["pasada_numero"] == 2
+    assert resultado["pasada_etiqueta"] == "Conteo 2"
+    assert resultado["es_parcial"] is True
+    assert resultado["articulos_permitidos"] == [articulo_a]
