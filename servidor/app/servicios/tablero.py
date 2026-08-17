@@ -74,22 +74,7 @@ def parece_error_de_carga(contado, stock):
     return None
 
 
-def _consulta_base():
-    """Artículos con el valor vigente de su última pasada contada.
-
-    Dos reglas viven en esta consulta.
-
-    Las anulaciones se descartan de a pares: una anulación es una fila que
-    apunta a otra por anula_uuid, y se excluyen las dos, la que anula —que no
-    suma— y la anulada.
-
-    Y el total es el de la pasada de número más alto en la que el artículo
-    fue contado, no la suma de todas. Si en el Conteo 1 se registraron 48 y
-    en el Conteo 2 se cuentan 50, el valor vigente es 50: sumar daría 98, que
-    no significa nada. Un artículo que no entró en la última pasada conserva
-    el valor de la última en la que sí se contó.
-    """
-    return """
+CTE_VIGENTES = """
         WITH vigentes AS (
             -- El rowid se arrastra con nombre propio: una CTE no tiene rowid
             -- implícito y «SELECT c.*» no lo incluye, así que sin esto el
@@ -107,6 +92,29 @@ def _consulta_base():
             FROM vigentes
             GROUP BY articulo_id
         )
+"""
+"""Qué conteo vale hoy, para cualquiera que pregunte.
+
+Dos reglas viven acá, y las dos tienen que significar lo mismo en todos
+lados: si el tablero y la pestaña de reparto las escribieran por separado,
+tarde o temprano dirían cosas distintas del mismo SKU.
+
+Las anulaciones se descartan de a pares: una anulación es una fila que
+apunta a otra por anula_uuid, y se excluyen las dos, la que anula —que no
+suma— y la anulada.
+
+Y `ultima_pasada` marca la pasada de número más alto en la que cada
+artículo fue contado. El total vigente es el de esa pasada, no la suma de
+todas: si en el Conteo 1 se registraron 48 y en el Conteo 2 se cuentan 50,
+el valor vigente es 50 —sumar daría 98, que no significa nada—. Un
+artículo que no entró en la última pasada conserva el valor de la última
+en la que sí se contó.
+"""
+
+
+def _consulta_base():
+    """Artículos con el valor vigente de su última pasada contada."""
+    return CTE_VIGENTES + """
         SELECT
             a.id, a.id_orden, a.tipo, a.material, a.sku, a.descripcion,
             a.grupo, a.ubicacion, a.unidad, a.stock_sistema, a.costo_unitario,
