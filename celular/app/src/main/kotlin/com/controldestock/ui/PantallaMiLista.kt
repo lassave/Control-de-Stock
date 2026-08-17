@@ -9,10 +9,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,7 +36,10 @@ fun PantallaMiLista(
     ubicaciones: List<UbicacionAsignada>,
     actualizando: Boolean,
     avisoDeActualizacion: String?,
+    pendientes: Int,
+    estadoDeSubida: EstadoDeSubida,
     alActualizar: () -> Unit,
+    alSubir: () -> Unit,
     alContar: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -44,9 +48,23 @@ fun PantallaMiLista(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Lo mío", style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = alActualizar, enabled = !actualizando) {
-                Text(if (actualizando) "Actualizando…" else "Actualizar")
+            Text("PRODUCTOS ASIGNADOS", style = MaterialTheme.typography.titleLarge)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = alActualizar,
+                    enabled = !actualizando,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                ) {
+                    Text(if (actualizando) "Actualizando…" else "Actualizar")
+                }
+                IndicadorDePendientes(
+                    pendientes = pendientes,
+                    estado = estadoDeSubida,
+                    alSubir = alSubir,
+                )
             }
         }
 
@@ -78,7 +96,7 @@ fun PantallaMiLista(
                 ubicaciones.forEach { ubicacion ->
                     item(key = "cabecera-${ubicacion.ubicacion}") {
                         Text(
-                            ubicacion.avance,
+                            "Ubicación: ${ubicacion.avance}",
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.padding(vertical = 12.dp),
                         )

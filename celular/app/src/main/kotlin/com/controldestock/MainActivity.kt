@@ -274,6 +274,16 @@ private fun App(base: BaseLocal) {
         ubicacionesAsignadas = listaDeTrabajo.armar()
     }
 
+    // Cada vez que se vuelve a la lista, sin red: lo que se acaba de contar
+    // tiene que aparecer tildado sin que el operario tenga que tocar
+    // «Actualizar», que además pega contra el servidor y no hace falta para
+    // esto —el tilde sale de la base local, no de lo que baja el reparto—.
+    LaunchedEffect(pantalla) {
+        if (pantalla == Pantalla.EnLaLista) {
+            ubicacionesAsignadas = listaDeTrabajo.armar()
+        }
+    }
+
     when (pantalla) {
         Pantalla.Cargando -> Aviso("Un momento…")
 
@@ -281,7 +291,20 @@ private fun App(base: BaseLocal) {
             ubicaciones = ubicacionesAsignadas,
             actualizando = actualizandoLista,
             avisoDeActualizacion = avisoDeActualizacion,
+            pendientes = pendientes,
+            estadoDeSubida = estadoDeSubida,
             alActualizar = { alcance.launch { refrescarListaAsignada() } },
+            alSubir = {
+                if (subiendo.compareAndSet(false, true)) {
+                    alcance.launch {
+                        try {
+                            subir(loPidioElOperario = true)
+                        } finally {
+                            subiendo.set(false)
+                        }
+                    }
+                }
+            },
             alContar = { pantalla = Pantalla.Escaneando },
         )
 
