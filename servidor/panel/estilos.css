@@ -226,6 +226,10 @@ tbody tr:hover { background: #eef3fa; }
   font-size: 0.85rem;
 }
 
+/* Aparte del campo del token: con la tarjeta angosta, compartir renglón con
+   el input y "Copiar" hacía que el botón "Sectores" se saliera del esquema. */
+.fila-sectores { margin-top: 0.4rem; }
+
 .instalacion {
   display: flex;
   gap: 1rem;
@@ -273,8 +277,19 @@ dialog { max-width: 28rem; border: 1px solid var(--borde); border-radius: 8px; }
 }
 
 /* Safari sigue mostrando el triángulo nativo aunque `list-style` lo
-   esconda en los demás navegadores. */
+   esconda en los demás navegadores. Se reemplaza por una flecha propia,
+   así se ve igual en todos lados y gira sola con el atributo `open` de
+   `<details>`, sin JavaScript. */
 .tarjeta-operario summary::-webkit-details-marker { display: none; }
+
+.flecha-desplegar {
+  font-size: 1.2rem;
+  color: var(--tenue);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.tarjeta-operario[open] .flecha-desplegar { transform: rotate(180deg); }
 
 .resumen-operario { display: flex; flex-direction: column; gap: 0.15rem; }
 .ubicaciones-resumen { color: var(--tenue); font-size: 0.85rem; }

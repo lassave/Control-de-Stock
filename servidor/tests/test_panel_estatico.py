@@ -308,6 +308,22 @@ def test_la_tarjeta_de_operario_muestra_los_sectores_asignados():
     assert "ubicaciones_asignadas.map((u) => esc(u))" in js
 
 
+def test_el_boton_de_sectores_no_comparte_renglon_con_el_token():
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+    css = (RUTA_PANEL / "estilos.css").read_text(encoding="utf-8")
+
+    assert '"fila-sectores"' in js
+    assert ".fila-sectores" in css
+
+
+def test_la_tarjeta_de_operario_tiene_flecha_para_desplegar():
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+    css = (RUTA_PANEL / "estilos.css").read_text(encoding="utf-8")
+
+    assert "flecha-desplegar" in js
+    assert ".tarjeta-operario[open] .flecha-desplegar" in css
+
+
 def test_reparto_escapa_cada_nombre_por_separado():
     """Cada nombre se escapa antes de unirse, no la lista entera después."""
     contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")

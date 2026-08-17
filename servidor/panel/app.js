@@ -236,6 +236,7 @@ function dibujarTarjetaOperario(operario) {
             <span class="rotulo">% de avance</span>
           </div>
         </div>
+        <span class="flecha-desplegar" aria-hidden="true">▾</span>
       </summary>
       <table class="detalle-operario">
         <thead>
@@ -458,8 +459,8 @@ function dibujarOperario(operario, haySesion) {
           <button class="secundario" data-copiar="${esc(operario.token_dispositivo)}">
             Copiar
           </button>
-          ${sectores}
         </div>
+        ${sectores ? `<div class="fila-sectores">${sectores}</div>` : ""}
         <p class="ayuda">Escaneá este código desde la app para vincular el celular.</p>
         ${sectoresAsignados}
       </div>
