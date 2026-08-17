@@ -324,6 +324,15 @@ def test_la_tarjeta_de_operario_tiene_flecha_para_desplegar():
     assert ".tarjeta-operario[open] .flecha-desplegar" in css
 
 
+def test_las_tarjetas_desplegadas_sobreviven_al_refresco_automatico():
+    """Sin esto, el refresco de cada 4 segundos las reconstruye y las cierra
+    solas, aunque nadie haya tocado la flecha."""
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "details[open]" in js
+    assert 'data-operario="${esc(operario.operario)}"' in js
+
+
 def test_reparto_escapa_cada_nombre_por_separado():
     """Cada nombre se escapa antes de unirse, no la lista entera después."""
     contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")

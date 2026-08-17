@@ -204,13 +204,19 @@ function dibujarDetalleOperario(item) {
  * La tarjeta de un operario: resumen numérico siempre visible, detalle de
  * sus artículos solo al desplegar. `<details>` nativo, sin JavaScript propio
  * para abrir y cerrar.
+ *
+ * `abiertos` es el conjunto de operarios que ya estaban desplegados antes de
+ * este redibujado: sin esto, el refresco automático de cada cuatro segundos
+ * reconstruye las tarjetas desde cero y las cierra solas, aunque nadie haya
+ * tocado la flecha.
  */
-function dibujarTarjetaOperario(operario) {
+function dibujarTarjetaOperario(operario, abiertos) {
   const ubicacionesTexto = operario.ubicaciones.map((u) => esc(u)).join(", ");
   const detalle = operario.detalle.map(dibujarDetalleOperario).join("");
+  const abierto = abiertos.has(operario.operario) ? " open" : "";
 
   return `
-    <details class="tarjeta-operario">
+    <details class="tarjeta-operario" data-operario="${esc(operario.operario)}"${abierto}>
       <summary>
         <div class="resumen-operario">
           <strong>${esc(operario.operario)}</strong>
@@ -273,8 +279,16 @@ async function refrescarReparto() {
   const datos = await pedir(
     `/api/sesiones/${estado.sesion.id}/reparto/operarios?${parametrosDeFiltrosReparto()}`);
 
-  $("#reparto-operarios").innerHTML = datos.operarios.map(dibujarTarjetaOperario).join("")
-    || "<p>Ningún operario tiene una ubicación asignada todavía.</p>";
+  // Por nombre, no por posición: el operario es único (la base lo exige) y
+  // el orden puede cambiar de un pedido a otro.
+  const abiertos = new Set(
+    [...document.querySelectorAll("#reparto-operarios details[open]")]
+      .map((detalle) => detalle.dataset.operario),
+  );
+
+  $("#reparto-operarios").innerHTML = datos.operarios
+    .map((o) => dibujarTarjetaOperario(o, abiertos))
+    .join("") || "<p>Ningún operario tiene una ubicación asignada todavía.</p>";
   actualizarEnlaceExportacionReparto();
 
   const ubicaciones = datos.operarios.flatMap((o) => o.detalle.map((d) => d.ubicacion));
