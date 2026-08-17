@@ -163,6 +163,52 @@ def pasada_activa_de_operario(con, sesion_id, operario_id):
     )
 
 
+def listar_pasadas(con, sesion_id):
+    """Todas las pasadas de la sesión, marcando cuáles son recuentos."""
+    filas = con.execute(
+        "SELECT * FROM pasada WHERE sesion_id = ? ORDER BY numero", (sesion_id,)
+    ).fetchall()
+    pasadas = [dict(fila) for fila in filas]
+    for pasada in pasadas:
+        pasada["etiqueta"] = etiqueta_pasada(pasada["numero"])
+        pasada["es_parcial"] = pasada_item_repo.es_parcial(con, pasada["id"])
+    return pasadas
+
+
+def abrir_pasada(con, sesion_id, articulo_ids):
+    """Abre un recuento nuevo con esos SKU marcados en `pasada_item`.
+
+    Transaccional: la pasada y sus filas de `pasada_item` se graban juntas
+    o no se graba nada.
+    """
+    sesion = obtener(con, sesion_id)
+    if sesion["estado"] != "abierta":
+        raise ValueError(f"La sesión {sesion_id} está cerrada")
+    if not articulo_ids:
+        raise ValueError("Hay que marcar al menos un SKU para el recuento")
+
+    ahora = reloj.ahora()
+    with con:
+        siguiente_numero = con.execute(
+            "SELECT COALESCE(MAX(numero), 0) + 1 FROM pasada WHERE sesion_id = ?",
+            (sesion_id,),
+        ).fetchone()[0]
+        cursor = con.execute(
+            "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, ?, ?)",
+            (sesion_id, siguiente_numero, ahora),
+        )
+        pasada_id = cursor.lastrowid
+        for articulo_id in articulo_ids:
+            con.execute(
+                "INSERT OR IGNORE INTO pasada_item (pasada_id, articulo_id) VALUES (?, ?)",
+                (pasada_id, articulo_id),
+            )
+
+    pasada = obtener_pasada(con, sesion_id, pasada_id)
+    pasada["es_parcial"] = True
+    return pasada
+
+
 def cerrar(con, sesion_id):
     obtener(con, sesion_id)  # falla con un mensaje claro si no existe
     ahora = reloj.ahora()

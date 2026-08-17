@@ -1166,3 +1166,54 @@ def test_reasignar_dentro_del_mismo_recuento_no_se_bloquea(cliente, sesion):
 
     assert respuesta.status_code == 200
     assert respuesta.json()["ubicaciones"] == ["Deposito A", "Deposito B"]
+
+
+def test_listar_pasadas_devuelve_conteo_1(cliente, sesion):
+    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas")
+
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert len(cuerpo) == 1
+    assert cuerpo[0]["etiqueta"] == "Conteo 1"
+    assert cuerpo[0]["es_parcial"] is False
+
+
+def test_abrir_pasada_crea_un_recuento(cliente, sesion):
+    importar(cliente, sesion["id"])
+    articulo_id = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"][0]["id"]
+
+    respuesta = cliente.post(
+        f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": [articulo_id]}
+    )
+
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["etiqueta"] == "Conteo 2"
+    assert cuerpo["es_parcial"] is True
+
+    pasadas = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas").json()
+    assert len(pasadas) == 2
+
+
+def test_abrir_pasada_sin_articulos_devuelve_400(cliente, sesion):
+    respuesta = cliente.post(f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": []})
+
+    assert respuesta.status_code == 400
+
+
+def test_abrir_pasada_en_sesion_inexistente_devuelve_404(cliente):
+    respuesta = cliente.post("/api/sesiones/999/pasadas", json={"articulo_ids": [1]})
+
+    assert respuesta.status_code == 404
+
+
+def test_abrir_pasada_con_sesion_cerrada_devuelve_409(cliente, sesion):
+    importar(cliente, sesion["id"])
+    articulo_id = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"][0]["id"]
+    cliente.post(f"/api/sesiones/{sesion['id']}/cerrar")
+
+    respuesta = cliente.post(
+        f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": [articulo_id]}
+    )
+
+    assert respuesta.status_code == 409

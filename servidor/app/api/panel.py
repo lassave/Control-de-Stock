@@ -93,6 +93,40 @@ async def fijar_tolerancia(sesion_id: int, request: Request):
     return sesiones.obtener(con, sesion_id)
 
 
+@router.get("/sesiones/{sesion_id}/pasadas")
+def listar_pasadas(sesion_id: int, request: Request):
+    con = _con(request)
+    try:
+        sesiones.obtener(con, sesion_id)
+    except ValueError as error:
+        raise _no_encontrada(error) from error
+    return sesiones.listar_pasadas(con, sesion_id)
+
+
+@router.post("/sesiones/{sesion_id}/pasadas")
+async def abrir_pasada(sesion_id: int, request: Request):
+    con = _con(request)
+    cuerpo = await request.json()
+
+    articulo_ids = cuerpo.get("articulo_ids")
+    if not isinstance(articulo_ids, list):
+        raise HTTPException(
+            status_code=400, detail="«articulo_ids» tiene que ser una lista"
+        )
+
+    try:
+        sesiones.obtener(con, sesion_id)
+    except ValueError as error:
+        raise _no_encontrada(error) from error
+
+    try:
+        return sesiones.abrir_pasada(con, sesion_id, articulo_ids)
+    except ValueError as error:
+        if "está cerrada" in str(error):
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @router.post("/maestro/previsualizar")
 async def previsualizar_maestro(archivo: UploadFile = File(...)):
     contenido = await archivo.read()

@@ -246,3 +246,83 @@ def test_pasada_activa_de_operario_sin_ninguna_candidata_es_error(con):
 
     with pytest.raises(ValueError):
         sesiones.pasada_activa_de_operario(con, sesion_id, juan["id"])
+
+
+# --- listar_pasadas y abrir_pasada ------------------------------------------
+
+def test_listar_pasadas_marca_general_y_recuento(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+
+    from app.repos import pasada_item
+    cursor = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    pasada_item.agregar(con, cursor.lastrowid, [articulo_id])
+
+    pasadas = sesiones.listar_pasadas(con, sesion_id)
+
+    assert pasadas[0]["numero"] == 1
+    assert pasadas[0]["es_parcial"] is False
+    assert pasadas[1]["numero"] == 2
+    assert pasadas[1]["es_parcial"] is True
+
+
+def test_abrir_pasada_crea_la_siguiente_con_sus_sku(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+
+    pasada = sesiones.abrir_pasada(con, sesion_id, [articulo_id])
+
+    assert pasada["numero"] == 2
+    assert pasada["etiqueta"] == "Conteo 2"
+
+    from app.repos import pasada_item
+    assert pasada_item.de_pasada(con, pasada["id"]) == [articulo_id]
+
+
+def test_abrir_pasada_con_lista_vacia_rechaza(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+
+    with pytest.raises(ValueError):
+        sesiones.abrir_pasada(con, sesion_id, [])
+
+
+def test_abrir_pasada_con_sesion_cerrada_rechaza(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+    sesiones.cerrar(con, sesion_id)
+
+    with pytest.raises(ValueError):
+        sesiones.abrir_pasada(con, sesion_id, [articulo_id])
+
+
+def test_abrir_pasada_permite_varias_seguidas(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+
+    sesiones.abrir_pasada(con, sesion_id, [articulo_id])
+    tercera = sesiones.abrir_pasada(con, sesion_id, [articulo_id])
+
+    assert tercera["numero"] == 3
