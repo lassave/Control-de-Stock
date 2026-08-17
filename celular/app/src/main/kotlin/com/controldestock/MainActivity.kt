@@ -155,6 +155,10 @@ private fun App(base: BaseLocal) {
                     val cliente = ClienteServidor(quien.url, quien.token)
                     val respuesta = cliente.misUbicaciones()
                     listaDeTrabajo.guardar(respuesta)
+                    // Sin releerla, la pantalla se queda mostrando la
+                    // etiqueta de la pasada con la que se vinculó, aunque
+                    // mientras tanto se la haya reasignado a un recuento.
+                    vinculacion.value = base.vinculacionDao().actual()
                     avisoDeActualizacion = null
                 } catch (error: ErrorDeServidor) {
                     avisoDeActualizacion =
