@@ -203,6 +203,11 @@ private fun App(base: BaseLocal) {
     when (pantalla) {
         Pantalla.Cargando -> Aviso("Un momento…")
 
+        // Inalcanzable hasta que se cablee: `pantallaSegun` todavía no
+        // devuelve `EnLaLista`. Rama mínima solo para que el `when` compile
+        // mientras tanto.
+        Pantalla.EnLaLista -> Aviso("Un momento…")
+
         Pantalla.Vinculando -> PantallaVinculacion(
             vinculando = vinculando,
             error = error,

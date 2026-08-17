@@ -131,4 +131,52 @@ class PantallaTest {
         // el operario está tipeando.
         assertTrue(fichaAbierta(hallazgo = null, altaDe = null, ingresandoAMano = true))
     }
+
+    @Test
+    fun `atras cierra el dialogo de codigo a mano primero`() {
+        val hallazgo = Hallazgo.Encontrado(tornillos, admiteDecimales = false, codigo = "A-1")
+
+        assertEquals(
+            Atras.CierraIngresoAMano,
+            atrasCierra(hallazgo, altaDe = "7790999", ingresandoAMano = true),
+        )
+    }
+
+    @Test
+    fun `atras cierra el alta abierta`() {
+        assertEquals(
+            Atras.CierraAlta,
+            atrasCierra(hallazgo = null, altaDe = "7790999", ingresandoAMano = false),
+        )
+    }
+
+    @Test
+    fun `atras cierra la ficha de un articulo`() {
+        val hallazgo = Hallazgo.Encontrado(tornillos, admiteDecimales = false, codigo = "A-1")
+
+        assertEquals(
+            Atras.CierraFicha,
+            atrasCierra(hallazgo, altaDe = null, ingresandoAMano = false),
+        )
+    }
+
+    @Test
+    fun `sin nada abierto atras vuelve a la lista`() {
+        assertEquals(
+            Atras.VuelveALaLista,
+            atrasCierra(hallazgo = null, altaDe = null, ingresandoAMano = false),
+        )
+    }
+
+    @Test
+    fun `un desconocido en pantalla no cuenta como algo abierto`() {
+        // La franja roja no tapa la cámara: atrás puede volver a la lista
+        // con un desconocido en pantalla.
+        val hallazgo = Hallazgo.Desconocido("7790999")
+
+        assertEquals(
+            Atras.VuelveALaLista,
+            atrasCierra(hallazgo, altaDe = null, ingresandoAMano = false),
+        )
+    }
 }

@@ -6,9 +6,11 @@ import com.controldestock.datos.VinculacionEntidad
 /**
  * En qué pantalla está la app.
  *
- * Son tres y la decisión entre ellas es una sola pregunta —si el celular
- * está vinculado—, así que la navegación es un `when` y no una librería con
- * su propio grafo y su propio ciclo de vida.
+ * Son cuatro. La decisión entre `Cargando`, `Vinculando` y las otras dos
+ * sigue siendo una sola pregunta —si el celular está vinculado—, y entre
+ * `EnLaLista` y `Escaneando` decide el operario con un botón: por eso sigue
+ * alcanzando un `when` y no hace falta una librería con su propio grafo y su
+ * propio ciclo de vida.
  */
 sealed class Pantalla {
     /** Todavía no se leyó la base local. */
@@ -16,6 +18,9 @@ sealed class Pantalla {
 
     /** Falta escanear el QR del panel. */
     object Vinculando : Pantalla()
+
+    /** La lista de lo asignado: dónde arranca el día, siempre. */
+    object EnLaLista : Pantalla()
 
     /** La cámara, lista para contar. */
     object Escaneando : Pantalla()
@@ -78,3 +83,28 @@ fun estadoTrasSubir(huboError: Boolean, loPidioElOperario: Boolean): EstadoDeSub
  */
 fun fichaAbierta(hallazgo: Hallazgo?, altaDe: String?, ingresandoAMano: Boolean): Boolean =
     hallazgo is Hallazgo.Encontrado || altaDe != null || ingresandoAMano
+
+/** Qué cierra el botón atrás, estando en la pantalla de escaneo. */
+sealed class Atras {
+    object CierraIngresoAMano : Atras()
+    object CierraAlta : Atras()
+    object CierraFicha : Atras()
+    object VuelveALaLista : Atras()
+}
+
+/**
+ * Decide qué hace el botón atrás de Android en la pantalla de escaneo.
+ *
+ * El orden es al revés de `fichaAbierta`: ahí cualquiera de las tres causas
+ * alcanza para pausar la cámara, acá hay que elegir una sola cosa para
+ * cerrar. Volver a la lista con algo a medio cargar tiraría lo que el
+ * operario tipeó, así que cada cuadro se cierra antes que el siguiente:
+ * primero el código a mano, después el alta, después la ficha, y recién sin
+ * nada abierto el atrás sale de la pantalla.
+ */
+fun atrasCierra(hallazgo: Hallazgo?, altaDe: String?, ingresandoAMano: Boolean): Atras = when {
+    ingresandoAMano -> Atras.CierraIngresoAMano
+    altaDe != null -> Atras.CierraAlta
+    hallazgo is Hallazgo.Encontrado -> Atras.CierraFicha
+    else -> Atras.VuelveALaLista
+}
