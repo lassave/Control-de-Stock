@@ -222,6 +222,29 @@ interface AsignacionDao {
 }
 
 @Dao
+interface PasadaItemDao {
+
+    @Query("SELECT articuloId FROM pasada_item")
+    suspend fun todos(): List<Int>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM pasada_item WHERE articuloId = :articuloId)")
+    suspend fun contiene(articuloId: Int): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertar(items: List<PasadaItemEntidad>)
+
+    @Query("DELETE FROM pasada_item")
+    suspend fun borrar()
+
+    /** Reemplaza el conjunto entero. Mismo patrón que `AsignacionDao.reemplazar`. */
+    @Transaction
+    suspend fun reemplazar(articuloIds: List<Int>) {
+        borrar()
+        insertar(articuloIds.map { PasadaItemEntidad(it) })
+    }
+}
+
+@Dao
 interface ConteoDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

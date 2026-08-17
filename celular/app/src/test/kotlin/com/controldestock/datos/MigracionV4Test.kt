@@ -4,16 +4,16 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.controldestock.nucleo.EstadoSync
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-// Copiado de app/schemas/com.controldestock.datos.BaseLocal/2.json.
-private val ESQUEMA_V2 = listOf(
+// Copiado de app/schemas/com.controldestock.datos.BaseLocal/3.json.
+private val ESQUEMA_V3 = listOf(
     "CREATE TABLE IF NOT EXISTS `vinculacion` (`id` INTEGER NOT NULL, " +
         "`url` TEXT NOT NULL, `token` TEXT NOT NULL, `operarioId` INTEGER NOT NULL, " +
         "`operarioNombre` TEXT NOT NULL, `sesionId` INTEGER NOT NULL, " +
@@ -36,14 +36,16 @@ private val ESQUEMA_V2 = listOf(
         "`observaciones` TEXT, `fueraAsignacion` INTEGER NOT NULL, " +
         "`timestampDispositivo` TEXT NOT NULL, `anulaUuid` TEXT, " +
         "`estadoSync` TEXT NOT NULL, `motivoRechazo` TEXT, PRIMARY KEY(`uuid`))",
+    "CREATE TABLE IF NOT EXISTS `asignacion` (`ubicacion` TEXT NOT NULL, " +
+        "PRIMARY KEY(`ubicacion`))",
 )
 
-// El `identityHash` del 2.json: sin esta fila la base migrada no parece de
-// la versión 2 sino una base ajena, y Room se niega a migrarla.
-private const val HASH_V2 = "5dc3ddeb1437e13d11ed2607f33e8810"
+// El `identityHash` del 3.json: sin esta fila la base migrada no parece de
+// la versión 3 sino una base ajena, y Room se niega a migrarla.
+private const val HASH_V3 = "24ce94de4221b02ea8738e3523a1f1a8"
 
 @RunWith(RobolectricTestRunner::class)
-class MigracionV3Test {
+class MigracionV4Test {
 
     private val contexto = ApplicationProvider.getApplicationContext<Context>()
 
@@ -53,17 +55,17 @@ class MigracionV3Test {
         archivo.delete()
 
         val vieja = SQLiteDatabase.openOrCreateDatabase(archivo, null)
-        ESQUEMA_V2.forEach(vieja::execSQL)
+        ESQUEMA_V3.forEach(vieja::execSQL)
         vieja.execSQL(
             "CREATE TABLE IF NOT EXISTS room_master_table " +
                 "(id INTEGER PRIMARY KEY, identity_hash TEXT)",
         )
         vieja.execSQL(
             "INSERT OR REPLACE INTO room_master_table (id, identity_hash) VALUES (42, ?)",
-            arrayOf(HASH_V2),
+            arrayOf(HASH_V3),
         )
         poblar(vieja)
-        vieja.version = 2
+        vieja.version = 3
         vieja.close()
 
         return archivo.absolutePath
@@ -71,12 +73,12 @@ class MigracionV3Test {
 
     private fun abrirMigrada(ruta: String): BaseLocal =
         Room.databaseBuilder(contexto, BaseLocal::class.java, ruta)
-            .addMigrations(BaseLocal.MIGRACION_2_3, BaseLocal.MIGRACION_3_4)
+            .addMigrations(BaseLocal.MIGRACION_3_4)
             .build()
 
     @Test
-    fun `los conteos sin subir sobreviven a la migracion`() = runTest {
-        val ruta = crearBaseVieja("v2-con-conteos.db") { vieja ->
+    fun `los conteos sin subir sobreviven a la migracion, con pasadaId en cero`() = runTest {
+        val ruta = crearBaseVieja("v3-con-conteos.db") { vieja ->
             vieja.execSQL(
                 """
                 INSERT INTO conteo (
@@ -85,7 +87,7 @@ class MigracionV3Test {
                     estadoSync, motivoRechazo
                 ) VALUES (
                     'uuid-1', 7, 1, '7790001', 48000, NULL, NULL, 0,
-                    '2026-08-12T10:00:00Z', NULL, 'PENDIENTE', NULL
+                    '2026-08-17T10:00:00Z', NULL, 'PENDIENTE', NULL
                 )
                 """.trimIndent(),
             )
@@ -95,13 +97,41 @@ class MigracionV3Test {
 
         val guardado = base.conteoDao().todos().single()
         assertEquals(48000, guardado.cantidad)
-        assertEquals(EstadoSync.PENDIENTE, guardado.estadoSync)
+        assertEquals(0, guardado.pasadaId)
+        base.close()
+    }
+
+    @Test
+    fun `la vinculacion sobrevive a la migracion, sin recuento activo`() = runTest {
+        val ruta = crearBaseVieja("v3-con-vinculacion.db") { vieja ->
+            vieja.execSQL(
+                "INSERT INTO vinculacion (id, url, token, operarioId, operarioNombre, " +
+                    "sesionId, pasadaId, pasadaNumero, pasadaEtiqueta) VALUES " +
+                    "(1, 'http://172.16.11.12:8000', 'abc', 1, 'Juan', 1, 1, 1, 'Conteo 1')",
+            )
+        }
+
+        val base = abrirMigrada(ruta)
+
+        val vinculacion = base.vinculacionDao().actual()
+        assertEquals("Juan", vinculacion?.operarioNombre)
+        assertFalse(vinculacion?.esParcial ?: true)
+        base.close()
+    }
+
+    @Test
+    fun `la tabla de pasada_item existe y arranca vacia`() = runTest {
+        val ruta = crearBaseVieja("v3-sin-recuento.db") {}
+
+        val base = abrirMigrada(ruta)
+
+        assertTrue(base.pasadaItemDao().todos().isEmpty())
         base.close()
     }
 
     @Test
     fun `el maestro sobrevive a la migracion`() = runTest {
-        val ruta = crearBaseVieja("v2-con-maestro.db") { vieja ->
+        val ruta = crearBaseVieja("v3-con-maestro.db") { vieja ->
             vieja.execSQL(
                 "INSERT INTO articulo (id, idOrden, sku, descripcion, unidad, " +
                     "pasadaNumero, sesionId, busqueda) " +
@@ -112,16 +142,6 @@ class MigracionV3Test {
         val base = abrirMigrada(ruta)
 
         assertEquals("Fideos", base.maestroDao().porId(7)?.descripcion)
-        base.close()
-    }
-
-    @Test
-    fun `la tabla de asignacion existe y arranca vacia`() = runTest {
-        val ruta = crearBaseVieja("v2-sin-reparto.db") {}
-
-        val base = abrirMigrada(ruta)
-
-        assertTrue(base.asignacionDao().todas().isEmpty())
         base.close()
     }
 }

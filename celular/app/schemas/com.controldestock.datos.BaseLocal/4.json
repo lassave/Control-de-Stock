@@ -1,0 +1,387 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 4,
+    "identityHash": "6eef08481621655c3438ae4cc6049b78",
+    "entities": [
+      {
+        "tableName": "vinculacion",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `url` TEXT NOT NULL, `token` TEXT NOT NULL, `operarioId` INTEGER NOT NULL, `operarioNombre` TEXT NOT NULL, `sesionId` INTEGER NOT NULL, `pasadaId` INTEGER NOT NULL, `pasadaNumero` INTEGER NOT NULL, `pasadaEtiqueta` TEXT NOT NULL, `esParcial` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "url",
+            "columnName": "url",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "token",
+            "columnName": "token",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operarioId",
+            "columnName": "operarioId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operarioNombre",
+            "columnName": "operarioNombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sesionId",
+            "columnName": "sesionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pasadaId",
+            "columnName": "pasadaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pasadaNumero",
+            "columnName": "pasadaNumero",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pasadaEtiqueta",
+            "columnName": "pasadaEtiqueta",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "esParcial",
+            "columnName": "esParcial",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "articulo",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `idOrden` INTEGER NOT NULL, `tipo` TEXT, `material` TEXT, `sku` TEXT NOT NULL, `descripcion` TEXT NOT NULL, `grupo` TEXT, `ubicacion` TEXT, `unidad` TEXT NOT NULL, `pasadaNumero` INTEGER NOT NULL, `sesionId` INTEGER NOT NULL, `busqueda` TEXT NOT NULL, `estadoAlta` TEXT, `motivoRechazo` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idOrden",
+            "columnName": "idOrden",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tipo",
+            "columnName": "tipo",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "material",
+            "columnName": "material",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sku",
+            "columnName": "sku",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "descripcion",
+            "columnName": "descripcion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grupo",
+            "columnName": "grupo",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ubicacion",
+            "columnName": "ubicacion",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "unidad",
+            "columnName": "unidad",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pasadaNumero",
+            "columnName": "pasadaNumero",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sesionId",
+            "columnName": "sesionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "busqueda",
+            "columnName": "busqueda",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estadoAlta",
+            "columnName": "estadoAlta",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "motivoRechazo",
+            "columnName": "motivoRechazo",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "codigo",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`codigo` TEXT NOT NULL, `articuloId` INTEGER NOT NULL, PRIMARY KEY(`codigo`, `articuloId`))",
+        "fields": [
+          {
+            "fieldPath": "codigo",
+            "columnName": "codigo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "articuloId",
+            "columnName": "articuloId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "codigo",
+            "articuloId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_codigo_codigo",
+            "unique": false,
+            "columnNames": [
+              "codigo"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_codigo_codigo` ON `${TABLE_NAME}` (`codigo`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "unidad",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`codigo` TEXT NOT NULL, `nombre` TEXT NOT NULL, `admiteDecimales` INTEGER NOT NULL, PRIMARY KEY(`codigo`))",
+        "fields": [
+          {
+            "fieldPath": "codigo",
+            "columnName": "codigo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nombre",
+            "columnName": "nombre",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "admiteDecimales",
+            "columnName": "admiteDecimales",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "codigo"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "conteo",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uuid` TEXT NOT NULL, `articuloId` INTEGER NOT NULL, `sesionId` INTEGER NOT NULL, `codigo` TEXT NOT NULL, `cantidad` INTEGER NOT NULL, `ubicacionReal` TEXT, `observaciones` TEXT, `fueraAsignacion` INTEGER NOT NULL, `pasadaId` INTEGER NOT NULL, `timestampDispositivo` TEXT NOT NULL, `anulaUuid` TEXT, `estadoSync` TEXT NOT NULL, `motivoRechazo` TEXT, PRIMARY KEY(`uuid`))",
+        "fields": [
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "articuloId",
+            "columnName": "articuloId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sesionId",
+            "columnName": "sesionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "codigo",
+            "columnName": "codigo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cantidad",
+            "columnName": "cantidad",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ubicacionReal",
+            "columnName": "ubicacionReal",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "observaciones",
+            "columnName": "observaciones",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fueraAsignacion",
+            "columnName": "fueraAsignacion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pasadaId",
+            "columnName": "pasadaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampDispositivo",
+            "columnName": "timestampDispositivo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "anulaUuid",
+            "columnName": "anulaUuid",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "estadoSync",
+            "columnName": "estadoSync",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "motivoRechazo",
+            "columnName": "motivoRechazo",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uuid"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "asignacion",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ubicacion` TEXT NOT NULL, PRIMARY KEY(`ubicacion`))",
+        "fields": [
+          {
+            "fieldPath": "ubicacion",
+            "columnName": "ubicacion",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ubicacion"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "pasada_item",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`articuloId` INTEGER NOT NULL, PRIMARY KEY(`articuloId`))",
+        "fields": [
+          {
+            "fieldPath": "articuloId",
+            "columnName": "articuloId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "articuloId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6eef08481621655c3438ae4cc6049b78')"
+    ]
+  }
+}

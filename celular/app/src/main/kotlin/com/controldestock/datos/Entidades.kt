@@ -33,6 +33,10 @@ data class VinculacionEntidad(
     val pasadaId: Int,
     val pasadaNumero: Int,
     val pasadaEtiqueta: String,
+    // Si la pasada activa es un recuento. Cuando lo es, solo los SKU de
+    // `pasada_item` se pueden contar: `Contador.buscar` bloquea el resto
+    // localmente, sin ida y vuelta al servidor.
+    val esParcial: Boolean = false,
 )
 
 @Entity(tableName = "articulo")
@@ -112,6 +116,10 @@ data class ConteoEntidad(
     // Si el conteo cayó fuera de lo asignado. Hoy siempre 0, por el mismo
     // motivo que pasadaNumero.
     val fueraAsignacion: Int = 0,
+    // A qué pasada pertenece. Con recuentos concurrentes, un tilde del
+    // Conteo 1 no puede contar como avance de un recuento abierto después
+    // sobre el mismo artículo: `ListaAsignada.armar` filtra por esto.
+    val pasadaId: Int = 0,
     val timestampDispositivo: String,
     val anulaUuid: String? = null,
     val estadoSync: EstadoSync = EstadoSync.PENDIENTE,
@@ -130,10 +138,13 @@ data class ConteoEntidad(
     fun aLocal() = ConteoLocal(aEvento(), estadoSync, motivoRechazo)
 
     companion object {
-        fun de(evento: EventoConteo, articuloId: Int, sesionId: Int = 0) = ConteoEntidad(
+        fun de(
+            evento: EventoConteo, articuloId: Int, sesionId: Int = 0, pasadaId: Int = 0,
+        ) = ConteoEntidad(
             uuid = evento.uuid,
             articuloId = articuloId,
             sesionId = sesionId,
+            pasadaId = pasadaId,
             codigo = evento.codigo,
             cantidad = evento.cantidad,
             ubicacionReal = evento.ubicacionReal,
@@ -160,4 +171,16 @@ val ArticuloEntidad.esAltaPendiente: Boolean
 @Entity(tableName = "asignacion")
 data class AsignacionEntidad(
     @PrimaryKey val ubicacion: String,
+)
+
+/**
+ * Los SKU permitidos en la pasada activa, cuando es un recuento parcial.
+ *
+ * Tan simple como `AsignacionEntidad`, por el mismo motivo: se reemplaza
+ * entera en cada refresco, no se calcula una diferencia. Vacía significa
+ * «sin recorte», igual que `esParcial = false` en `VinculacionEntidad`.
+ */
+@Entity(tableName = "pasada_item")
+data class PasadaItemEntidad(
+    @PrimaryKey val articuloId: Int,
 )

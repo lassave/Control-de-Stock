@@ -27,8 +27,9 @@ class ConversorDeEstado {
         UnidadEntidad::class,
         ConteoEntidad::class,
         AsignacionEntidad::class,
+        PasadaItemEntidad::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(ConversorDeEstado::class)
@@ -38,6 +39,7 @@ abstract class BaseLocal : RoomDatabase() {
     abstract fun maestroDao(): MaestroDao
     abstract fun conteoDao(): ConteoDao
     abstract fun asignacionDao(): AsignacionDao
+    abstract fun pasadaItemDao(): PasadaItemDao
 
     /**
      * Vincula el celular, limpiando lo del inventario anterior si cambió.
@@ -109,13 +111,31 @@ abstract class BaseLocal : RoomDatabase() {
             }
         }
 
+        /**
+         * Agrega el bloqueo por recuento: si la pasada activa es parcial, y
+         * a qué pasada pertenece cada conteo. El `CREATE TABLE` de
+         * `pasada_item` y las columnas nuevas son copia literal de
+         * `app/schemas/com.controldestock.datos.BaseLocal/4.json`, por el
+         * mismo motivo que `MIGRACION_2_3`.
+         */
+        val MIGRACION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE vinculacion ADD COLUMN esParcial INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE conteo ADD COLUMN pasadaId INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `pasada_item` (`articuloId` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`articuloId`))"
+                )
+            }
+        }
+
         fun de(contexto: Context): BaseLocal = instancia ?: synchronized(this) {
             instancia ?: Room.databaseBuilder(
                 contexto.applicationContext,
                 BaseLocal::class.java,
                 "control-de-stock.db",
             )
-                .addMigrations(MIGRACION_1_2, MIGRACION_2_3)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4)
                 .build().also { instancia = it }
         }
     }
