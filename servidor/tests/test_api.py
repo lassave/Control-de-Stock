@@ -915,3 +915,43 @@ def test_mis_ubicaciones_sin_conteo_abierto_avisa_en_vez_de_romper(cliente, sesi
 
     assert respuesta.status_code == 409
     assert "conteo" in respuesta.json()["detail"].lower()
+
+
+# --- La pestaña de reparto ---------------------------------------------------
+
+def test_ver_reparto(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    asignar(cliente, sesion["id"], operario["id"], ["Deposito A"])
+
+    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/reparto")
+
+    assert respuesta.status_code == 200
+    filas = respuesta.json()["filas"]
+    fila_a = next(f for f in filas if f["sku"] == "A")
+    assert fila_a["asignado_a"] == ["Juan"]
+
+
+def test_ver_reparto_sesion_inexistente(cliente):
+    respuesta = cliente.get("/api/sesiones/999/reparto")
+
+    assert respuesta.status_code == 404
+
+
+def test_ver_reparto_respeta_los_filtros(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+
+    respuesta = cliente.get(
+        f"/api/sesiones/{sesion['id']}/reparto", params={"ubicacion": "Deposito B"}
+    )
+
+    assert [f["sku"] for f in respuesta.json()["filas"]] == ["B"]
+
+
+def test_exportar_reparto(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+
+    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/exportar/reparto")
+
+    assert respuesta.status_code == 200
+    assert "ubicacion;id_orden;sku" in respuesta.text

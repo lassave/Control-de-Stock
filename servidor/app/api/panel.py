@@ -8,7 +8,7 @@ from fastapi.responses import Response
 
 from app import red, reloj
 from app.repos import asignaciones, operarios, sesiones
-from app.servicios import exportacion, importacion, tablero, vinculacion
+from app.servicios import exportacion, importacion, reparto, tablero, vinculacion
 
 router = APIRouter(prefix="/api")
 
@@ -153,6 +153,24 @@ def ver_tablero(
         raise _no_encontrada(error) from error
 
 
+@router.get("/sesiones/{sesion_id}/reparto")
+def ver_reparto(
+    sesion_id: int,
+    request: Request,
+    tipo: str = "", material: str = "", grupo: str = "",
+    ubicacion: str = "", estado: str = "", texto: str = "",
+    solo_errores_carga: bool = False,
+):
+    con = _con(request)
+    filtros = _filtros(
+        tipo, material, grupo, ubicacion, estado, texto, solo_errores_carga
+    )
+    try:
+        return {"filas": reparto.filas(con, sesion_id, filtros)}
+    except ValueError as error:
+        raise _no_encontrada(error) from error
+
+
 @router.get("/sesiones/{sesion_id}/resumen")
 def ver_resumen(sesion_id: int, request: Request):
     try:
@@ -261,6 +279,8 @@ def exportar(
         generar = exportacion.resumen_por_sku
     elif tipo_exportacion == "detalle":
         generar = exportacion.detalle
+    elif tipo_exportacion == "reparto":
+        generar = exportacion.reparto
     else:
         raise HTTPException(
             status_code=404, detail=f"No existe la exportación «{tipo_exportacion}»"

@@ -11,6 +11,7 @@ import io
 from app import cantidades
 from app.repos import sesiones
 from app.servicios import tablero
+from app.servicios import reparto as reparto_servicio
 
 COLUMNAS_RESUMEN = [
     "id_orden", "tipo", "material", "sku", "codigos_de_barra", "descripcion",
@@ -23,6 +24,11 @@ COLUMNAS_DETALLE = [
     "fecha", "fecha_sincronizacion", "pasada", "operario", "sku",
     "descripcion", "unidad", "cantidad", "ubicacion", "ubicacion_real",
     "observaciones", "anulado", "fuera_asignacion",
+]
+
+COLUMNAS_REPARTO = [
+    "ubicacion", "id_orden", "sku", "descripcion",
+    "asignado_a", "contado_por", "contado", "estado",
 ]
 
 
@@ -132,3 +138,25 @@ def detalle(con, sesion_id, filtros=None):
             "fuera_asignacion": "SI" if fila["fuera_asignacion"] else "",
         })
     return _escribir(COLUMNAS_DETALLE, filas)
+
+
+def reparto(con, sesion_id, filtros=None):
+    """A quién le toca cada ubicación y quién la contó, para llevarlo aparte.
+
+    Varios nombres se unen con « | », no con «, »: un nombre de persona
+    puede traer coma («Pérez, Juan») y el separador del archivo es «;», pero
+    un nombre real puede tener cualquiera de los dos.
+    """
+    filas = []
+    for fila in reparto_servicio.filas(con, sesion_id, filtros):
+        filas.append({
+            "ubicacion": fila["ubicacion"] or "",
+            "id_orden": fila["id_orden"],
+            "sku": fila["sku"],
+            "descripcion": fila["descripcion"],
+            "asignado_a": " | ".join(fila["asignado_a"]),
+            "contado_por": " | ".join(fila["contado_por"]),
+            "contado": _milesimas(fila["contado"]),
+            "estado": fila["estado"],
+        })
+    return _escribir(COLUMNAS_REPARTO, filas)

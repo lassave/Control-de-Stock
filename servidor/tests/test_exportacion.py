@@ -194,3 +194,47 @@ def test_resumen_trae_los_codigos_de_barra(con, escenario):
     fila_a = next(f for f in filas if f["sku"] == "A")
 
     assert fila_a["codigos_de_barra"] == "A"
+
+
+# --- La exportación de la pestaña de reparto --------------------------------
+
+def test_reparto_tiene_las_columnas_del_spec(con, escenario):
+    filas = leer_csv(exportacion.reparto(con, escenario["sesion_id"]))
+
+    assert list(filas[0].keys()) == [
+        "ubicacion", "id_orden", "sku", "descripcion",
+        "asignado_a", "contado_por", "contado", "estado",
+    ]
+
+
+def test_reparto_une_varios_nombres_con_una_barra(con, escenario):
+    asignaciones.reemplazar(
+        con, sesiones.pasada_abierta(con, escenario["sesion_id"])["id"],
+        escenario["juan"]["id"], ["P-1"],
+    )
+    maria = operarios.crear(con, "Maria")
+    asignaciones.reemplazar(
+        con, sesiones.pasada_abierta(con, escenario["sesion_id"])["id"],
+        maria["id"], ["P-1"],
+    )
+
+    filas = leer_csv(exportacion.reparto(con, escenario["sesion_id"]))
+    fila_a = next(f for f in filas if f["sku"] == "A")
+
+    assert fila_a["asignado_a"] == "Juan | Maria"
+    assert fila_a["contado_por"] == "Juan"
+
+
+def test_reparto_arrastra_los_filtros(con, escenario):
+    filas = leer_csv(
+        exportacion.reparto(con, escenario["sesion_id"], {"ubicacion": "P-2"})
+    )
+
+    assert [f["sku"] for f in filas] == ["B"]
+
+
+def test_reparto_cantidad_con_coma_decimal(con, escenario):
+    filas = leer_csv(exportacion.reparto(con, escenario["sesion_id"]))
+    fila_a = next(f for f in filas if f["sku"] == "A")
+
+    assert fila_a["contado"] == "98"
