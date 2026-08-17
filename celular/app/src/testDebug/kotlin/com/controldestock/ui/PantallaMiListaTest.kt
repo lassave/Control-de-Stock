@@ -68,18 +68,7 @@ class PantallaMiListaTest {
     }
 
     @Test
-    fun `el tilde aparece solo en los articulos contados`() {
-        montar(
-            ubicaciones = listOf(
-                UbicacionAsignada("P-1", listOf(renglon("A", contado = 5000), renglon("B"))),
-            ),
-        )
-
-        compose.onNodeWithText("✓ 5", substring = true).assertIsDisplayed()
-    }
-
-    @Test
-    fun `muestra el avance de cada ubicacion con el rotulo Ubicacion`() {
+    fun `la tarjeta de ubicacion muestra el nombre y el resumen numerico`() {
         montar(
             ubicaciones = listOf(
                 UbicacionAsignada("P-3", (1..40).map {
@@ -88,7 +77,37 @@ class PantallaMiListaTest {
             ),
         )
 
-        compose.onNodeWithText("Ubicación: P-3 — 12 de 40").assertIsDisplayed()
+        compose.onNodeWithText("UBICACIÓN ASIGNADA").assertIsDisplayed()
+        compose.onNodeWithText("P-3").assertIsDisplayed()
+        compose.onNodeWithText("40").assertIsDisplayed() // total
+        compose.onNodeWithText("12").assertIsDisplayed() // contados
+        compose.onNodeWithText("28").assertIsDisplayed() // sin contar
+    }
+
+    @Test
+    fun `un articulo contado muestra la etiqueta CONTADO y la cantidad`() {
+        montar(
+            ubicaciones = listOf(
+                UbicacionAsignada("P-1", listOf(renglon("A", contado = 5000))),
+            ),
+        )
+
+        compose.onNodeWithText("CONTADO").assertIsDisplayed()
+        compose.onNodeWithText("5 UN", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun `un articulo pendiente muestra la etiqueta PENDIENTE sin ninguna cantidad`() {
+        // Regla dura: el celular no puede insinuar el stock del sistema. Un
+        // pendiente no tiene cantidad propia todavía, así que no se muestra
+        // ningún número — ni el que cargó el operario, porque no cargó nada.
+        montar(
+            ubicaciones = listOf(
+                UbicacionAsignada("P-1", listOf(renglon("A"))),
+            ),
+        )
+
+        compose.onNodeWithText("PENDIENTE").assertIsDisplayed()
     }
 
     @Test
@@ -111,7 +130,7 @@ class PantallaMiListaTest {
     }
 
     @Test
-    fun `el indicador de pendientes se muestra al lado de actualizar`() {
+    fun `el indicador de pendientes se muestra en la franja inferior`() {
         montar(pendientes = 3)
 
         compose.onNodeWithText("3 sin subir").assertIsDisplayed()
