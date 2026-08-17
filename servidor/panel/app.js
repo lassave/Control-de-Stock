@@ -14,6 +14,14 @@ const estado = {
   reparto: {
     filtros: { texto: "", estado: "", ubicacion: "" },
   },
+  recuento: {
+    filtroTexto: "",
+    // Arranca vacío a propósito: hay que marcar a mano lo que entra al
+    // recuento, no al revés.
+    seleccionados: new Set(),
+    filas: [],
+    avancePorPasada: {},
+  },
 };
 
 const ESTADOS = {
@@ -178,6 +186,7 @@ async function refrescarSinRomper() {
   try {
     await refrescarTablero();
     await refrescarReparto();
+    await refrescarRecuentosAbiertos();
     $("#sesion-actual").classList.remove("error");
   } catch (error) {
     $("#sesion-actual").classList.add("error");
@@ -297,6 +306,120 @@ async function refrescarReparto() {
     "Todas las ubicaciones");
 
   envoltorio.scrollTop = scroll;
+}
+
+// --- Recuento ----------------------------------------------------------------
+
+function dibujarFilaRecuento(fila) {
+  const marcada = estado.recuento.seleccionados.has(fila.id) ? " checked" : "";
+  return `
+    <tr>
+      <td><input type="checkbox" data-recuento-sku="${esc(fila.id)}"${marcada}></td>
+      <td>${esc(fila.sku)}</td>
+      <td>${esc(fila.descripcion)}</td>
+      <td>${esc(fila.ubicacion)}</td>
+      <td class="num">${esc(milesimasATexto(fila.stock_sistema))}</td>
+      <td class="num">${esc(milesimasATexto(fila.ultimo_conteo))}</td>
+      <td class="num">${esc(milesimasATexto(fila.dif))}</td>
+    </tr>`;
+}
+
+/**
+ * La tolerancia y el listado A RECONTAR. No entra al refresco automático de
+ * cada 4 segundos: perdería lo que se está tipeando en el formulario o
+ * recién marcando en la lista. Se refresca a propósito: al entrar a la
+ * pestaña, al guardar la tolerancia y al abrir un recuento.
+ */
+async function refrescarRecuentoChecklist() {
+  if (!estado.sesion) return;
+  if ($("#vista-recuento").classList.contains("oculta")) return;
+
+  $("#tolerancia-pct").value = estado.sesion.tolerancia_pct;
+  $("#tolerancia-min-abs").value = estado.sesion.tolerancia_min_abs / 1000;
+
+  const parametros = new URLSearchParams({
+    estado: "A RECONTAR", texto: estado.recuento.filtroTexto,
+  }).toString();
+  const datos = await pedir(`/api/sesiones/${estado.sesion.id}/tablero?${parametros}`);
+  estado.recuento.filas = datos.filas;
+
+  const envoltorio = $("#recuento-envoltorio-tabla");
+  const scroll = envoltorio.scrollTop;
+  $("#tabla-recuento tbody").innerHTML = datos.filas.map(dibujarFilaRecuento).join("")
+    || `<tr><td colspan="7">No hay ningún SKU fuera de tolerancia.</td></tr>`;
+  envoltorio.scrollTop = scroll;
+}
+
+function dibujarFilaAvanceRecuento(item) {
+  return `
+    <tr>
+      <td>${esc(item.operario)}</td>
+      <td>${item.ubicaciones.map((u) => esc(u)).join(", ")}</td>
+      <td class="num">${esc(item.total)}</td>
+      <td class="num">${esc(item.contados)}</td>
+      <td class="num">${esc(item.sin_contar)}</td>
+      <td class="num">${esc(item.avance_pct)}%</td>
+    </tr>`;
+}
+
+/** Un botón "Sectores" por operario activo, para asignarlo a este recuento. */
+function dibujarOperarioDeRecuento(operario, pasadaId) {
+  return `
+    <span class="operario-recuento">
+      ${esc(operario.nombre)}
+      <button class="secundario" type="button"
+              data-recuento-sectores="${esc(operario.id)}"
+              data-recuento-pasada="${esc(pasadaId)}">
+        Sectores
+      </button>
+    </span>`;
+}
+
+function dibujarTarjetaRecuento(pasada, avance) {
+  const operarios = (estado.operarios || [])
+    .map((o) => dibujarOperarioDeRecuento(o, pasada.id)).join("");
+  const filasAvance = avance.map(dibujarFilaAvanceRecuento).join("");
+
+  return `
+    <div class="tarjeta-recuento">
+      <h4>${esc(pasada.etiqueta)} — ${esc(pasada.cantidad_sku)} SKU</h4>
+      <div class="operarios-del-recuento">${operarios}</div>
+      <table class="detalle-operario">
+        <thead>
+          <tr>
+            <th>Operario</th><th>Ubicaciones</th>
+            <th class="num">Asignado</th><th class="num">Contado</th>
+            <th class="num">Sin contar</th><th class="num">% avance</th>
+          </tr>
+        </thead>
+        <tbody>${filasAvance || '<tr><td colspan="6">Todavía nadie tiene esto asignado.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+/**
+ * Las tarjetas de los recuentos abiertos, con su avance. Sí entra al
+ * refresco automático: son datos de solo lectura y un botón, sin nada que
+ * el redibujado pueda perder.
+ */
+async function refrescarRecuentosAbiertos() {
+  if (!estado.sesion) return;
+  if ($("#vista-recuento").classList.contains("oculta")) return;
+
+  const pasadas = await pedir(`/api/sesiones/${estado.sesion.id}/pasadas`);
+  const recuentos = pasadas.filter((p) => p.es_parcial && p.estado === "abierta");
+
+  estado.recuento.avancePorPasada = {};
+  const tarjetas = [];
+  for (const pasada of recuentos) {
+    const avance = await pedir(
+      `/api/sesiones/${estado.sesion.id}/pasadas/${pasada.id}/avance`);
+    estado.recuento.avancePorPasada[pasada.id] = avance;
+    tarjetas.push(dibujarTarjetaRecuento(pasada, avance));
+  }
+
+  $("#recuentos-abiertos").innerHTML = tarjetas.join("")
+    || "<p>Ningún recuento abierto todavía.</p>";
 }
 
 // --- Sesiones --------------------------------------------------------------
@@ -494,12 +617,24 @@ function dibujarCasillaUbicacion(ubicacion, asignadas) {
   </label>`;
 }
 
-async function abrirSectores(operarioId) {
+/**
+ * Abre el diálogo de sectores para un operario.
+ *
+ * Sin `pasadaId`, reparte para la pasada general —el uso de siempre, desde
+ * Operarios—. La pestaña Recuento pasa el id del recuento puntual, y las
+ * casillas ya asignadas de esa pasada en particular (no las de la pasada
+ * activa del operario, que puede ser otra).
+ */
+async function abrirSectores(operarioId, pasadaId = null, asignadasEnEsaPasada = null) {
   const operario = estado.operarios.find((o) => String(o.id) === String(operarioId));
-  // Este diálogo reparte para el conteo general, no para un recuento: si
-  // no hay pasada general abierta (solo quedan recuentos en curso), no hay
-  // nada que repartir desde acá.
-  if (!operario || !estado.sesion || !estado.sesion.pasada) return;
+  const idPasada = pasadaId || (estado.sesion && estado.sesion.pasada && estado.sesion.pasada.id);
+  // Sin pasada general abierta (solo quedan recuentos en curso) y sin una
+  // pasada puntual indicada, no hay nada que repartir desde acá.
+  if (!operario || !estado.sesion || !idPasada) return;
+
+  const asignadas = asignadasEnEsaPasada !== null
+    ? asignadasEnEsaPasada
+    : operario.ubicaciones_asignadas;
 
   try {
     const ubicaciones = await pedir(`/api/sesiones/${estado.sesion.id}/ubicaciones`);
@@ -507,11 +642,11 @@ async function abrirSectores(operarioId) {
     // Por textContent: es el nombre de una persona, dato como cualquier otro.
     $("#sectores-titulo").textContent = `Sectores de ${operario.nombre}`;
     $("#sectores-lista").innerHTML = ubicaciones.length
-      ? ubicaciones.map((u) => dibujarCasillaUbicacion(u, operario.ubicaciones_asignadas)).join("")
+      ? ubicaciones.map((u) => dibujarCasillaUbicacion(u, asignadas)).join("")
       : "<p>El maestro todavía no tiene ubicaciones cargadas.</p>";
 
     $("#dialogo-sectores").dataset.operario = operarioId;
-    $("#dialogo-sectores").dataset.pasada = estado.sesion.pasada.id;
+    $("#dialogo-sectores").dataset.pasada = idPasada;
     $("#dialogo-sectores").showModal();
   } catch (error) {
     alert(error.message);
@@ -536,6 +671,9 @@ async function guardarSectores() {
     );
     dialogo.close();
     await cargarOperarios();
+    // Si el diálogo se abrió desde un recuento, su avance cambió: quién
+    // tiene qué asignado ahí ya no es lo que se veía antes de guardar.
+    await refrescarRecuentosAbiertos();
   } catch (error) {
     alert(error.message);
   }
@@ -615,6 +753,10 @@ function conectarEventos() {
       // Sin esto, la pestaña recién abierta queda vacía hasta el próximo
       // tick del refresco automático, hasta 4 segundos después.
       if (boton.dataset.vista === "reparto") refrescarReparto();
+      if (boton.dataset.vista === "recuento") {
+        refrescarRecuentoChecklist();
+        refrescarRecuentosAbiertos();
+      }
     });
   });
 
@@ -666,6 +808,79 @@ function conectarEventos() {
       $(`#reparto-filtro-${campo}`).value = "";
     });
     refrescarReparto();
+  });
+
+  $("#form-tolerancia").addEventListener("submit", async (evento) => {
+    evento.preventDefault();
+    if (!estado.sesion) return;
+    const pct = Number($("#tolerancia-pct").value);
+    const minAbs = Math.round(Number($("#tolerancia-min-abs").value) * 1000);
+    try {
+      const sesion = await pedir(`/api/sesiones/${estado.sesion.id}/tolerancia`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pct, min_abs: minAbs }),
+      });
+      estado.sesion.tolerancia_pct = sesion.tolerancia_pct;
+      estado.sesion.tolerancia_min_abs = sesion.tolerancia_min_abs;
+      await refrescarRecuentoChecklist();
+      await refrescarTablero();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  $("#recuento-filtro-texto").addEventListener("input", (evento) => {
+    estado.recuento.filtroTexto = evento.target.value;
+    refrescarRecuentoChecklist();
+  });
+
+  $("#tabla-recuento").addEventListener("change", (evento) => {
+    const id = evento.target.dataset.recuentoSku;
+    if (!id) return;
+    if (evento.target.checked) estado.recuento.seleccionados.add(Number(id));
+    else estado.recuento.seleccionados.delete(Number(id));
+  });
+
+  $("#recuento-seleccionar-todos").addEventListener("click", () => {
+    estado.recuento.filas.forEach((f) => estado.recuento.seleccionados.add(f.id));
+    refrescarRecuentoChecklist();
+  });
+
+  $("#recuento-deseleccionar-todos").addEventListener("click", () => {
+    estado.recuento.seleccionados.clear();
+    refrescarRecuentoChecklist();
+  });
+
+  $("#abrir-recuento").addEventListener("click", async () => {
+    if (!estado.sesion) return;
+    const articulo_ids = [...estado.recuento.seleccionados];
+    if (!articulo_ids.length) {
+      alert("Marcá al menos un SKU para recontar.");
+      return;
+    }
+    try {
+      await pedir(`/api/sesiones/${estado.sesion.id}/pasadas`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ articulo_ids }),
+      });
+      estado.recuento.seleccionados = new Set();
+      await refrescarRecuentoChecklist();
+      await refrescarRecuentosAbiertos();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  $("#recuentos-abiertos").addEventListener("click", (evento) => {
+    const operarioId = evento.target.dataset.recuentoSectores;
+    if (!operarioId) return;
+    const pasadaId = Number(evento.target.dataset.recuentoPasada);
+    const operario = estado.operarios.find((o) => String(o.id) === String(operarioId));
+    const avance = (estado.recuento.avancePorPasada[pasadaId] || [])
+      .find((item) => operario && item.operario === operario.nombre);
+    abrirSectores(operarioId, pasadaId, avance ? avance.ubicaciones : []);
   });
 
   $("#archivo").addEventListener("change", (evento) => {

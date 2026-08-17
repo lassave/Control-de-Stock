@@ -17,6 +17,7 @@
     <button data-vista="maestro">Importar maestro</button>
     <button data-vista="operarios">Operarios</button>
     <button data-vista="reparto">Avance por ubicación</button>
+    <button data-vista="recuento">Recuento</button>
     <button data-vista="sesiones">Sesiones</button>
   </nav>
 
@@ -143,6 +144,54 @@
       <div class="tabla-envoltorio" id="reparto-envoltorio-tabla">
         <div id="reparto-operarios"></div>
       </div>
+    </section>
+
+    <section id="vista-recuento" class="vista oculta">
+      <h2>Recuento</h2>
+      <p class="ayuda">
+        Al cerrar un conteo pueden quedar diferencias fuera de tolerancia.
+        Marcá los SKU que hay que recontar y abrí un recuento: mientras esté
+        abierto, el celular de quien lo tenga asignado solo va a aceptar esos
+        artículos.
+      </p>
+
+      <form id="form-tolerancia" class="tolerancia">
+        <label>
+          Tolerancia (%)
+          <input id="tolerancia-pct" type="number" step="0.1" min="0" required>
+        </label>
+        <label>
+          Diferencia mínima aceptada (en unidades)
+          <input id="tolerancia-min-abs" type="number" step="0.001" min="0" required>
+        </label>
+        <button>Guardar tolerancia</button>
+      </form>
+
+      <h3>SKU a recontar</h3>
+      <p class="ayuda">
+        Arranca vacío: hay que marcar a propósito lo que entra al recuento.
+      </p>
+      <div class="filtros">
+        <input id="recuento-filtro-texto" type="search" placeholder="Buscar por SKU o descripción">
+        <button id="recuento-seleccionar-todos" class="secundario" type="button">Seleccionar todos</button>
+        <button id="recuento-deseleccionar-todos" class="secundario" type="button">Deseleccionar todos</button>
+      </div>
+      <div class="tabla-envoltorio" id="recuento-envoltorio-tabla">
+        <table id="tabla-recuento">
+          <thead>
+            <tr>
+              <th></th><th>SKU</th><th>Descripción</th><th>Ubicación</th>
+              <th class="num">Sistema</th><th class="num">Último conteo</th>
+              <th class="num">Dif.</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <button id="abrir-recuento">Abrir recuento con los SKU marcados</button>
+
+      <h3>Recuentos abiertos</h3>
+      <div id="recuentos-abiertos"></div>
     </section>
 
     <section id="vista-sesiones" class="vista oculta">

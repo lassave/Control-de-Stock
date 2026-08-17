@@ -329,3 +329,52 @@ dialog { max-width: 28rem; border: 1px solid var(--borde); border-radius: 8px; }
   gap: 0.4rem;
   margin: 0.6rem 0;
 }
+
+.tolerancia {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1.25rem;
+}
+
+.tolerancia label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--tenue);
+}
+
+#abrir-recuento { margin: 0.75rem 0 1.5rem; }
+
+.tarjeta-recuento {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 0.75rem;
+}
+
+.tarjeta-recuento h4 { margin: 0 0 0.2rem; }
+
+.operarios-del-recuento {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+}
+
+.operario-recuento {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--borde);
+  border-radius: 5px;
+  padding: 0.25rem 0.25rem 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
