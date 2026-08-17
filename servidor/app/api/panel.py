@@ -127,6 +127,20 @@ async def abrir_pasada(sesion_id: int, request: Request):
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+@router.get("/sesiones/{sesion_id}/pasadas/{pasada_id}/avance")
+def ver_avance_de_pasada(sesion_id: int, pasada_id: int, request: Request):
+    con = _con(request)
+    try:
+        sesiones.obtener(con, sesion_id)
+    except ValueError as error:
+        raise _no_encontrada(error) from error
+
+    try:
+        return reparto.avance_de_pasada(con, sesion_id, pasada_id)
+    except ValueError as error:
+        raise _no_encontrada(error) from error
+
+
 @router.post("/maestro/previsualizar")
 async def previsualizar_maestro(archivo: UploadFile = File(...)):
     contenido = await archivo.read()

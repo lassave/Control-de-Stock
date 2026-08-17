@@ -6,7 +6,7 @@ escribirlos de nuevo acá garantizaría que tarde o temprano esta pestaña y el
 tablero digan cosas distintas del mismo SKU.
 """
 
-from app.repos import asignaciones
+from app.repos import asignaciones, operarios, pasada_item, sesiones
 from app.servicios.tablero import CTE_VIGENTES, filas as filas_del_tablero
 
 
@@ -112,3 +112,71 @@ def avance_por_operario(con, sesion_id, filtros=None):
         })
 
     return resultado
+
+
+def avance_de_pasada(con, sesion_id, pasada_id):
+    """El progreso de un recuento puntual, operario por operario.
+
+    Distinto de `avance_por_operario`, que mira el valor vigente de hoy —la
+    pasada más reciente en que cada SKU fue contado—: acá importa
+    específicamente esta pasada, no la que terminó ganando después. Un SKU
+    contado en el Conteo 1 no hace avanzar un recuento que se abrió después
+    sobre ese mismo SKU.
+    """
+    pasada = sesiones.obtener_pasada(con, sesion_id, pasada_id)
+    if pasada is None:
+        raise ValueError(f"No existe la pasada {pasada_id} en esta sesión")
+
+    articulos_de_la_pasada = pasada_item.de_pasada(con, pasada_id)
+    if not articulos_de_la_pasada:
+        return []
+
+    ubicacion_de = {
+        fila["id"]: fila["ubicacion"]
+        for fila in con.execute(
+            "SELECT id, ubicacion FROM articulo WHERE sesion_id = ? AND fusionado_en IS NULL",
+            (sesion_id,),
+        ).fetchall()
+    }
+
+    # Neta las anulaciones de a pares, igual que CTE_VIGENTES: acá la
+    # pregunta es «se contó en esta pasada», no «cuál es el valor vigente».
+    contados = {
+        fila["articulo_id"]
+        for fila in con.execute(
+            "SELECT DISTINCT articulo_id FROM conteo WHERE pasada_id = ? "
+            "AND anula_uuid IS NULL AND uuid NOT IN "
+            "(SELECT anula_uuid FROM conteo WHERE anula_uuid IS NOT NULL)",
+            (pasada_id,),
+        ).fetchall()
+    }
+
+    operario_ids = [
+        fila["operario_id"]
+        for fila in con.execute(
+            "SELECT DISTINCT operario_id FROM asignacion WHERE pasada_id = ?",
+            (pasada_id,),
+        ).fetchall()
+    ]
+
+    resultado = []
+    for operario_id in operario_ids:
+        operario = operarios.obtener(con, operario_id)
+        ubicaciones_asignadas = asignaciones.de_operario(con, pasada_id, operario_id)
+        propios = [
+            articulo_id for articulo_id in articulos_de_la_pasada
+            if ubicacion_de.get(articulo_id) in ubicaciones_asignadas
+        ]
+        total = len(propios)
+        cantidad_contados = sum(1 for articulo_id in propios if articulo_id in contados)
+
+        resultado.append({
+            "operario": operario["nombre"],
+            "ubicaciones": ubicaciones_asignadas,
+            "total": total,
+            "contados": cantidad_contados,
+            "sin_contar": total - cantidad_contados,
+            "avance_pct": round(cantidad_contados / total * 100, 1) if total else 0.0,
+        })
+
+    return sorted(resultado, key=lambda item: item["operario"])

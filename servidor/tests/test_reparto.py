@@ -219,3 +219,72 @@ def test_avance_por_operario_respeta_los_filtros(con, escenario):
 
     assert juan["total"] == 1
     assert [d["sku"] for d in juan["detalle"]] == ["A"]
+
+
+# --- El avance de un recuento puntual ------------------------------------------
+
+def test_avance_de_pasada_cuenta_lo_marcado_para_ese_recuento(con, escenario):
+    articulo_a = fila_de(tablero.filas(con, escenario["sesion_id"]), "A")["id"]
+    recuento = sesiones.abrir_pasada(con, escenario["sesion_id"], [articulo_a])
+    asignaciones.reemplazar(
+        con, recuento["id"], escenario["juan"]["id"], ["Deposito A"]
+    )
+
+    resultado = reparto.avance_de_pasada(con, escenario["sesion_id"], recuento["id"])
+
+    juan = operario_de(resultado, "Juan")
+    assert juan["total"] == 1
+    assert juan["contados"] == 0
+    assert juan["sin_contar"] == 1
+    assert juan["avance_pct"] == 0.0
+    assert juan["ubicaciones"] == ["Deposito A"]
+
+
+def test_avance_de_pasada_refleja_lo_contado_en_ese_recuento(con, escenario):
+    articulo_a = fila_de(tablero.filas(con, escenario["sesion_id"]), "A")["id"]
+    recuento = sesiones.abrir_pasada(con, escenario["sesion_id"], [articulo_a])
+    asignaciones.reemplazar(
+        con, recuento["id"], escenario["juan"]["id"], ["Deposito A"]
+    )
+    contar(con, escenario, escenario["juan"], "A", 45000, "u1")
+
+    juan = operario_de(
+        reparto.avance_de_pasada(con, escenario["sesion_id"], recuento["id"]), "Juan"
+    )
+
+    assert juan["contados"] == 1
+    assert juan["avance_pct"] == 100.0
+
+
+def test_avance_de_pasada_no_mezcla_lo_contado_en_otra_pasada(con, escenario):
+    """Contar en el Conteo 1 no hace avanzar el recuento: son etapas distintas."""
+    articulo_a = fila_de(tablero.filas(con, escenario["sesion_id"]), "A")["id"]
+    asignaciones.reemplazar(
+        con, escenario["pasada_id"], escenario["juan"]["id"], ["Deposito A"]
+    )
+    contar(con, escenario, escenario["juan"], "A", 45000, "u1")
+
+    recuento = sesiones.abrir_pasada(con, escenario["sesion_id"], [articulo_a])
+    asignaciones.reemplazar(
+        con, recuento["id"], escenario["maria"]["id"], ["Deposito A"]
+    )
+
+    maria = operario_de(
+        reparto.avance_de_pasada(con, escenario["sesion_id"], recuento["id"]), "Maria"
+    )
+
+    assert maria["contados"] == 0
+
+
+def test_avance_de_pasada_omite_a_quien_no_esta_asignado_ahi(con, escenario):
+    articulo_a = fila_de(tablero.filas(con, escenario["sesion_id"]), "A")["id"]
+    recuento = sesiones.abrir_pasada(con, escenario["sesion_id"], [articulo_a])
+
+    resultado = reparto.avance_de_pasada(con, escenario["sesion_id"], recuento["id"])
+
+    assert resultado == []
+
+
+def test_avance_de_pasada_con_pasada_inexistente_da_error(con, escenario):
+    with pytest.raises(ValueError):
+        reparto.avance_de_pasada(con, escenario["sesion_id"], 999)

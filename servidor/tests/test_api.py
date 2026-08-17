@@ -1217,3 +1217,27 @@ def test_abrir_pasada_con_sesion_cerrada_devuelve_409(cliente, sesion):
     )
 
     assert respuesta.status_code == 409
+
+
+def test_avance_de_pasada(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+    articulo_a = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"][0]["id"]
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    recuento = cliente.post(
+        f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": [articulo_a]}
+    ).json()
+    asignar(cliente, sesion["id"], operario["id"], ["Deposito A"], pasada_id=recuento["id"])
+
+    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas/{recuento['id']}/avance")
+
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo[0]["operario"] == "Juan"
+    assert cuerpo[0]["total"] == 1
+
+
+def test_avance_de_pasada_inexistente_devuelve_404(cliente, sesion):
+    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas/999/avance")
+
+    assert respuesta.status_code == 404
