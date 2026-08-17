@@ -90,6 +90,19 @@ def ultima_pasada(con, sesion_id):
     return pasada
 
 
+def obtener_pasada(con, sesion_id, pasada_id):
+    """Una pasada puntual de la sesión, o `None` si no existe o es de otra."""
+    fila = con.execute(
+        "SELECT * FROM pasada WHERE id = ? AND sesion_id = ?",
+        (pasada_id, sesion_id),
+    ).fetchone()
+    if fila is None:
+        return None
+    pasada = dict(fila)
+    pasada["etiqueta"] = etiqueta_pasada(pasada["numero"])
+    return pasada
+
+
 def pasadas_abiertas(con, sesion_id):
     """Todas las pasadas abiertas de la sesión, ordenadas por número.
 

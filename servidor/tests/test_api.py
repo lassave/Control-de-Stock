@@ -766,7 +766,7 @@ def test_asignar_ubicaciones_a_un_operario(cliente, sesion):
 
     respuesta = cliente.put(
         f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
-        json={"ubicaciones": ["Deposito A"]},
+        json={"ubicaciones": ["Deposito A"], "pasada_id": sesion["pasada"]["id"]},
     )
 
     assert respuesta.status_code == 200
@@ -782,12 +782,12 @@ def test_asignar_reemplaza_lo_anterior(cliente, sesion):
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     cliente.put(
         f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
-        json={"ubicaciones": ["Deposito A"]},
+        json={"ubicaciones": ["Deposito A"], "pasada_id": sesion["pasada"]["id"]},
     )
 
     cliente.put(
         f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
-        json={"ubicaciones": ["Deposito B"]},
+        json={"ubicaciones": ["Deposito B"], "pasada_id": sesion["pasada"]["id"]},
     )
 
     lista = cliente.get("/api/operarios").json()
@@ -798,7 +798,7 @@ def test_asignar_reemplaza_lo_anterior(cliente, sesion):
 def test_asignar_a_un_operario_inexistente_da_404(cliente, sesion):
     respuesta = cliente.put(
         f"/api/sesiones/{sesion['id']}/operarios/9999/asignacion",
-        json={"ubicaciones": []},
+        json={"ubicaciones": [], "pasada_id": sesion["pasada"]["id"]},
     )
     assert respuesta.status_code == 404
 
@@ -809,7 +809,7 @@ def test_asignar_con_la_sesion_cerrada_da_409(cliente, sesion):
 
     respuesta = cliente.put(
         f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
-        json={"ubicaciones": []},
+        json={"ubicaciones": [], "pasada_id": sesion["pasada"]["id"]},
     )
 
     assert respuesta.status_code == 409
@@ -828,10 +828,12 @@ def test_asignar_sin_lista_de_ubicaciones_da_400(cliente, sesion):
 
 # --- La lista de ubicaciones asignadas que baja el celular -------------------
 
-def asignar(cliente, sesion_id, operario_id, ubicaciones):
+def asignar(cliente, sesion_id, operario_id, ubicaciones, pasada_id=None):
+    if pasada_id is None:
+        pasada_id = cliente.get(f"/api/sesiones/{sesion_id}").json()["pasada"]["id"]
     return cliente.put(
         f"/api/sesiones/{sesion_id}/operarios/{operario_id}/asignacion",
-        json={"ubicaciones": ubicaciones},
+        json={"ubicaciones": ubicaciones, "pasada_id": pasada_id},
     )
 
 
@@ -1049,3 +1051,118 @@ def test_vincular_operario_ajeno_al_recuento_sigue_en_la_general(cliente, sesion
     )
 
     assert respuesta.json()["pasada"]["numero"] == 1
+
+
+# --- La sesión expone la pasada general, no la de numero mas alto ----------
+
+def test_ver_sesion_expone_la_pasada_general_con_un_recuento_abierto(cliente, sesion):
+    con = cliente.app.state.con
+    con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion["id"], "2026-08-17T10:00:00Z"),
+    )
+    con.commit()
+
+    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}")
+
+    assert respuesta.json()["pasada"]["numero"] == 1
+
+
+# --- Asignar exige pasada_id y valida exclusividad de recuento -------------
+
+def test_asignar_sin_pasada_id_devuelve_400(cliente, sesion):
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito A"]},
+    )
+
+    assert respuesta.status_code == 400
+
+
+def test_asignar_a_la_general_funciona_con_pasada_id_explicito(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    pasada_general_id = sesion["pasada"]["id"]
+
+    respuesta = cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito A"], "pasada_id": pasada_general_id},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["ubicaciones"] == ["Deposito A"]
+
+
+def test_asignar_a_un_segundo_recuento_abierto_se_rechaza(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    con = cliente.app.state.con
+
+    articulo_id = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? LIMIT 1", (sesion["id"],)
+    ).fetchone()["id"]
+
+    from app.repos import pasada_item as pasada_item_repo
+
+    cursor_1 = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion["id"], "2026-08-17T10:00:00Z"),
+    )
+    recuento_1 = cursor_1.lastrowid
+    pasada_item_repo.agregar(con, recuento_1, [articulo_id])
+
+    cursor_2 = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 3, ?)",
+        (sesion["id"], "2026-08-17T10:00:00Z"),
+    )
+    recuento_2 = cursor_2.lastrowid
+    pasada_item_repo.agregar(con, recuento_2, [articulo_id])
+    con.commit()
+
+    primera = cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito A"], "pasada_id": recuento_1},
+    )
+    assert primera.status_code == 200
+
+    segunda = cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito B"], "pasada_id": recuento_2},
+    )
+
+    assert segunda.status_code == 409
+
+
+def test_reasignar_dentro_del_mismo_recuento_no_se_bloquea(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    con = cliente.app.state.con
+
+    articulo_id = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? LIMIT 1", (sesion["id"],)
+    ).fetchone()["id"]
+
+    from app.repos import pasada_item as pasada_item_repo
+
+    cursor = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion["id"], "2026-08-17T10:00:00Z"),
+    )
+    recuento = cursor.lastrowid
+    pasada_item_repo.agregar(con, recuento, [articulo_id])
+    con.commit()
+
+    cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito A"], "pasada_id": recuento},
+    )
+
+    respuesta = cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito A", "Deposito B"], "pasada_id": recuento},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["ubicaciones"] == ["Deposito A", "Deposito B"]

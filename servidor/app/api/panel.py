@@ -7,7 +7,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
 from app import red, reloj
-from app.repos import asignaciones, operarios, sesiones
+from app.repos import asignaciones, operarios, pasada_item, sesiones
 from app.servicios import exportacion, importacion, reparto, tablero, vinculacion
 
 router = APIRouter(prefix="/api")
@@ -51,7 +51,7 @@ async def crear_sesion(request: Request):
         raise HTTPException(status_code=409, detail=str(error)) from error
 
     sesion = sesiones.obtener(con, sesion_id)
-    sesion["pasada"] = sesiones.pasada_abierta(con, sesion_id)
+    sesion["pasada"] = sesiones.pasada_general_abierta(con, sesion_id)
     return sesion
 
 
@@ -64,7 +64,7 @@ def ver_sesion(sesion_id: int, request: Request):
         raise _no_encontrada(error) from error
 
     if sesion["estado"] == "abierta":
-        sesion["pasada"] = sesiones.pasada_abierta(con, sesion_id)
+        sesion["pasada"] = sesiones.pasada_general_abierta(con, sesion_id)
     return sesion
 
 
@@ -232,6 +232,15 @@ async def asignar_ubicaciones(sesion_id: int, operario_id: int, request: Request
             status_code=400, detail="«ubicaciones» tiene que ser una lista"
         )
 
+    # Con una sola pasada nunca hacía falta decirlo: se resolvía sola. Con
+    # recuentos concurrentes, adivinarla ("la abierta de número más alto")
+    # asignaría en silencio al recuento equivocado.
+    pasada_id = cuerpo.get("pasada_id")
+    if not isinstance(pasada_id, int) or isinstance(pasada_id, bool):
+        raise HTTPException(
+            status_code=400, detail="Falta indicar a qué pasada asignar"
+        )
+
     try:
         sesion = sesiones.obtener(con, sesion_id)
     except ValueError as error:
@@ -248,10 +257,32 @@ async def asignar_ubicaciones(sesion_id: int, operario_id: int, request: Request
             status_code=404, detail=f"No existe el operario {operario_id}"
         )
 
-    pasada = sesiones.pasada_abierta(con, sesion_id)
-    guardadas = asignaciones.reemplazar(
-        con, pasada["id"], operario_id, ubicaciones_pedidas
-    )
+    pasada = sesiones.obtener_pasada(con, sesion_id, pasada_id)
+    if pasada is None:
+        raise HTTPException(
+            status_code=404, detail=f"No existe la pasada {pasada_id} en esta sesión"
+        )
+    if pasada["estado"] != "abierta":
+        raise HTTPException(
+            status_code=409, detail="No se puede asignar: esa pasada ya está cerrada"
+        )
+
+    # Un operario nunca puede estar en dos recuentos abiertos a la vez. No
+    # se resuelve después comparando números: se impide acá, al asignar.
+    if ubicaciones_pedidas and pasada_item.es_parcial(con, pasada_id):
+        for otra in sesiones.pasadas_abiertas(con, sesion_id):
+            if otra["id"] == pasada_id or not pasada_item.es_parcial(con, otra["id"]):
+                continue
+            if asignaciones.de_operario(con, otra["id"], operario_id):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Ya está asignado en {otra['etiqueta']}. "
+                        "Desasignalo ahí primero."
+                    ),
+                )
+
+    guardadas = asignaciones.reemplazar(con, pasada_id, operario_id, ubicaciones_pedidas)
     return {"ubicaciones": guardadas}
 
 

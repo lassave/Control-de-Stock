@@ -310,7 +310,10 @@ function dibujarSesion(sesion) {
 
 async function cargarSesiones() {
   const sesiones = await pedir("/api/sesiones");
-  estado.sesion = sesiones.find((s) => s.estado === "abierta") || null;
+  const abierta = sesiones.find((s) => s.estado === "abierta") || null;
+  // El listado no trae la pasada: hace falta el detalle para saber cuál es
+  // la general, la que usa el diálogo "Sectores" de Operarios.
+  estado.sesion = abierta ? await pedir(`/api/sesiones/${abierta.id}`) : null;
 
   $("#sesion-actual").classList.remove("error");
   $("#sesion-actual").textContent = estado.sesion
@@ -493,7 +496,10 @@ function dibujarCasillaUbicacion(ubicacion, asignadas) {
 
 async function abrirSectores(operarioId) {
   const operario = estado.operarios.find((o) => String(o.id) === String(operarioId));
-  if (!operario || !estado.sesion) return;
+  // Este diálogo reparte para el conteo general, no para un recuento: si
+  // no hay pasada general abierta (solo quedan recuentos en curso), no hay
+  // nada que repartir desde acá.
+  if (!operario || !estado.sesion || !estado.sesion.pasada) return;
 
   try {
     const ubicaciones = await pedir(`/api/sesiones/${estado.sesion.id}/ubicaciones`);
@@ -505,6 +511,7 @@ async function abrirSectores(operarioId) {
       : "<p>El maestro todavía no tiene ubicaciones cargadas.</p>";
 
     $("#dialogo-sectores").dataset.operario = operarioId;
+    $("#dialogo-sectores").dataset.pasada = estado.sesion.pasada.id;
     $("#dialogo-sectores").showModal();
   } catch (error) {
     alert(error.message);
@@ -514,6 +521,7 @@ async function abrirSectores(operarioId) {
 async function guardarSectores() {
   const dialogo = $("#dialogo-sectores");
   const operarioId = dialogo.dataset.operario;
+  const pasadaId = Number(dialogo.dataset.pasada);
   const ubicaciones = [...dialogo.querySelectorAll("input[type=checkbox]:checked")]
     .map((casilla) => casilla.value);
 
@@ -523,7 +531,7 @@ async function guardarSectores() {
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ubicaciones }),
+        body: JSON.stringify({ ubicaciones, pasada_id: pasadaId }),
       },
     );
     dialogo.close();
@@ -573,7 +581,7 @@ async function cargarOperarios() {
   // el click solo trae el id, no todo el operario.
   estado.operarios = lista;
   $("#lista-operarios").innerHTML =
-    lista.map((o) => dibujarOperario(o, !!estado.sesion)).join("")
+    lista.map((o) => dibujarOperario(o, !!(estado.sesion && estado.sesion.pasada))).join("")
     || "<li>Todavía no hay operarios.</li>";
   await cargarInstalacion();
 }
