@@ -312,5 +312,15 @@ def test_reparto_escapa_cada_nombre_por_separado():
     """Cada nombre se escapa antes de unirse, no la lista entera después."""
     contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
 
-    assert "asignado_a.map((n) => esc(n))" in contenido
-    assert "contado_por.map((n) => esc(n))" in contenido
+    assert "asignado_a.map((n) => esc(n))" in contenido  # columna del tablero
+    assert "ubicaciones.map((u) => esc(u))" in contenido  # tarjeta de operario
+
+
+def test_el_avance_por_operario_se_arma_como_tarjetas_desplegables():
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="reparto-operarios"' in html
+    assert "reparto/operarios?" in js
+    assert "<details" in js
+    assert "avance_pct" in js

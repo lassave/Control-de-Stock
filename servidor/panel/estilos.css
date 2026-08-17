@@ -7,6 +7,7 @@
   --acento: #1f5fa9;
   --verde: #1b7a3d;
   --verde-fondo: #e6f4ea;
+  --ambar: #9a5b12;
   --rojo: #b3261e;
   --rojo-fondo: #fce8e6;
   --gris-fondo: #eceff1;
@@ -252,6 +253,60 @@ tbody tr:hover { background: #eef3fa; }
 .aviso { color: var(--tenue); }
 
 dialog { max-width: 28rem; border: 1px solid var(--borde); border-radius: 8px; }
+
+.tarjeta-operario {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 0.75rem;
+}
+
+.tarjeta-operario summary {
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  list-style: none;
+}
+
+/* Safari sigue mostrando el triángulo nativo aunque `list-style` lo
+   esconda en los demás navegadores. */
+.tarjeta-operario summary::-webkit-details-marker { display: none; }
+
+.resumen-operario { display: flex; flex-direction: column; gap: 0.15rem; }
+.ubicaciones-resumen { color: var(--tenue); font-size: 0.85rem; }
+
+.resumen-numerico {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.resumen-numerico .dato {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 4.5rem;
+}
+
+.resumen-numerico .valor { font-size: 1.3rem; font-weight: 600; }
+.resumen-numerico .rotulo {
+  color: var(--tenue);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.dato-verde { color: var(--verde); }
+.dato-ambar { color: var(--ambar); }
+
+.detalle-operario {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--borde);
+  padding-top: 0.6rem;
+}
 
 #sectores-lista {
   display: flex;

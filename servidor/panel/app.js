@@ -187,24 +187,66 @@ async function refrescarSinRomper() {
 
 // --- Avance por ubicación ----------------------------------------------------
 
-function dibujarFilaReparto(fila) {
-  const clase = ESTADOS[fila.estado] || "";
-  const sinAsignar = fila.asignado_a.length === 0
-    ? `<span class="marca" title="Ninguna persona tiene esta ubicación ` +
-      `asignada.">⚑ sin asignar</span>`
-    : "";
-
+/** Una fila del detalle de un operario, dentro de su tarjeta desplegada. */
+function dibujarDetalleOperario(item) {
+  const clase = ESTADOS[item.estado] || "";
   return `
     <tr>
-      <td>${esc(fila.ubicacion)}</td>
-      <td class="num">${esc(fila.id_orden)}</td>
-      <td>${esc(fila.sku)}</td>
-      <td>${esc(fila.descripcion)}</td>
-      <td>${fila.asignado_a.map((n) => esc(n)).join(", ")} ${sinAsignar}</td>
-      <td>${fila.contado_por.map((n) => esc(n)).join(", ")}</td>
-      <td class="num">${esc(milesimasATexto(fila.contado))}</td>
-      <td><span class="estado ${clase}">${esc(fila.estado)}</span></td>
+      <td>${esc(item.ubicacion)}</td>
+      <td>${esc(item.sku)}</td>
+      <td>${esc(item.descripcion)}</td>
+      <td><span class="estado ${clase}">${esc(item.estado)}</span></td>
+      <td>${item.contado ? "✓" : ""}</td>
     </tr>`;
+}
+
+/**
+ * La tarjeta de un operario: resumen numérico siempre visible, detalle de
+ * sus artículos solo al desplegar. `<details>` nativo, sin JavaScript propio
+ * para abrir y cerrar.
+ */
+function dibujarTarjetaOperario(operario) {
+  const ubicacionesTexto = operario.ubicaciones.map((u) => esc(u)).join(", ");
+  const detalle = operario.detalle.map(dibujarDetalleOperario).join("");
+
+  return `
+    <details class="tarjeta-operario">
+      <summary>
+        <div class="resumen-operario">
+          <strong>${esc(operario.operario)}</strong>
+          <span class="ubicaciones-resumen">
+            Ubicación asignada: ${ubicacionesTexto}
+          </span>
+        </div>
+        <div class="resumen-numerico">
+          <div class="dato">
+            <span class="valor">${esc(operario.total)}</span>
+            <span class="rotulo">Cantidad asignada</span>
+          </div>
+          <div class="dato">
+            <span class="valor dato-verde">${esc(operario.contados)}</span>
+            <span class="rotulo">Cantidad contada</span>
+          </div>
+          <div class="dato">
+            <span class="valor dato-ambar">${esc(operario.sin_contar)}</span>
+            <span class="rotulo">Cantidad sin contar</span>
+          </div>
+          <div class="dato">
+            <span class="valor">${esc(operario.avance_pct)}%</span>
+            <span class="rotulo">% de avance</span>
+          </div>
+        </div>
+      </summary>
+      <table class="detalle-operario">
+        <thead>
+          <tr>
+            <th>Ubicación</th><th>SKU</th><th>Descripción</th>
+            <th>Estado</th><th>Contado</th>
+          </tr>
+        </thead>
+        <tbody>${detalle}</tbody>
+      </table>
+    </details>`;
 }
 
 function parametrosDeFiltrosReparto() {
@@ -228,13 +270,15 @@ async function refrescarReparto() {
   const scroll = envoltorio.scrollTop;
 
   const datos = await pedir(
-    `/api/sesiones/${estado.sesion.id}/reparto?${parametrosDeFiltrosReparto()}`);
+    `/api/sesiones/${estado.sesion.id}/reparto/operarios?${parametrosDeFiltrosReparto()}`);
 
-  $("#reparto-tabla tbody").innerHTML = datos.filas.map(dibujarFilaReparto).join("");
+  $("#reparto-operarios").innerHTML = datos.operarios.map(dibujarTarjetaOperario).join("")
+    || "<p>Ningún operario tiene una ubicación asignada todavía.</p>";
   actualizarEnlaceExportacionReparto();
 
+  const ubicaciones = datos.operarios.flatMap((o) => o.detalle.map((d) => d.ubicacion));
   completarOpciones($("#reparto-filtro-ubicacion"),
-    [...new Set(datos.filas.map((f) => f.ubicacion).filter(Boolean))].sort(),
+    [...new Set(ubicaciones.filter(Boolean))].sort(),
     "Todas las ubicaciones");
 
   envoltorio.scrollTop = scroll;
@@ -269,7 +313,7 @@ async function cargarSesiones() {
   } else {
     $("#tabla tbody").innerHTML = "";
     $("#metricas").innerHTML = "";
-    $("#reparto-tabla tbody").innerHTML = "";
+    $("#reparto-operarios").innerHTML = "";
   }
 }
 
