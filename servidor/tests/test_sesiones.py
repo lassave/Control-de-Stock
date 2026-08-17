@@ -138,3 +138,111 @@ def test_ultima_pasada_sin_ninguna_devuelve_nada(con):
     sesion_id = con.execute("SELECT id FROM sesion").fetchone()["id"]
 
     assert sesiones.ultima_pasada(con, sesion_id) is None
+
+
+# --- Pasada activa de un operario, con recuentos concurrentes ---------------
+
+def _abrir_pasada(con, sesion_id, numero):
+    """Inserta una pasada nueva a mano: sesiones.abrir_pasada todavía no existe."""
+    cursor = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, ?, ?)",
+        (sesion_id, numero, "2026-08-17T10:00:00Z"),
+    )
+    return cursor.lastrowid
+
+
+def test_pasadas_abiertas_devuelve_todas_ordenadas(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+    _abrir_pasada(con, sesion_id, 2)
+    _abrir_pasada(con, sesion_id, 3)
+
+    numeros = [p["numero"] for p in sesiones.pasadas_abiertas(con, sesion_id)]
+
+    assert numeros == [1, 2, 3]
+
+
+def test_pasadas_abiertas_no_trae_las_cerradas(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+    pasada_2 = _abrir_pasada(con, sesion_id, 2)
+    con.execute("UPDATE pasada SET estado = 'cerrada' WHERE id = ?", (pasada_2,))
+
+    numeros = [p["numero"] for p in sesiones.pasadas_abiertas(con, sesion_id)]
+
+    assert numeros == [1]
+
+
+def test_pasada_general_abierta_es_la_de_menor_numero_sin_pasada_item(con):
+    from app.repos import pasada_item as pasada_item_repo
+
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+    pasada_2 = _abrir_pasada(con, sesion_id, 2)
+    pasada_item_repo.agregar(con, pasada_2, [articulo_id])
+
+    general = sesiones.pasada_general_abierta(con, sesion_id)
+
+    assert general["numero"] == 1
+
+
+def test_pasada_general_abierta_none_si_todas_son_recuento(con):
+    from app.repos import pasada_item as pasada_item_repo
+
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+    pasada_1 = sesiones.pasada_abierta(con, sesion_id)
+    pasada_item_repo.agregar(con, pasada_1["id"], [articulo_id])
+
+    assert sesiones.pasada_general_abierta(con, sesion_id) is None
+
+
+def test_pasada_activa_de_operario_sin_asignacion_cae_en_la_general(con):
+    from app.repos import operarios
+
+    sesion_id = sesiones.crear(con, "Cliente X")
+    juan = operarios.crear(con, "Juan")
+
+    activa = sesiones.pasada_activa_de_operario(con, sesion_id, juan["id"])
+
+    assert activa["numero"] == 1
+
+
+def test_pasada_activa_de_operario_con_asignacion_en_recuento(con):
+    from app.repos import asignaciones, operarios
+    from app.repos import pasada_item as pasada_item_repo
+
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "ubicacion, creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', 'P-1', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+    juan = operarios.crear(con, "Juan")
+    pasada_2 = _abrir_pasada(con, sesion_id, 2)
+    pasada_item_repo.agregar(con, pasada_2, [articulo_id])
+    asignaciones.reemplazar(con, pasada_2, juan["id"], ["P-1"])
+
+    activa = sesiones.pasada_activa_de_operario(con, sesion_id, juan["id"])
+
+    assert activa["numero"] == 2
+
+
+def test_pasada_activa_de_operario_sin_ninguna_candidata_es_error(con):
+    from app.repos import operarios
+
+    sesion_id = sesiones.crear(con, "Cliente X")
+    juan = operarios.crear(con, "Juan")
+    sesiones.cerrar(con, sesion_id)
+
+    with pytest.raises(ValueError):
+        sesiones.pasada_activa_de_operario(con, sesion_id, juan["id"])

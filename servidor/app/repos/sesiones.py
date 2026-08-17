@@ -1,6 +1,7 @@
 """Sesiones de inventario y sus pasadas de conteo."""
 
 from app import reloj
+from app.repos import pasada_item as pasada_item_repo
 
 
 def etiqueta_pasada(numero):
@@ -87,6 +88,66 @@ def ultima_pasada(con, sesion_id):
     pasada = dict(fila)
     pasada["etiqueta"] = etiqueta_pasada(pasada["numero"])
     return pasada
+
+
+def pasadas_abiertas(con, sesion_id):
+    """Todas las pasadas abiertas de la sesión, ordenadas por número.
+
+    Con una sola pasada nunca importó si había una o varias; con recuentos
+    concurrentes, puede haber más de una a la vez.
+    """
+    filas = con.execute(
+        "SELECT * FROM pasada WHERE sesion_id = ? AND estado = 'abierta' "
+        "ORDER BY numero",
+        (sesion_id,),
+    ).fetchall()
+    pasadas = [dict(fila) for fila in filas]
+    for pasada in pasadas:
+        pasada["etiqueta"] = etiqueta_pasada(pasada["numero"])
+    return pasadas
+
+
+def pasada_general_abierta(con, sesion_id):
+    """La pasada abierta de menor número que no es un recuento.
+
+    Un recuento tiene filas en `pasada_item`; la general nunca las tiene.
+    Devuelve `None` si no queda ninguna pasada general abierta —puede pasar
+    si se cerró y solo quedan recuentos parciales abiertos—.
+    """
+    for pasada in pasadas_abiertas(con, sesion_id):
+        if not pasada_item_repo.es_parcial(con, pasada["id"]):
+            return pasada
+    return None
+
+
+def pasada_activa_de_operario(con, sesion_id, operario_id):
+    """En qué pasada está trabajando este operario ahora mismo.
+
+    1. Si tiene una asignación en un recuento abierto, esa es su pasada
+       activa —un operario nunca puede tener asignación en más de un
+       recuento abierto a la vez, eso se impide al asignar (ver
+       `repos/asignaciones.py`), así que acá no hay ambigüedad que
+       desempatar.
+    2. Si no, la pasada general abierta.
+    3. Si no hay ninguna de las dos, `ValueError`: no se lo mete en una
+       pasada que no le corresponde.
+    """
+    from app.repos import asignaciones as asignaciones_repo
+
+    for pasada in pasadas_abiertas(con, sesion_id):
+        if not pasada_item_repo.es_parcial(con, pasada["id"]):
+            continue
+        if asignaciones_repo.de_operario(con, pasada["id"], operario_id):
+            return pasada
+
+    general = pasada_general_abierta(con, sesion_id)
+    if general is not None:
+        return general
+
+    raise ValueError(
+        f"El operario {operario_id} no tiene ninguna pasada activa en la "
+        f"sesión {sesion_id}"
+    )
 
 
 def cerrar(con, sesion_id):
