@@ -285,6 +285,29 @@ def test_reparto_exporta_con_los_filtros():
     assert "exportar/reparto?" in contenido
 
 
+def test_el_tablero_muestra_asignado_a_y_fuera_de_sector_como_columnas_propias():
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "<th>Asignado a</th>" in html
+    assert "<th>Fuera de sector</th>" in html
+    assert "asignado_a.map((n) => esc(n))" in js
+
+
+def test_los_operarios_asignados_se_muestran_uno_al_lado_del_otro():
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+    css = (RUTA_PANEL / "estilos.css").read_text(encoding="utf-8")
+
+    assert 'class="lista lista-operarios"' in html
+    assert ".lista-operarios" in css
+
+
+def test_la_tarjeta_de_operario_muestra_los_sectores_asignados():
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "ubicaciones_asignadas.map((u) => esc(u))" in js
+
+
 def test_reparto_escapa_cada_nombre_por_separado():
     """Cada nombre se escapa antes de unirse, no la lista entera después."""
     contenido = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")

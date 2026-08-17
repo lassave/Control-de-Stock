@@ -79,10 +79,17 @@ function dibujarFila(fila) {
     ? `<span class="marca" title="Revisar antes de recontar: ` +
       `${esc(fila.posible_error_carga)}">⌨ ${esc(fila.posible_error_carga)}</span>`
     : "";
-  const marcaAsignacion = fila.fuera_asignacion
+  // Sin nadie asignado es la fila que más importa detectar: es la que corre
+  // riesgo de no contarse. Se marca acá, no solo en el reparto, porque el
+  // tablero es lo primero que se mira.
+  const asignadoA = fila.asignado_a.length
+    ? fila.asignado_a.map((n) => esc(n)).join(", ")
+    : `<span class="marca" title="Ninguna persona tiene esta ubicación ` +
+      `asignada.">⚑ sin asignar</span>`;
+  const fueraDeSector = fila.fuera_asignacion
     ? `<span class="marca" title="Alguno de los conteos de este artículo se ` +
       `hizo fuera de la ubicación asignada al operario. El detalle exportado ` +
-      `dice quién y dónde.">⚑ fuera de sector</span>`
+      `dice quién y dónde.">⚑ Sí</span>`
     : "";
   const fecha = (fila.fecha || "").replace("T", " ").replace("Z", "");
 
@@ -97,6 +104,7 @@ function dibujarFila(fila) {
       <td>${esc(fila.grupo)}</td>
       <td>${esc(fila.ubicacion)}</td>
       <td>${esc(fila.ubicacion_real)}</td>
+      <td>${asignadoA}</td>
       <td>${esc(fila.unidad)}</td>
       <td class="num">${esc(milesimasATexto(fila.stock_sistema))}</td>
       <td class="num">${esc(milesimasATexto(fila.ultimo_conteo))}</td>
@@ -104,8 +112,8 @@ function dibujarFila(fila) {
       <td>
         <span class="estado ${clase}">${esc(fila.estado)}</span>
         ${marca}
-        ${marcaAsignacion}
       </td>
+      <td>${fueraDeSector}</td>
       <td>${esc(fecha)}</td>
       <td>${esc(fila.observaciones)}</td>
     </tr>`;
@@ -386,6 +394,12 @@ function dibujarOperario(operario, haySesion) {
   const sectores = haySesion
     ? `<button class="secundario" data-sectores="${esc(operario.id)}">Sectores</button>`
     : "";
+  // Sin ubicaciones asignadas no se muestra el renglón: un «Sectores: »
+  // vacío no le dice nada a quien mira la tarjeta.
+  const sectoresAsignados = operario.ubicaciones_asignadas.length
+    ? `<p class="sectores-asignados">Sectores: ` +
+      `${operario.ubicaciones_asignadas.map((u) => esc(u)).join(", ")}</p>`
+    : "";
   // El token es lo único con lo que se vincula un celular. Va en un campo
   // de solo lectura para poder seleccionarlo y copiarlo: son 43 caracteres
   // al azar y copiarlos a ojo es garantía de error. El QR lo evita del
@@ -403,6 +417,7 @@ function dibujarOperario(operario, haySesion) {
           ${sectores}
         </div>
         <p class="ayuda">Escaneá este código desde la app para vincular el celular.</p>
+        ${sectoresAsignados}
       </div>
       <img class="qr" src="/api/operarios/${esc(operario.id)}/qr"
            alt="Código QR de vinculación de ${esc(operario.nombre)}">

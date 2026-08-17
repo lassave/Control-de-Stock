@@ -50,9 +50,10 @@
               <th>#</th><th>Tipo</th><th>Material</th><th>SKU</th>
               <th>Código de barras</th>
               <th>Descripción</th><th>Grupo</th><th>Ubicación</th>
-              <th>Ub. real</th><th>Un.</th>
+              <th>Ub. real</th><th>Asignado a</th><th>Un.</th>
               <th class="num">Sistema</th><th class="num">Último conteo</th>
-              <th class="num">Dif.</th><th>Estado</th><th>Fecha</th><th>Observaciones</th>
+              <th class="num">Dif.</th><th>Estado</th><th>Fuera de sector</th>
+              <th>Fecha</th><th>Observaciones</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -107,7 +108,7 @@
         <input id="nombre-operario" placeholder="Nombre y apellido" required>
         <button>Agregar</button>
       </form>
-      <ul id="lista-operarios" class="lista"></ul>
+      <ul id="lista-operarios" class="lista lista-operarios"></ul>
 
       <dialog id="dialogo-sectores">
         <h3 id="sectores-titulo"></h3>
