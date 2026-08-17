@@ -198,3 +198,114 @@ def test_de_operario_en_sesion_devuelve_el_recuento_cuando_esta_asignado(con, es
     assert resultado["pasada_etiqueta"] == "Conteo 2"
     assert resultado["es_parcial"] is True
     assert resultado["articulos_permitidos"] == [articulo_a]
+
+
+# --- asignados_por_articulo y operarios_con_ubicaciones con recuentos ------
+
+def test_asignados_por_articulo_con_recuento_muestra_los_dos(con, escenario):
+    """Un articulo dentro del recuento suma el responsable general -toda la
+    ubicacion- y el del recuento -ese SKU puntual-."""
+    from app.repos import pasada_item
+
+    maria = operarios.crear(con, "Maria")
+    asignaciones.reemplazar(con, escenario["pasada_id"], maria["id"], ["Deposito A"])
+
+    articulo_a = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
+        (escenario["sesion_id"],),
+    ).fetchone()["id"]
+    cursor = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+    )
+    pasada_2 = cursor.lastrowid
+    pasada_item.agregar(con, pasada_2, [articulo_a])
+    asignaciones.reemplazar(con, pasada_2, escenario["juan"]["id"], ["Deposito A"])
+
+    resultado = asignaciones.asignados_por_articulo(con, escenario["sesion_id"])
+
+    assert resultado[articulo_a] == ["Juan", "Maria"]
+
+
+def test_asignados_por_articulo_fuera_del_recuento_solo_el_general(con, escenario):
+    """El SKU C (Deposito A, fuera del recuento) no recibe al asignado del
+    recuento -que solo marco al SKU A-, solo al general."""
+    from app.repos import pasada_item
+
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "ubicacion, creado_en) VALUES (?, 3, 'C', 'Tuerca', 'UN', 'Deposito A', ?)",
+        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+    )
+    articulo_c = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'C'",
+        (escenario["sesion_id"],),
+    ).fetchone()["id"]
+
+    maria = operarios.crear(con, "Maria")
+    asignaciones.reemplazar(con, escenario["pasada_id"], maria["id"], ["Deposito A"])
+
+    articulo_a = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
+        (escenario["sesion_id"],),
+    ).fetchone()["id"]
+    cursor = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+    )
+    pasada_2 = cursor.lastrowid
+    pasada_item.agregar(con, pasada_2, [articulo_a])
+    asignaciones.reemplazar(con, pasada_2, escenario["juan"]["id"], ["Deposito A"])
+
+    resultado = asignaciones.asignados_por_articulo(con, escenario["sesion_id"])
+
+    assert resultado.get(articulo_c, []) == ["Maria"]
+
+
+def test_operarios_con_ubicaciones_usa_la_pasada_activa_de_cada_uno(con, escenario):
+    from app.repos import pasada_item
+
+    articulo_a = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
+        (escenario["sesion_id"],),
+    ).fetchone()["id"]
+    cursor = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+    )
+    pasada_2 = cursor.lastrowid
+    pasada_item.agregar(con, pasada_2, [articulo_a])
+    asignaciones.reemplazar(con, pasada_2, escenario["juan"]["id"], ["Deposito B"])
+
+    lista = asignaciones.operarios_con_ubicaciones(con)
+    juan = next(o for o in lista if o["id"] == escenario["juan"]["id"])
+
+    assert juan["ubicaciones_asignadas"] == ["Deposito B"]
+
+
+def test_operarios_con_ubicaciones_ajeno_al_recuento_muestra_lo_general(con, escenario):
+    """Con un recuento abierto, un operario que no esta asignado ahi tiene
+    que seguir viendo lo que le toca en la pasada general, no una lista
+    vacia por mirar la pasada equivocada."""
+    from app.repos import pasada_item
+
+    articulo_a = con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
+        (escenario["sesion_id"],),
+    ).fetchone()["id"]
+    asignaciones.reemplazar(con, escenario["pasada_id"], escenario["juan"]["id"], ["Deposito A"])
+
+    maria = operarios.crear(con, "Maria")
+    cursor = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+    )
+    pasada_2 = cursor.lastrowid
+    pasada_item.agregar(con, pasada_2, [articulo_a])
+    asignaciones.reemplazar(con, pasada_2, maria["id"], ["Deposito B"])
+    # Juan no está en el recuento: sigue en la general con "Deposito A".
+
+    lista = asignaciones.operarios_con_ubicaciones(con)
+    juan = next(o for o in lista if o["id"] == escenario["juan"]["id"])
+
+    assert juan["ubicaciones_asignadas"] == ["Deposito A"]

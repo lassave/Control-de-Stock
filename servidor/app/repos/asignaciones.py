@@ -71,31 +71,61 @@ def de_operario_en_sesion(con, sesion_id, operario_id):
 
 
 def asignados_por_articulo(con, sesion_id):
-    """A quién le toca cada artículo, según su ubicación, en la última pasada.
+    """A quién le toca cada artículo, entre todas las pasadas abiertas.
 
     Compartida entre `tablero` y `reparto`: la misma pregunta —quién es
     responsable de este artículo— tiene que contestarse igual en los dos
     lugares donde se muestra.
+
+    Con recuentos concurrentes, un artículo puede tener más de un
+    responsable a la vez: quien lo tiene asignado en la pasada general
+    —que aplica a toda la ubicación— y quien lo tiene en un recuento, pero
+    solo si ese artículo puntual está marcado ahí. La asignación de un
+    recuento a una ubicación no se derrama sobre los artículos que ese
+    recuento no incluye.
+
+    Con la sesión ya cerrada no queda ninguna pasada abierta que mirar, y
+    quién hizo qué se revisa sobre todo en ese momento: ahí se cae a la
+    última pasada de la sesión, abierta o no, como funcionaba antes de que
+    existieran los recuentos concurrentes.
     """
-    pasada = sesiones.ultima_pasada(con, sesion_id)
-    if pasada is None:
-        return {}
+    if sesiones.pasadas_abiertas(con, sesion_id):
+        condicion_pasada = "p.sesion_id = ? AND p.estado = 'abierta'"
+        parametro_pasada = sesion_id
+    else:
+        ultima = sesiones.ultima_pasada(con, sesion_id)
+        if ultima is None:
+            return {}
+        condicion_pasada = "p.id = ?"
+        parametro_pasada = ultima["id"]
 
     filas = con.execute(
-        """
+        f"""
         SELECT a.id AS articulo_id, o.nombre
         FROM articulo a
-        JOIN asignacion s ON s.ubicacion = a.ubicacion AND s.pasada_id = ?
+        JOIN asignacion s ON s.ubicacion = a.ubicacion
+        JOIN pasada p ON p.id = s.pasada_id AND {condicion_pasada}
         JOIN operario o ON o.id = s.operario_id
         WHERE a.sesion_id = ? AND a.fusionado_en IS NULL
+          AND (
+            NOT EXISTS (SELECT 1 FROM pasada_item pi WHERE pi.pasada_id = p.id)
+            OR EXISTS (
+                SELECT 1 FROM pasada_item pi
+                WHERE pi.pasada_id = p.id AND pi.articulo_id = a.id
+            )
+          )
         ORDER BY a.id, o.nombre
         """,
-        (pasada["id"], sesion_id),
+        (parametro_pasada, sesion_id),
     ).fetchall()
 
     resultado = {}
     for fila in filas:
-        resultado.setdefault(fila["articulo_id"], []).append(fila["nombre"])
+        nombres = resultado.setdefault(fila["articulo_id"], [])
+        # La misma persona puede tener asignada la ubicación tanto en la
+        # general como en un recuento: no se repite su nombre.
+        if fila["nombre"] not in nombres:
+            nombres.append(fila["nombre"])
     return resultado
 
 
@@ -112,26 +142,27 @@ def ubicaciones_distintas(con, sesion_id):
 
 
 def operarios_con_ubicaciones(con):
-    """Los operarios activos, cada uno con lo que tiene asignado en la
-    pasada de la sesión abierta.
+    """Los operarios activos, cada uno con lo que tiene asignado en **su**
+    pasada activa.
 
-    Sin sesión abierta no hay pasada a la cual asignar nada, así que todos
-    quedan con la lista vacía. Lo mismo si la sesión está abierta pero su
-    pasada no: hoy eso no pasa —crear y cerrar mueven las dos juntas— pero
-    el reconteo va a abrir esa ventana, y este endpoint lo consume el panel
-    entero. Una lista vacía es una respuesta; un 500 no.
+    No es la misma pasada para todos: con un recuento abierto, quien está
+    asignado ahí ve las ubicaciones del recuento, y quien no, las de la
+    pasada general. Sin sesión abierta, o sin ninguna pasada activa para un
+    operario en particular, esa persona queda con la lista vacía — es una
+    respuesta, no un error que tenga que romper el endpoint para todos.
     """
     lista = operarios.listar(con)
 
     sesion = sesiones.sesion_abierta(con)
-    pasada = sesiones.ultima_pasada(con, sesion["id"]) if sesion else None
-    if pasada is None or pasada["estado"] != "abierta":
+    if sesion is None:
         for operario in lista:
             operario["ubicaciones_asignadas"] = []
         return lista
 
     for operario in lista:
-        operario["ubicaciones_asignadas"] = de_operario(
-            con, pasada["id"], operario["id"]
-        )
+        try:
+            pasada = sesiones.pasada_activa_de_operario(con, sesion["id"], operario["id"])
+            operario["ubicaciones_asignadas"] = de_operario(con, pasada["id"], operario["id"])
+        except ValueError:
+            operario["ubicaciones_asignadas"] = []
     return lista
