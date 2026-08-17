@@ -133,6 +133,18 @@ class ContratoApiTest {
     }
 
     @Test
+    fun `parsea el estado de la pasada activa`() {
+        // Sin esto el celular no puede saber si está en un recuento parcial
+        // ni qué SKU tiene permitidos: no hay con qué bloquear el escaneo.
+        val respuesta = json.decodeFromString<RespuestaMisUbicaciones>(leer("mis-ubicaciones"))
+
+        assertEquals(1, respuesta.pasadaNumero)
+        assertEquals("Conteo 1", respuesta.pasadaEtiqueta)
+        assertFalse(respuesta.esParcial)
+        assertTrue(respuesta.articulosPermitidos.isEmpty())
+    }
+
+    @Test
     fun `un campo nuevo del servidor no rompe el parseo`() {
         // El servidor puede agregar campos sin coordinar una versión de la
         // app. Ignorarlos es lo que permite actualizar de a un lado por vez.

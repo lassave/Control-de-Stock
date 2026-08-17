@@ -97,6 +97,10 @@ data class RespuestaConteos(
 @Serializable
 data class RespuestaMisUbicaciones(
     @SerialName("pasada_id") val pasadaId: Int,
+    @SerialName("pasada_numero") val pasadaNumero: Int,
+    @SerialName("pasada_etiqueta") val pasadaEtiqueta: String,
+    @SerialName("es_parcial") val esParcial: Boolean,
+    @SerialName("articulos_permitidos") val articulosPermitidos: List<Int>,
     val ubicaciones: List<String>,
 )
 
