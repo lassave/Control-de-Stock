@@ -43,29 +43,28 @@ fun PantallaMiLista(
     alContar: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        // El título en mayúsculas es ancho: compartir renglón con los
+        // botones los apretaba hasta dejarlos sin lugar («Actualizar»
+        // partido en dos líneas y el indicador de pendientes sin espacio
+        // para dibujarse). Cada uno en su propio renglón no tiene ese techo.
+        Text("PRODUCTOS ASIGNADOS", style = MaterialTheme.typography.titleLarge)
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("PRODUCTOS ASIGNADOS", style = MaterialTheme.typography.titleLarge)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            OutlinedButton(
+                onClick = alActualizar,
+                enabled = !actualizando,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             ) {
-                OutlinedButton(
-                    onClick = alActualizar,
-                    enabled = !actualizando,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                ) {
-                    Text(if (actualizando) "Actualizando…" else "Actualizar")
-                }
-                IndicadorDePendientes(
-                    pendientes = pendientes,
-                    estado = estadoDeSubida,
-                    alSubir = alSubir,
-                )
+                Text(if (actualizando) "Actualizando…" else "Actualizar")
             }
+            IndicadorDePendientes(
+                pendientes = pendientes,
+                estado = estadoDeSubida,
+                alSubir = alSubir,
+            )
         }
 
         // Discreto y nunca el texto crudo del servidor: no hay nada que el
