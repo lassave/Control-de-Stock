@@ -13,9 +13,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.controldestock.camara.VistaDeCamara
 
@@ -108,6 +110,12 @@ fun PantallaEscaneo(
     puedeIngresarAMano: Boolean,
     alIngresarAMano: () -> Unit,
     /**
+     * Vuelve a la lista de lo asignado. Sin valor por defecto a propósito:
+     * es la única forma de volver, y que falte tiene que notarse al
+     * compilar, no en el depósito.
+     */
+    alVolver: () -> Unit,
+    /**
      * La cámara. Se reemplaza en los tests: CameraX no arranca sin celular,
      * y sin este hueco la pantalla entera queda sin cubrir, incluido el botón
      * que es el único camino al alta.
@@ -124,8 +132,35 @@ fun PantallaEscaneo(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(pasada, style = MaterialTheme.typography.titleMedium)
-            Text(operario, style = MaterialTheme.typography.bodyMedium)
+            // La izquierda se achica primero: un nombre de operario largo no
+            // puede empujar «A mano» fuera de la pantalla, porque es el único
+            // camino al ingreso manual.
+            Row(
+                modifier = Modifier.weight(1f, fill = false),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = alVolver,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text("←", style = MaterialTheme.typography.titleLarge)
+                }
+                Column {
+                    Text(
+                        pasada,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        operario,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,

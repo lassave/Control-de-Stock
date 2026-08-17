@@ -3,6 +3,7 @@ package com.controldestock.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -47,6 +48,7 @@ class PantallaEscaneoTest {
                 alSubir = {},
                 puedeIngresarAMano = true,
                 alIngresarAMano = {},
+                alVolver = {},
                 camara = { _, _ -> },
             ) {}
         }
@@ -90,6 +92,7 @@ class PantallaEscaneoTest {
                 alSubir = {},
                 puedeIngresarAMano = true,
                 alIngresarAMano = {},
+                alVolver = {},
                 camara = { esta, _ -> activo += esta },
             ) {
                 Box { Text("La ficha") }
@@ -118,6 +121,7 @@ class PantallaEscaneoTest {
                 alSubir = {},
                 puedeIngresarAMano = true,
                 alIngresarAMano = { abrio = true },
+                alVolver = {},
                 camara = { _, _ -> },
             ) {}
         }
@@ -125,6 +129,59 @@ class PantallaEscaneoTest {
         compose.onNodeWithText("A mano").performClick()
 
         assertTrue(abrio)
+    }
+
+    @Test
+    fun `un nombre de operario largo no tapa el boton a mano`() {
+        // Deuda anotada antes de esta pantalla: el encabezado sin peso podía
+        // empujar «A mano» —el único camino al ingreso manual— fuera de la
+        // pantalla. La izquierda ahora se achica primero.
+        compose.setContent {
+            PantallaEscaneo(
+                operario = "María de los Ángeles Fernández Etchegaray de la Torre",
+                pasada = "Conteo 1",
+                pendientes = 0,
+                fichaAbierta = false,
+                avisoDeDesconocido = null,
+                alDarDeAlta = null,
+                alLeer = {},
+                estadoDeSubida = EstadoDeSubida.Quieto,
+                alSubir = {},
+                puedeIngresarAMano = true,
+                alIngresarAMano = {},
+                alVolver = {},
+                camara = { _, _ -> },
+            ) {}
+        }
+
+        compose.onNodeWithText("A mano").assertIsDisplayed()
+        compose.onNodeWithText("A mano").assertIsEnabled()
+    }
+
+    @Test
+    fun `la flecha vuelve a la lista`() {
+        var volvio = false
+        compose.setContent {
+            PantallaEscaneo(
+                operario = "Ana",
+                pasada = "Pasada 1",
+                pendientes = 0,
+                fichaAbierta = false,
+                avisoDeDesconocido = null,
+                alDarDeAlta = null,
+                alLeer = {},
+                estadoDeSubida = EstadoDeSubida.Quieto,
+                alSubir = {},
+                puedeIngresarAMano = true,
+                alIngresarAMano = {},
+                alVolver = { volvio = true },
+                camara = { _, _ -> },
+            ) {}
+        }
+
+        compose.onNodeWithText("←").performClick()
+
+        assertTrue(volvio)
     }
 
     @Test
@@ -142,6 +199,7 @@ class PantallaEscaneoTest {
                 alSubir = {},
                 puedeIngresarAMano = false,
                 alIngresarAMano = {},
+                alVolver = {},
                 camara = { _, _ -> },
             ) { }
         }

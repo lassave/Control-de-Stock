@@ -283,6 +283,9 @@ private fun App(base: BaseLocal) {
                 },
                 puedeIngresarAMano = !hayAlgoAbierto,
                 alIngresarAMano = { ingresandoAMano = true },
+                // Sin efecto todavía: se cablea junto con la navegación real
+                // a la lista, en el mismo commit que cambia `pantallaSegun`.
+                alVolver = {},
                 alLeer = leerCodigo,
             ) {
                 (hallazgo as? Hallazgo.Encontrado)?.let { encontrado ->
