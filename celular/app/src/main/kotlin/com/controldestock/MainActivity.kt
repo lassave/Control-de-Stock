@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -165,7 +166,16 @@ private fun App(base: BaseLocal) {
     // Al arrancar y al volver del fondo. ON_START y no ON_RESUME: ese también
     // dispara al cerrar un diálogo del sistema o al volver el foco tras el
     // permiso de cámara, y ahí no se pidió ningún refresco.
-    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+    //
+    // El lifecycleOwner va explícito: el compose-bom de este proyecto es
+    // anterior al que provee solo el `LocalLifecycleOwner` que
+    // lifecycle-runtime-compose busca por defecto —son dos composition
+    // locals con el mismo nombre, de paquetes distintos—, y sin esto la app
+    // cierra al abrir con «CompositionLocal LocalLifecycleOwner not present».
+    LifecycleEventEffect(
+        Lifecycle.Event.ON_START,
+        lifecycleOwner = LocalLifecycleOwner.current,
+    ) {
         alcance.launch { refrescarListaAsignada() }
     }
 
