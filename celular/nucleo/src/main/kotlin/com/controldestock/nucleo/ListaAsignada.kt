@@ -28,6 +28,11 @@ data class ConteoParaLista(
     val cantidad: Int,
     val anulaUuid: String?,
     val estadoSync: EstadoSync,
+    // A qué pasada pertenece. Antes de que existieran los recuentos, todos
+    // los conteos eran del Conteo 1 y esto no hacía falta distinguirlo; con
+    // recuentos concurrentes, un tilde del Conteo 1 no puede contar como
+    // avance de un recuento que se abrió después sobre el mismo artículo.
+    val pasadaId: Int = 0,
 )
 
 /** Un artículo dentro de la lista, con lo que el operario ya cargó. */
@@ -83,10 +88,19 @@ object ListaAsignada {
         asignadas: List<String>,
         articulos: List<ArticuloParaLista>,
         conteos: List<ConteoParaLista>,
+        pasadaActivaId: Int = 0,
+        esParcial: Boolean = false,
+        articulosPermitidos: Set<Int> = emptySet(),
     ): List<UbicacionAsignada> {
-        val contado = contadoPorArticulo(conteos)
+        // Un tilde de otra pasada no cuenta como avance de esta: un Conteo 1
+        // ya cargado no puede maquillar el progreso de un recuento que se
+        // abrió después sobre el mismo artículo.
+        val contado = contadoPorArticulo(conteos.filter { it.pasadaId == pasadaActivaId })
         val porUbicacion = articulos
             .filter { it.ubicacion != null && it.ubicacion in asignadas }
+            // Fuera de un recuento parcial, no hay recorte: aparece todo lo
+            // asignado, como siempre.
+            .filter { !esParcial || it.id in articulosPermitidos }
             .groupBy { it.ubicacion!! }
 
         return asignadas.sorted().map { ubicacion ->

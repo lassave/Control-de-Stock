@@ -13,8 +13,8 @@ class ListaAsignadaTest {
 
     private fun conteo(
         articuloId: Int, cantidad: Int, uuid: String = "u-$articuloId-$cantidad",
-        anula: String? = null, estado: EstadoSync = EstadoSync.PENDIENTE,
-    ) = ConteoParaLista(articuloId, uuid, cantidad, anula, estado)
+        anula: String? = null, estado: EstadoSync = EstadoSync.PENDIENTE, pasadaId: Int = 0,
+    ) = ConteoParaLista(articuloId, uuid, cantidad, anula, estado, pasadaId)
 
     // --- contadoPorArticulo --------------------------------------------------
 
@@ -169,5 +169,63 @@ class ListaAsignadaTest {
         )
 
         assertEquals(listOf("P-1", "P-3", "P-9"), lista.map { it.ubicacion })
+    }
+
+    // --- pasada activa -----------------------------------------------------------
+
+    @Test
+    fun `un tilde de otra pasada no cuenta como contado`() {
+        val lista = ListaAsignada.armar(
+            asignadas = listOf("P-1"),
+            articulos = listOf(articulo(id = 1, idOrden = 1, sku = "A", ubicacion = "P-1")),
+            conteos = listOf(conteo(1, 5000, pasadaId = 1)),
+            pasadaActivaId = 2,
+        )
+
+        assertTrue(!lista.single().renglones.single().fueContado)
+    }
+
+    @Test
+    fun `un tilde de la pasada activa si cuenta`() {
+        val lista = ListaAsignada.armar(
+            asignadas = listOf("P-1"),
+            articulos = listOf(articulo(id = 1, idOrden = 1, sku = "A", ubicacion = "P-1")),
+            conteos = listOf(conteo(1, 5000, pasadaId = 2)),
+            pasadaActivaId = 2,
+        )
+
+        assertTrue(lista.single().renglones.single().fueContado)
+    }
+
+    @Test
+    fun `en un recuento parcial solo aparecen los articulos permitidos`() {
+        val lista = ListaAsignada.armar(
+            asignadas = listOf("P-1"),
+            articulos = listOf(
+                articulo(id = 1, idOrden = 1, sku = "A", ubicacion = "P-1"),
+                articulo(id = 2, idOrden = 2, sku = "B", ubicacion = "P-1"),
+            ),
+            conteos = emptyList(),
+            pasadaActivaId = 2,
+            esParcial = true,
+            articulosPermitidos = setOf(1),
+        )
+
+        assertEquals(listOf("A"), lista.single().renglones.map { it.sku })
+    }
+
+    @Test
+    fun `fuera de un recuento parcial aparecen todos los articulos asignados`() {
+        val lista = ListaAsignada.armar(
+            asignadas = listOf("P-1"),
+            articulos = listOf(
+                articulo(id = 1, idOrden = 1, sku = "A", ubicacion = "P-1"),
+                articulo(id = 2, idOrden = 2, sku = "B", ubicacion = "P-1"),
+            ),
+            conteos = emptyList(),
+            pasadaActivaId = 1,
+        )
+
+        assertEquals(listOf("A", "B"), lista.single().renglones.map { it.sku })
     }
 }
