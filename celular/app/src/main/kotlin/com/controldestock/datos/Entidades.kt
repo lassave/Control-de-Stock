@@ -147,3 +147,17 @@ data class ConteoEntidad(
 /** Un artículo que nació en el celular y todavía no existe en el servidor. */
 val ArticuloEntidad.esAltaPendiente: Boolean
     get() = estadoAlta == EstadoSync.PENDIENTE.name
+
+/**
+ * Una ubicación asignada al operario, tal como la bajó del servidor.
+ *
+ * Tabla propia y no una columna de `vinculacion`: esa fila se reemplaza
+ * entera con `@Insert(REPLACE)`, y actualizar el reparto por ahí podría
+ * pisar `url` y `token` y desvincular el celular. El reparto es logística
+ * de la pasada, que cambia varias veces por día; la vinculación es «quién
+ * soy».
+ */
+@Entity(tableName = "asignacion")
+data class AsignacionEntidad(
+    @PrimaryKey val ubicacion: String,
+)

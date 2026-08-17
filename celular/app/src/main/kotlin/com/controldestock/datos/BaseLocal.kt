@@ -26,8 +26,9 @@ class ConversorDeEstado {
         CodigoEntidad::class,
         UnidadEntidad::class,
         ConteoEntidad::class,
+        AsignacionEntidad::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(ConversorDeEstado::class)
@@ -36,6 +37,7 @@ abstract class BaseLocal : RoomDatabase() {
     abstract fun vinculacionDao(): VinculacionDao
     abstract fun maestroDao(): MaestroDao
     abstract fun conteoDao(): ConteoDao
+    abstract fun asignacionDao(): AsignacionDao
 
     /**
      * Vincula el celular, limpiando lo del inventario anterior si cambió.
@@ -47,10 +49,18 @@ abstract class BaseLocal : RoomDatabase() {
      *
      * Revincular al mismo inventario —cambio de operario, o el token que se
      * renovó— conserva todo: ahí los pendientes siguen siendo válidos.
+     *
+     * El reparto se borra en un caso más: cambió el operario, aunque la
+     * sesión sea la misma. Es suyo, no de la sesión, y dejarlo puesto le
+     * mostraría a quien se vincula ahora el reparto de quien tenía el
+     * celular antes.
      */
     suspend fun vincularA(vinculacion: VinculacionEntidad) = withTransaction {
         val anterior = vinculacionDao().actual()
-        if (anterior != null && anterior.sesionId != vinculacion.sesionId) {
+        val cambioSesion = anterior != null && anterior.sesionId != vinculacion.sesionId
+        val cambioOperario = anterior == null || anterior.operarioId != vinculacion.operarioId
+
+        if (cambioSesion) {
             conteoDao().borrarTodos()
             maestroDao().borrarCodigos()
             // Vincularse a otro inventario deja el celular limpio, altas
@@ -58,6 +68,9 @@ abstract class BaseLocal : RoomDatabase() {
             // cuenta, y mandarlas contra la sesión abierta hoy metería
             // artículos inventados en el inventario de otro cliente.
             maestroDao().borrarTodosLosArticulos()
+        }
+        if (cambioSesion || cambioOperario) {
+            asignacionDao().borrar()
         }
         vinculacionDao().guardar(vinculacion)
     }
@@ -80,13 +93,29 @@ abstract class BaseLocal : RoomDatabase() {
             }
         }
 
+        /**
+         * Agrega la tabla del reparto. El `CREATE TABLE` es una copia literal
+         * del `createSql` que Room escribió en
+         * `app/schemas/com.controldestock.datos.BaseLocal/3.json`: Room
+         * compara la estructura al abrir, y una diferencia de comillas o de
+         * orden alcanza para que se niegue a abrir una base migrada.
+         */
+        val MIGRACION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `asignacion` (`ubicacion` TEXT NOT NULL, " +
+                        "PRIMARY KEY(`ubicacion`))"
+                )
+            }
+        }
+
         fun de(contexto: Context): BaseLocal = instancia ?: synchronized(this) {
             instancia ?: Room.databaseBuilder(
                 contexto.applicationContext,
                 BaseLocal::class.java,
                 "control-de-stock.db",
             )
-                .addMigrations(MIGRACION_1_2)
+                .addMigrations(MIGRACION_1_2, MIGRACION_2_3)
                 .build().also { instancia = it }
         }
     }

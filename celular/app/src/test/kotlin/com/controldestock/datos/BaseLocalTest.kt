@@ -412,6 +412,75 @@ class BaseLocalTest {
     }
 
     @Test
+    fun `vincular a otra sesion borra el reparto anterior`() = runTest {
+        base.vincularA(vinculacionDe(sesionId = 1))
+        base.asignacionDao().reemplazar(listOf("P-1"))
+
+        base.vincularA(vinculacionDe(sesionId = 2, operario = "Ana"))
+
+        assertEquals(emptyList<String>(), base.asignacionDao().todas())
+    }
+
+    @Test
+    fun `vincular con otro operario en la misma sesion borra el reparto`() = runTest {
+        // Es del operario, no de la sesión: dejarlo puesto le mostraría a
+        // quien se vincula ahora el reparto de quien tenía el celular antes.
+        base.vincularA(vinculacionDe(sesionId = 1).copy(operarioId = 1))
+        base.asignacionDao().reemplazar(listOf("P-1"))
+
+        base.vincularA(vinculacionDe(sesionId = 1, operario = "Ana").copy(operarioId = 2))
+
+        assertEquals(emptyList<String>(), base.asignacionDao().todas())
+    }
+
+    @Test
+    fun `revincular al mismo operario conserva el reparto`() = runTest {
+        base.vincularA(vinculacionDe(sesionId = 1).copy(operarioId = 1))
+        base.asignacionDao().reemplazar(listOf("P-1"))
+
+        // Mismo operario, token renovado: no tiene por qué perder el reparto.
+        base.vincularA(vinculacionDe(sesionId = 1).copy(operarioId = 1, token = "nuevo"))
+
+        assertEquals(listOf("P-1"), base.asignacionDao().todas())
+    }
+
+    @Test
+    fun `reemplazar el reparto borra lo anterior`() = runTest {
+        base.asignacionDao().reemplazar(listOf("P-1", "P-2"))
+
+        base.asignacionDao().reemplazar(listOf("P-3"))
+
+        assertEquals(listOf("P-3"), base.asignacionDao().todas())
+    }
+
+    @Test
+    fun `trae solo los articulos de las ubicaciones asignadas`() = runTest {
+        base.maestroDao().reemplazarMaestro(
+            listOf(articulo(1, "A").copy(ubicacion = "P-1"), articulo(2, "B").copy(ubicacion = "P-9")),
+            emptyList(), emptyList(),
+        )
+        base.asignacionDao().reemplazar(listOf("P-1"))
+
+        val propios = base.maestroDao().deUbicacionesAsignadas()
+
+        assertEquals(listOf("A"), propios.map { it.sku })
+    }
+
+    @Test
+    fun `trae los codigos de las ubicaciones asignadas`() = runTest {
+        base.maestroDao().reemplazarMaestro(
+            listOf(articulo(1, "A").copy(ubicacion = "P-1")),
+            listOf(CodigoEntidad("111", 1), CodigoEntidad("222", 1)),
+            emptyList(),
+        )
+        base.asignacionDao().reemplazar(listOf("P-1"))
+
+        val codigos = base.maestroDao().codigosDeUbicacionesAsignadas()
+
+        assertEquals(listOf("111", "222"), codigos.map { it.codigo })
+    }
+
+    @Test
     fun `un id que todavia tiene conteos no se vuelve a usar`() = runTest {
         // El artículo se fue al reimportar el maestro —ya estaba en el
         // servidor— pero su conteo sigue acá. Si el id se reciclara, el aviso

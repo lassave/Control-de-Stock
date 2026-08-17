@@ -121,6 +121,34 @@ interface MaestroDao {
     )
     suspend fun ubicaciones(): List<String>
 
+    /**
+     * Los artículos de las ubicaciones asignadas al operario: la lista de
+     * trabajo. El `JOIN` reemplaza al `IN (:lista)` dinámico y no tiene el
+     * borde de una lista vacía.
+     */
+    @Query(
+        """
+        SELECT a.* FROM articulo a
+        JOIN asignacion s ON s.ubicacion = a.ubicacion
+        ORDER BY a.idOrden
+        """
+    )
+    suspend fun deUbicacionesAsignadas(): List<ArticuloEntidad>
+
+    /**
+     * Los códigos de barra de esos mismos artículos, en el orden en que se
+     * cargaron —por `rowid`, la tabla no tiene una columna de orden propia—.
+     */
+    @Query(
+        """
+        SELECT c.* FROM codigo c
+        JOIN articulo a ON a.id = c.articuloId
+        JOIN asignacion s ON s.ubicacion = a.ubicacion
+        ORDER BY c.rowid
+        """
+    )
+    suspend fun codigosDeUbicacionesAsignadas(): List<CodigoEntidad>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertarArticulos(articulos: List<ArticuloEntidad>)
 
@@ -167,6 +195,29 @@ interface MaestroDao {
         insertarArticulos(articulos)
         insertarCodigos(codigos)
         insertarUnidades(unidades)
+    }
+}
+
+@Dao
+interface AsignacionDao {
+
+    @Query("SELECT ubicacion FROM asignacion ORDER BY ubicacion")
+    suspend fun todas(): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertar(asignaciones: List<AsignacionEntidad>)
+
+    @Query("DELETE FROM asignacion")
+    suspend fun borrar()
+
+    /**
+     * Reemplaza el reparto entero. Igual que `asignaciones.reemplazar` del
+     * servidor: se borra antes de insertar, no se calcula una diferencia.
+     */
+    @Transaction
+    suspend fun reemplazar(ubicaciones: List<String>) {
+        borrar()
+        insertar(ubicaciones.map { AsignacionEntidad(it) })
     }
 }
 
