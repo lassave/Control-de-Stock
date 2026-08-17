@@ -6,9 +6,11 @@ import com.controldestock.datos.ArticuloEntidad
 import com.controldestock.datos.BaseLocal
 import com.controldestock.datos.CodigoEntidad
 import com.controldestock.datos.ConteoEntidad
+import com.controldestock.datos.VinculacionEntidad
 import com.controldestock.datos.textoDeBusqueda
 import com.controldestock.nucleo.EventoConteo
 import com.controldestock.nucleo.Reloj
+import com.controldestock.nucleo.RespuestaMisUbicaciones
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -77,12 +79,91 @@ class ListaDeTrabajoTest {
         assertEquals("A", lista.armar().single().renglones.single().codigos)
     }
 
+    private fun respuesta(
+        ubicaciones: List<String>,
+        pasadaId: Int = 1, pasadaNumero: Int = 1, pasadaEtiqueta: String = "Conteo 1",
+        esParcial: Boolean = false, articulosPermitidos: List<Int> = emptyList(),
+    ) = RespuestaMisUbicaciones(
+        pasadaId = pasadaId, pasadaNumero = pasadaNumero, pasadaEtiqueta = pasadaEtiqueta,
+        esParcial = esParcial, articulosPermitidos = articulosPermitidos, ubicaciones = ubicaciones,
+    )
+
     @Test
     fun `guardar reemplaza el reparto`() = runTest {
-        lista.guardar(listOf("P-1", "P-2"))
+        lista.guardar(respuesta(listOf("P-1", "P-2")))
 
-        lista.guardar(listOf("P-3"))
+        lista.guardar(respuesta(listOf("P-3")))
 
         assertEquals(listOf("P-3"), base.asignacionDao().todas())
+    }
+
+    @Test
+    fun `guardar reemplaza los sku permitidos del recuento`() = runTest {
+        lista.guardar(respuesta(listOf("P-1"), esParcial = true, articulosPermitidos = listOf(1, 2)))
+
+        lista.guardar(respuesta(listOf("P-1"), esParcial = true, articulosPermitidos = listOf(3)))
+
+        assertEquals(listOf(3), base.pasadaItemDao().todos())
+    }
+
+    @Test
+    fun `guardar actualiza la pasada activa de la vinculacion`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = "http://172.16.11.12:8000", token = "abc",
+                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                pasadaId = 1, pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
+            ),
+        )
+
+        lista.guardar(
+            respuesta(listOf("P-1"), pasadaId = 2, pasadaNumero = 2,
+                pasadaEtiqueta = "Conteo 2", esParcial = true),
+        )
+
+        val actual = base.vinculacionDao().actual()
+        assertEquals(2, actual?.pasadaId)
+        assertEquals("Conteo 2", actual?.pasadaEtiqueta)
+        assertEquals(true, actual?.esParcial)
+    }
+
+    @Test
+    fun `un tilde de otra pasada no cuenta como avance de la lista`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = "http://172.16.11.12:8000", token = "abc",
+                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                pasadaId = 2, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
+            ),
+        )
+        base.maestroDao().reemplazarMaestro(
+            articulos = listOf(articulo(1, "A", "P-1")), codigos = emptyList(), unidades = emptyList(),
+        )
+        base.asignacionDao().reemplazar(listOf("P-1"))
+        base.conteoDao().guardar(
+            ConteoEntidad.de(EventoConteo.nuevo("A", 5000, reloj), articuloId = 1, pasadaId = 1),
+        )
+
+        assertEquals(null, lista.armar().single().renglones.single().contado)
+    }
+
+    @Test
+    fun `en un recuento parcial armar recorta a los sku permitidos`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = "http://172.16.11.12:8000", token = "abc",
+                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                pasadaId = 2, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
+                esParcial = true,
+            ),
+        )
+        base.maestroDao().reemplazarMaestro(
+            articulos = listOf(articulo(1, "A", "P-1"), articulo(2, "B", "P-1")),
+            codigos = emptyList(), unidades = emptyList(),
+        )
+        base.asignacionDao().reemplazar(listOf("P-1"))
+        base.pasadaItemDao().reemplazar(listOf(1))
+
+        assertEquals(listOf("A"), lista.armar().single().renglones.map { it.sku })
     }
 }

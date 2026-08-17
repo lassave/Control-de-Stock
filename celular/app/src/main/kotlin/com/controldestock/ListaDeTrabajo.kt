@@ -4,6 +4,7 @@ import com.controldestock.datos.BaseLocal
 import com.controldestock.nucleo.ArticuloParaLista
 import com.controldestock.nucleo.ConteoParaLista
 import com.controldestock.nucleo.ListaAsignada
+import com.controldestock.nucleo.RespuestaMisUbicaciones
 import com.controldestock.nucleo.UbicacionAsignada
 
 /**
@@ -35,14 +36,41 @@ class ListaDeTrabajo(private val base: BaseLocal) {
             )
         }
 
+        val vinculacion = base.vinculacionDao().actual()
         val conteos = base.conteoDao().todos().map {
-            ConteoParaLista(it.articuloId, it.uuid, it.cantidad, it.anulaUuid, it.estadoSync)
+            ConteoParaLista(it.articuloId, it.uuid, it.cantidad, it.anulaUuid, it.estadoSync, it.pasadaId)
         }
+        val permitidos = base.pasadaItemDao().todos().toSet()
 
-        return ListaAsignada.armar(asignadas, paraLista, conteos)
+        return ListaAsignada.armar(
+            asignadas, paraLista, conteos,
+            pasadaActivaId = vinculacion?.pasadaId ?: 0,
+            esParcial = vinculacion?.esParcial ?: false,
+            articulosPermitidos = permitidos,
+        )
     }
 
-    suspend fun guardar(ubicaciones: List<String>) {
-        base.asignacionDao().reemplazar(ubicaciones)
+    /**
+     * Guarda lo que reparte el servidor: las ubicaciones, los SKU permitidos
+     * si la pasada activa es un recuento, y el estado de esa pasada.
+     *
+     * Es lo que le permite al celular enterarse de un recuento nuevo sin
+     * volver a vincularse: el mismo refresco de siempre ahora también
+     * actualiza en qué etapa está.
+     */
+    suspend fun guardar(respuesta: RespuestaMisUbicaciones) {
+        base.asignacionDao().reemplazar(respuesta.ubicaciones)
+        base.pasadaItemDao().reemplazar(respuesta.articulosPermitidos)
+
+        base.vinculacionDao().actual()?.let { actual ->
+            base.vinculacionDao().guardar(
+                actual.copy(
+                    pasadaId = respuesta.pasadaId,
+                    pasadaNumero = respuesta.pasadaNumero,
+                    pasadaEtiqueta = respuesta.pasadaEtiqueta,
+                    esParcial = respuesta.esParcial,
+                ),
+            )
+        }
     }
 }

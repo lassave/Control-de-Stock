@@ -154,7 +154,7 @@ private fun App(base: BaseLocal) {
                 try {
                     val cliente = ClienteServidor(quien.url, quien.token)
                     val respuesta = cliente.misUbicaciones()
-                    listaDeTrabajo.guardar(respuesta.ubicaciones)
+                    listaDeTrabajo.guardar(respuesta)
                     avisoDeActualizacion = null
                 } catch (error: ErrorDeServidor) {
                     avisoDeActualizacion =
