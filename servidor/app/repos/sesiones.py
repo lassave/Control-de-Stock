@@ -171,7 +171,9 @@ def listar_pasadas(con, sesion_id):
     pasadas = [dict(fila) for fila in filas]
     for pasada in pasadas:
         pasada["etiqueta"] = etiqueta_pasada(pasada["numero"])
-        pasada["es_parcial"] = pasada_item_repo.es_parcial(con, pasada["id"])
+        articulos = pasada_item_repo.de_pasada(con, pasada["id"])
+        pasada["es_parcial"] = bool(articulos)
+        pasada["cantidad_sku"] = len(articulos)
     return pasadas
 
 
@@ -206,6 +208,7 @@ def abrir_pasada(con, sesion_id, articulo_ids):
 
     pasada = obtener_pasada(con, sesion_id, pasada_id)
     pasada["es_parcial"] = True
+    pasada["cantidad_sku"] = len(pasada_item_repo.de_pasada(con, pasada_id))
     return pasada
 
 

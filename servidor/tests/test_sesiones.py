@@ -326,3 +326,19 @@ def test_abrir_pasada_permite_varias_seguidas(con):
     tercera = sesiones.abrir_pasada(con, sesion_id, [articulo_id])
 
     assert tercera["numero"] == 3
+
+
+def test_listar_pasadas_informa_cuantos_sku_tiene_el_recuento(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+    sesiones.abrir_pasada(con, sesion_id, [articulo_id])
+
+    pasadas = sesiones.listar_pasadas(con, sesion_id)
+
+    assert pasadas[0]["cantidad_sku"] == 0
+    assert pasadas[1]["cantidad_sku"] == 1

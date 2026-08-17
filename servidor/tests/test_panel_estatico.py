@@ -349,3 +349,53 @@ def test_el_avance_por_operario_se_arma_como_tarjetas_desplegables():
     assert "reparto/operarios?" in js
     assert "<details" in js
     assert "avance_pct" in js
+
+
+def test_el_panel_tiene_la_pestana_de_recuento():
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+
+    assert 'data-vista="recuento"' in html
+    assert 'id="vista-recuento"' in html
+
+
+def test_recuento_permite_fijar_tolerancia():
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "/tolerancia" in js
+    assert '"PUT"' in js
+
+
+def test_recuento_lista_los_sku_a_recontar():
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "estado=A RECONTAR" in js or "estado: \"A RECONTAR\"" in js or "'A RECONTAR'" in js
+
+
+def test_recuento_arranca_sin_nada_seleccionado():
+    """El cliente pidió explícitamente que el listado no venga preseleccionado."""
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "seleccionados: new Set()" in js
+
+
+def test_recuento_permite_abrir_un_recuento():
+    html = (RUTA_PANEL / "index.html").read_text(encoding="utf-8")
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "abrir-recuento" in html
+    assert "/pasadas" in js
+    assert "articulo_ids" in js
+
+
+def test_recuento_muestra_el_avance_de_cada_recuento_abierto():
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "/avance" in js
+    assert "avance_pct" in js
+
+
+def test_recuento_reusa_el_dialogo_de_sectores_para_asignar():
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "showModal" in js
+    assert _cuerpo_de(js, "abrirSectores") is not None
