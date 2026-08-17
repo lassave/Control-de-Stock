@@ -8,7 +8,7 @@ otra fila que anula la anterior. Eso vuelve la sincronización idempotente
 import sqlite3
 
 from app import reloj
-from app.repos import asignaciones, sesiones
+from app.repos import asignaciones, pasada_item, sesiones
 
 CAMPOS_PUBLICOS = (
     "a.id, a.id_orden, a.tipo, a.material, a.sku, a.descripcion, "
@@ -177,7 +177,18 @@ def registrar(con, sesion_id, operario_id, evento):
             # anulación se carga el conteo de nuevo.
             raise EventoInvalido("Una anulación no se puede anular")
 
-    pasada = sesiones.pasada_abierta(con, sesion_id)
+    # No «la» pasada abierta de la sesión: con recuentos concurrentes puede
+    # haber varias, y esta decide en cuál cae el conteo de este operario en
+    # particular.
+    pasada = sesiones.pasada_activa_de_operario(con, sesion_id, operario_id)
+
+    # El bloqueo de SKU fuera del recuento no aplica a una anulación: anular
+    # no agrega cantidad a un SKU bloqueado, solo cancela algo que ya estaba
+    # cargado. Bloquearla le impediría corregir un error viejo justo cuando
+    # se abre un recuento nuevo, sin ningún beneficio real.
+    if anula is None and pasada_item.es_parcial(con, pasada["id"]):
+        if not pasada_item.contiene(con, pasada["id"], articulo["id"]):
+            raise EventoInvalido("Este artículo no está en el conteo actual")
 
     # La ubicación real prevalece sobre la del maestro: es la que el
     # operario corrigió a mano, y es la que de verdad recorrió.

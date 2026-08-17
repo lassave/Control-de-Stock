@@ -403,3 +403,103 @@ def test_usa_la_ubicacion_del_articulo_si_no_hay_correccion(con):
         "SELECT fuera_asignacion FROM conteo WHERE uuid = 'u-1'"
     ).fetchone()
     assert fila["fuera_asignacion"] == 1
+
+
+# --- Pasada activa del operario y bloqueo de SKU fuera de recuento ---------
+
+def _abrir_recuento(con, sesion_id, articulo_ids):
+    """Abre una pasada 2 con esos SKU marcados. sesiones.abrir_pasada
+    todavía no existe (tarea aparte); se arma a mano."""
+    from app.repos import pasada_item
+
+    cursor = con.execute(
+        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    pasada_id = cursor.lastrowid
+    pasada_item.agregar(con, pasada_id, articulo_ids)
+    return pasada_id
+
+
+def _id_de(con, sesion_id, sku):
+    return con.execute(
+        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = ?",
+        (sesion_id, sku),
+    ).fetchone()["id"]
+
+
+def test_un_conteo_en_la_pasada_general_sigue_aceptando_cualquier_sku(con, escenario):
+    resultado = conteos.registrar(
+        con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1")
+    )
+
+    assert resultado == "registrado"
+
+
+def test_un_sku_marcado_para_el_recuento_se_acepta(con, escenario):
+    a = _id_de(con, escenario["sesion_id"], "10453")
+    pasada_2 = _abrir_recuento(con, escenario["sesion_id"], [a])
+    asignaciones.reemplazar(con, pasada_2, escenario["juan"]["id"], ["P-1"])
+
+    resultado = conteos.registrar(
+        con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1")
+    )
+
+    assert resultado == "registrado"
+    fila = con.execute("SELECT pasada_id FROM conteo WHERE uuid = 'u-1'").fetchone()
+    assert fila["pasada_id"] == pasada_2
+
+
+def test_un_sku_no_marcado_para_el_recuento_se_rechaza(con, escenario):
+    b = _id_de(con, escenario["sesion_id"], "10454")
+    pasada_2 = _abrir_recuento(con, escenario["sesion_id"], [b])
+    asignaciones.reemplazar(con, pasada_2, escenario["juan"]["id"], ["P-1"])
+
+    with pytest.raises(conteos.EventoInvalido) as excinfo:
+        conteos.registrar(
+            con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1")
+        )
+
+    assert "no está en el conteo actual" in str(excinfo.value)
+    assert excinfo.value.reintentable is False
+
+
+def test_una_anulacion_no_pasa_por_el_bloqueo_de_sku(con, escenario):
+    b = _id_de(con, escenario["sesion_id"], "10454")
+    pasada_2 = _abrir_recuento(con, escenario["sesion_id"], [b])
+    asignaciones.reemplazar(con, pasada_2, escenario["juan"]["id"], ["P-1"])
+
+    conteos.registrar(con, escenario["sesion_id"], escenario["ana"]["id"], evento("u-original"))
+
+    resultado = conteos.registrar(
+        con, escenario["sesion_id"], escenario["juan"]["id"],
+        evento("u-anula", cantidad=0, anula_uuid="u-original"),
+    )
+
+    assert resultado == "registrado"
+
+
+def test_operario_sin_pasada_activa_da_un_error_claro(con, escenario):
+    sesiones.cerrar(con, escenario["sesion_id"])
+
+    with pytest.raises(ValueError):
+        conteos.registrar(
+            con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1")
+        )
+
+
+def test_operario_no_asignado_al_recuento_sigue_cayendo_en_la_general(con, escenario):
+    """Con dos pasadas abiertas, un operario ajeno al recuento no puede
+    quedar atrapado ahí solo porque tiene el numero mas alto."""
+    a = _id_de(con, escenario["sesion_id"], "10453")
+    pasada_2 = _abrir_recuento(con, escenario["sesion_id"], [a])
+    asignaciones.reemplazar(con, pasada_2, escenario["ana"]["id"], ["P-1"])
+    # Juan no está asignado al recuento: sigue en la pasada general (1).
+
+    conteos.registrar(
+        con, escenario["sesion_id"], escenario["juan"]["id"], evento("u-1")
+    )
+
+    fila = con.execute("SELECT pasada_id FROM conteo WHERE uuid = 'u-1'").fetchone()
+    pasada_1 = sesiones.obtener(con, escenario["sesion_id"])
+    assert fila["pasada_id"] != pasada_2
