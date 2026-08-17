@@ -43,6 +43,24 @@ def de_operario(con, pasada_id, operario_id):
     return [fila["ubicacion"] for fila in filas]
 
 
+def de_operario_en_sesion(con, sesion_id, operario_id):
+    """Lo que le toca al operario en el conteo abierto de esta sesión.
+
+    Tira `ValueError` si la sesión no tiene un conteo abierto. Es a
+    propósito: quien pregunte tiene que decidir qué contestar, y para el
+    celular la respuesta correcta no es «no te toca nada» —eso le borraría
+    el reparto que ya tiene bajado— sino «ahora no puedo contestarte».
+    """
+    pasada = sesiones.ultima_pasada(con, sesion_id)
+    if pasada is None or pasada["estado"] != "abierta":
+        raise ValueError(f"La sesión {sesion_id} no tiene ningún conteo abierto")
+
+    return {
+        "pasada_id": pasada["id"],
+        "ubicaciones": de_operario(con, pasada["id"], operario_id),
+    }
+
+
 def ubicaciones_distintas(con, sesion_id):
     """Las ubicaciones del maestro de esta sesión, para elegir qué asignar."""
     filas = con.execute(

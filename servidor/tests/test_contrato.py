@@ -16,7 +16,10 @@ import pytest
 
 CONTRATO = Path(__file__).resolve().parent.parent.parent / "celular" / "contrato"
 
-ARCHIVOS = ["vinculacion", "maestro", "conteos-respuesta", "alta-rapida"]
+ARCHIVOS = [
+    "vinculacion", "maestro", "conteos-respuesta", "alta-rapida",
+    "mis-ubicaciones",
+]
 
 CSV = (
     "sku,descripcion,unidad,ubicacion,stock\n"
@@ -86,6 +89,17 @@ def vivo(tmp_path_factory):
                   "unidad": "UN", "ubicacion": "P-9"},
         ).json()
 
+        # Hay que repartirle algo antes de preguntar, igual que en
+        # capturar.py: sin asignación la respuesta viene con la lista vacía
+        # y no fija ningún nombre de campo.
+        c.put(
+            f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+            json={"ubicaciones": ["P-1"]},
+        )
+        respuestas["mis-ubicaciones"] = c.get(
+            "/api/dispositivo/mis-ubicaciones", headers=cab
+        ).json()
+
     return respuestas
 
 
@@ -150,6 +164,20 @@ def test_el_maestro_trae_articulos_codigos_y_unidades():
     }
     assert set(datos["codigos"][0]) == {"codigo", "articulo_id"}
     assert set(datos["unidades"][0]) == {"codigo", "nombre", "admite_decimales"}
+
+
+def test_mis_ubicaciones_viene_envuelto_y_no_como_lista_pelada():
+    """`forma()` no ve adentro de una lista de textos.
+
+    Una respuesta que fuera `["P-1"]` daría el conjunto vacío: el archivo no
+    fijaría nada y el test de contrato pasaría con cualquier cosa. Envuelta
+    en un objeto, al menos la clave queda clavada.
+    """
+    datos = leer("mis-ubicaciones")
+
+    assert set(datos) == {"pasada_id", "ubicaciones"}
+    assert isinstance(datos["ubicaciones"], list)
+    assert datos["ubicaciones"], "capturalo con una ubicación asignada"
 
 
 def test_la_respuesta_de_conteos_distingue_lo_reintentable(vivo):

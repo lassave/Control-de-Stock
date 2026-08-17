@@ -824,3 +824,94 @@ def test_asignar_sin_lista_de_ubicaciones_da_400(cliente, sesion):
     )
 
     assert respuesta.status_code == 400
+
+
+# --- La lista de ubicaciones asignadas que baja el celular -------------------
+
+def asignar(cliente, sesion_id, operario_id, ubicaciones):
+    return cliente.put(
+        f"/api/sesiones/{sesion_id}/operarios/{operario_id}/asignacion",
+        json={"ubicaciones": ubicaciones},
+    )
+
+
+def test_mis_ubicaciones_devuelve_lo_asignado(cliente, sesion):
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    asignar(cliente, sesion["id"], operario["id"], ["Deposito B", "Deposito A"])
+
+    respuesta = cliente.get(
+        "/api/dispositivo/mis-ubicaciones",
+        headers={"X-Token": operario["token_dispositivo"]},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["ubicaciones"] == ["Deposito A", "Deposito B"]
+    assert respuesta.json()["pasada_id"] == sesion["pasada"]["id"]
+
+
+def test_mis_ubicaciones_sin_asignar_devuelve_lista_vacia(cliente, sesion):
+    """Que no le hayan repartido nada es una respuesta, no un error."""
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.get(
+        "/api/dispositivo/mis-ubicaciones",
+        headers={"X-Token": operario["token_dispositivo"]},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["ubicaciones"] == []
+
+
+def test_mis_ubicaciones_no_trae_nada_mas(cliente, sesion):
+    """Un endpoint de dispositivo no puede engordar sin que alguien lo note."""
+    importar_con_ubicacion(cliente, sesion["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    cuerpo = cliente.get(
+        "/api/dispositivo/mis-ubicaciones",
+        headers={"X-Token": operario["token_dispositivo"]},
+    ).json()
+
+    assert set(cuerpo) == {"pasada_id", "ubicaciones"}
+
+
+def test_mis_ubicaciones_con_token_inventado(cliente, sesion):
+    respuesta = cliente.get(
+        "/api/dispositivo/mis-ubicaciones", headers={"X-Token": "inventado"}
+    )
+
+    assert respuesta.status_code == 401
+
+
+def test_mis_ubicaciones_sin_sesion_abierta(cliente, sesion):
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    cliente.post(f"/api/sesiones/{sesion['id']}/cerrar")
+
+    respuesta = cliente.get(
+        "/api/dispositivo/mis-ubicaciones",
+        headers={"X-Token": operario["token_dispositivo"]},
+    )
+
+    assert respuesta.status_code == 409
+
+
+def test_mis_ubicaciones_sin_conteo_abierto_avisa_en_vez_de_romper(cliente, sesion):
+    """Una lista vacia seria mentira: el celular la escribiria encima de la
+    que tenia y le borraria el reparto al operario. Mejor decirle que ahora
+    no se puede contestar, y que conserve lo suyo."""
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    con = cliente.app.state.con
+    con.execute(
+        "UPDATE pasada SET estado = 'cerrada' WHERE sesion_id = ?", (sesion["id"],)
+    )
+    con.commit()
+
+    respuesta = cliente.get(
+        "/api/dispositivo/mis-ubicaciones",
+        headers={"X-Token": operario["token_dispositivo"]},
+    )
+
+    assert respuesta.status_code == 409
+    assert "conteo" in respuesta.json()["detail"].lower()

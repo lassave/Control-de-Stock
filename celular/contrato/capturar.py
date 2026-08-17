@@ -82,6 +82,16 @@ def main():
                   "unidad": "UN", "ubicacion": "P-9"},
         ).json())
 
+        # Hay que repartirle algo antes de preguntar: sin esto el archivo
+        # quedaría con la lista vacía y no documentaría ningún nombre.
+        c.put(
+            f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+            json={"ubicaciones": ["P-1"]},
+        )
+        guardar("mis-ubicaciones", c.get(
+            "/api/dispositivo/mis-ubicaciones", headers=cab
+        ).json())
+
         c.post(f"/api/sesiones/{sesion['id']}/cerrar")
 
 

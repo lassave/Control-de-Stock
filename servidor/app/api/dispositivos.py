@@ -9,7 +9,7 @@ import json
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from app.repos import articulos, conteos, operarios, sesiones
+from app.repos import articulos, asignaciones, conteos, operarios, sesiones
 
 router = APIRouter(prefix="/api/dispositivo")
 
@@ -137,3 +137,23 @@ async def recibir_conteos(request: Request, x_token: str = Header(default="")):
 def mis_conteos(request: Request, x_token: str = Header(default="")):
     con, operario, sesion = _contexto(request, x_token)
     return conteos.de_operario(con, sesion["id"], operario["id"])
+
+
+@router.get("/mis-ubicaciones")
+def mis_ubicaciones(request: Request, x_token: str = Header(default="")):
+    """Qué ubicaciones le tocan al operario en el conteo abierto.
+
+    Es lo único que el celular no puede saber solo: el maestro con la
+    ubicación de cada artículo y sus propios conteos ya los tiene guardados.
+
+    Sin nada asignado la respuesta es una lista vacía, que es un dato. Sin
+    conteo abierto, en cambio, es un 409: una lista vacía ahí sería mentira
+    y el celular la escribiría encima del reparto que ya bajó.
+    """
+    con, operario, sesion = _contexto(request, x_token)
+    try:
+        return asignaciones.de_operario_en_sesion(con, sesion["id"], operario["id"])
+    except ValueError as error:
+        raise HTTPException(
+            status_code=409, detail="El conteo no está abierto en este momento."
+        ) from error
