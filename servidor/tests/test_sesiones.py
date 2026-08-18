@@ -342,3 +342,81 @@ def test_listar_pasadas_informa_cuantos_sku_tiene_el_recuento(con):
 
     assert pasadas[0]["cantidad_sku"] == 0
     assert pasadas[1]["cantidad_sku"] == 1
+
+
+# --- borrar_pasada -----------------------------------------------------------
+
+def test_borrar_pasada_sin_conteos_la_elimina(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+    recuento = sesiones.abrir_pasada(con, sesion_id, [articulo_id])
+
+    sesiones.borrar_pasada(con, sesion_id, recuento["id"])
+
+    assert sesiones.obtener_pasada(con, sesion_id, recuento["id"]) is None
+
+
+def test_borrar_pasada_borra_tambien_sus_asignaciones_y_sku(con):
+    from app.repos import asignaciones, operarios, pasada_item
+
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, ubicacion, "
+        "creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', 'P-1', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+    recuento = sesiones.abrir_pasada(con, sesion_id, [articulo_id])
+    operario = operarios.crear(con, "Juan")
+    asignaciones.reemplazar(con, recuento["id"], operario["id"], ["P-1"])
+
+    sesiones.borrar_pasada(con, sesion_id, recuento["id"])
+
+    assert pasada_item.de_pasada(con, recuento["id"]) == []
+    assert asignaciones.de_operario(con, recuento["id"], operario["id"]) == []
+
+
+def test_borrar_pasada_con_conteos_rechaza(con):
+    from app.repos import asignaciones, conteos, operarios
+
+    sesion_id = sesiones.crear(con, "Cliente X")
+    con.execute(
+        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, ubicacion, "
+        "creado_en) VALUES (?, 1, 'A', 'Tornillo', 'UN', 'P-1', ?)",
+        (sesion_id, "2026-08-17T10:00:00Z"),
+    )
+    articulo_id = con.execute("SELECT id FROM articulo WHERE sesion_id = ?", (sesion_id,)).fetchone()["id"]
+    con.execute(
+        "INSERT INTO codigo_barras (articulo_id, codigo) VALUES (?, 'A')", (articulo_id,)
+    )
+    recuento = sesiones.abrir_pasada(con, sesion_id, [articulo_id])
+    operario = operarios.crear(con, "Juan")
+    asignaciones.reemplazar(con, recuento["id"], operario["id"], ["P-1"])
+    conteos.registrar(con, sesion_id, operario["id"], {
+        "uuid": "u1", "codigo": "A", "cantidad": 1000,
+        "timestamp_dispositivo": "2026-08-17T10:00:00Z",
+    })
+
+    with pytest.raises(ValueError):
+        sesiones.borrar_pasada(con, sesion_id, recuento["id"])
+
+    assert sesiones.obtener_pasada(con, sesion_id, recuento["id"]) is not None
+
+
+def test_borrar_pasada_general_rechaza(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+
+    with pytest.raises(ValueError):
+        sesiones.borrar_pasada(con, sesion_id, 1)
+
+
+def test_borrar_pasada_inexistente_rechaza(con):
+    sesion_id = sesiones.crear(con, "Cliente X")
+
+    with pytest.raises(ValueError):
+        sesiones.borrar_pasada(con, sesion_id, 999)

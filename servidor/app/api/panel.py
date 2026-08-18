@@ -127,6 +127,27 @@ async def abrir_pasada(sesion_id: int, request: Request):
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+@router.delete("/sesiones/{sesion_id}/pasadas/{pasada_id}")
+def borrar_pasada(sesion_id: int, pasada_id: int, request: Request):
+    con = _con(request)
+    try:
+        sesiones.obtener(con, sesion_id)
+    except ValueError as error:
+        raise _no_encontrada(error) from error
+
+    try:
+        sesiones.borrar_pasada(con, sesion_id, pasada_id)
+    except ValueError as error:
+        mensaje = str(error)
+        if "No existe la pasada" in mensaje:
+            raise _no_encontrada(error) from error
+        if "Ya tiene conteos" in mensaje:
+            raise HTTPException(status_code=409, detail=mensaje) from error
+        raise HTTPException(status_code=400, detail=mensaje) from error
+
+    return {"borrada": True}
+
+
 @router.get("/sesiones/{sesion_id}/pasadas/{pasada_id}/avance")
 def ver_avance_de_pasada(sesion_id: int, pasada_id: int, request: Request):
     con = _con(request)

@@ -1241,3 +1241,57 @@ def test_avance_de_pasada_inexistente_devuelve_404(cliente, sesion):
     respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas/999/avance")
 
     assert respuesta.status_code == 404
+
+
+def test_borrar_pasada_sin_conteos(cliente, sesion):
+    importar(cliente, sesion["id"])
+    articulo_id = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"][0]["id"]
+    recuento = cliente.post(
+        f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": [articulo_id]}
+    ).json()
+
+    respuesta = cliente.delete(f"/api/sesiones/{sesion['id']}/pasadas/{recuento['id']}")
+
+    assert respuesta.status_code == 200
+    pasadas = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas").json()
+    assert [p["id"] for p in pasadas] == [sesion["pasada"]["id"]]
+
+
+def test_borrar_pasada_con_conteos_devuelve_409(cliente, sesion):
+    importar(cliente, sesion["id"])
+    articulo_id = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"][0]["id"]
+    recuento = cliente.post(
+        f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": [articulo_id]}
+    ).json()
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    cliente.post(
+        "/api/dispositivo/vincular", headers={"X-Token": operario["token_dispositivo"]}
+    )
+    cliente.put(
+        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito A"], "pasada_id": recuento["id"]},
+    )
+    cliente.post(
+        "/api/dispositivo/conteos",
+        headers={"X-Token": operario["token_dispositivo"]},
+        json={"conteos": [{
+            "uuid": "u1", "codigo": "A", "cantidad": 1000,
+            "timestamp_dispositivo": "2026-08-17T10:00:00Z",
+        }]},
+    )
+
+    respuesta = cliente.delete(f"/api/sesiones/{sesion['id']}/pasadas/{recuento['id']}")
+
+    assert respuesta.status_code == 409
+
+
+def test_borrar_pasada_general_devuelve_400(cliente, sesion):
+    respuesta = cliente.delete(f"/api/sesiones/{sesion['id']}/pasadas/{sesion['pasada']['id']}")
+
+    assert respuesta.status_code == 400
+
+
+def test_borrar_pasada_inexistente_devuelve_404(cliente, sesion):
+    respuesta = cliente.delete(f"/api/sesiones/{sesion['id']}/pasadas/999")
+
+    assert respuesta.status_code == 404

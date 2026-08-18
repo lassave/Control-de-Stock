@@ -212,6 +212,35 @@ def abrir_pasada(con, sesion_id, articulo_ids):
     return pasada
 
 
+def borrar_pasada(con, sesion_id, pasada_id):
+    """Borra un recuento abierto por error, antes de que nadie cuente ahí.
+
+    Solo mientras no tiene ningún conteo: en cuanto hay uno, es historial —
+    corregirlo es una anulación, no un borrado, la misma regla que rige
+    cualquier otro conteo. La pasada general (Conteo 1) tampoco se puede
+    borrar: siempre tiene que quedar una pasada donde contar.
+    """
+    pasada = obtener_pasada(con, sesion_id, pasada_id)
+    if pasada is None:
+        raise ValueError(f"No existe la pasada {pasada_id} en esta sesión")
+
+    if not pasada_item_repo.es_parcial(con, pasada_id):
+        raise ValueError("No se puede borrar la pasada general de la sesión")
+
+    tiene_conteos = con.execute(
+        "SELECT 1 FROM conteo WHERE pasada_id = ? LIMIT 1", (pasada_id,)
+    ).fetchone() is not None
+    if tiene_conteos:
+        raise ValueError(
+            "Ya tiene conteos cargados: no se puede borrar, hay que dejarla como está"
+        )
+
+    with con:
+        con.execute("DELETE FROM pasada_item WHERE pasada_id = ?", (pasada_id,))
+        con.execute("DELETE FROM asignacion WHERE pasada_id = ?", (pasada_id,))
+        con.execute("DELETE FROM pasada WHERE id = ?", (pasada_id,))
+
+
 def cerrar(con, sesion_id):
     obtener(con, sesion_id)  # falla con un mensaje claro si no existe
     ahora = reloj.ahora()
