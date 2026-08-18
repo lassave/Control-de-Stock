@@ -1,16 +1,18 @@
 :root {
-  --fondo: #f5f6f8;
+  --fondo: #ece9e1;
   --panel: #ffffff;
-  --borde: #d7dbe0;
-  --texto: #1c2126;
-  --tenue: #5c6873;
-  --acento: #1f5fa9;
-  --verde: #1b7a3d;
-  --verde-fondo: #e6f4ea;
+  --borde: #d8d3c3;
+  --borde-fuerte: #c3bda8;
+  --texto: #1a1d1a;
+  --tenue: #6b6f61;
+  --acento: #b5470d;
+  --acento-tenue: #f4e2d6;
+  --verde: #1b6b3d;
+  --verde-fondo: #e3efe4;
   --ambar: #9a5b12;
-  --rojo: #b3261e;
-  --rojo-fondo: #fce8e6;
-  --gris-fondo: #eceff1;
+  --rojo: #ab2a1e;
+  --rojo-fondo: #fbe8e4;
+  --gris-fondo: #edeade;
 }
 
 * { box-sizing: border-box; }
@@ -32,7 +34,13 @@ body {
   border-bottom: 1px solid var(--borde);
 }
 
-.barra h1 { font-size: 1.1rem; margin: 0; }
+.barra h1 {
+  font-family: "Bahnschrift", "Arial Narrow", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
 .sesion-actual { color: var(--tenue); }
 
 .pestanas {
@@ -53,7 +61,11 @@ body {
   border-bottom: 3px solid transparent;
 }
 
-.pestanas button.activa { color: var(--acento); border-bottom-color: var(--acento); }
+.pestanas button.activa {
+  color: var(--acento);
+  border-bottom-color: var(--acento);
+  font-weight: 600;
+}
 
 main { padding: 1.25rem; }
 /* Los bloques que además definen su propio `display` necesitan nombrarse
@@ -71,12 +83,26 @@ main { padding: 1.25rem; }
 .metrica {
   background: var(--panel);
   border: 1px solid var(--borde);
+  border-left: 3px solid var(--borde-fuerte);
   border-radius: 6px;
   padding: 0.75rem 1rem;
 }
 
-.metrica .valor { font-size: 1.6rem; font-weight: 600; }
-.metrica .rotulo { color: var(--tenue); font-size: 0.85rem; }
+.metrica.acento { border-left-color: var(--acento); }
+.metrica.alerta { border-left-color: var(--rojo); }
+
+.metrica .valor {
+  font-family: "Bahnschrift", "Arial Narrow", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.metrica .rotulo {
+  color: var(--tenue);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 
 .filtros {
   display: flex;
@@ -139,10 +165,12 @@ thead th {
   letter-spacing: 0.02em;
 }
 
-tbody tr:nth-child(even) { background: #fafbfc; }
-tbody tr:hover { background: #eef3fa; }
+tbody tr { border-left: 3px solid transparent; }
+tbody tr:nth-child(even) { background: color-mix(in srgb, var(--fondo) 45%, var(--panel)); }
+tbody tr:hover { background: var(--acento-tenue); }
 
 .num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.sku, td.sku { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; color: var(--tenue); }
 
 .estado {
   display: inline-block;
@@ -399,3 +427,13 @@ dialog { max-width: 28rem; border: 1px solid var(--borde); border-radius: 8px; }
   padding: 0.6rem 0.9rem;
   margin-bottom: 0.4rem;
 }
+
+/* La fila salta a la vista sin tener que leer la columna de estado: el
+   borde lateral se ve escaneando la tabla con la mirada, el chip de color
+   solo no alcanza en una tabla larga. Van después de `:nth-child(even)`
+   a propósito, misma especificidad, para ganarle por orden. */
+tbody tr.fila-alerta {
+  border-left-color: var(--rojo);
+  background: color-mix(in srgb, var(--rojo-fondo) 55%, var(--panel));
+}
+tbody tr.fila-ok { border-left-color: var(--verde); }

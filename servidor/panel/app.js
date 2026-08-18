@@ -70,22 +70,26 @@ function milesimasATexto(valor) {
 
 function dibujarMetricas(resumen) {
   const tarjetas = [
-    ["Avance", `${resumen.avance_pct}%`],
-    ["Contados", `${resumen.contados} / ${resumen.articulos}`],
-    ["Consolidados", resumen.consolidados],
-    ["A recontar", resumen.a_recontar],
-    ["Posible error de carga", resumen.posibles_errores_carga],
-    ["Altas rápidas", resumen.altas_rapidas],
+    ["Avance", `${resumen.avance_pct}%`, "acento"],
+    ["Contados", `${resumen.contados} / ${resumen.articulos}`, ""],
+    ["Consolidados", resumen.consolidados, ""],
+    ["A recontar", resumen.a_recontar, "alerta"],
+    ["Posible error de carga", resumen.posibles_errores_carga, ""],
+    ["Altas rápidas", resumen.altas_rapidas, ""],
   ];
   $("#metricas").innerHTML = tarjetas
-    .map(([rotulo, valor]) =>
-      `<div class="metrica"><div class="valor">${esc(valor)}</div>` +
+    .map(([rotulo, valor, clase]) =>
+      `<div class="metrica${clase ? " " + clase : ""}"><div class="valor">${esc(valor)}</div>` +
       `<div class="rotulo">${rotulo}</div></div>`)
     .join("");
 }
 
 function dibujarFila(fila) {
   const clase = ESTADOS[fila.estado] || "";
+  // El borde lateral se ve escaneando la tabla con la mirada; el chip de
+  // estado solo no alcanza en una tabla larga.
+  const claseFila = fila.estado === "A RECONTAR" ? "fila-alerta"
+    : fila.estado === "CONSOLIDADO" ? "fila-ok" : "";
   const marca = fila.posible_error_carga
     ? `<span class="marca" title="Revisar antes de recontar: ` +
       `${esc(fila.posible_error_carga)}">⌨ ${esc(fila.posible_error_carga)}</span>`
@@ -105,11 +109,11 @@ function dibujarFila(fila) {
   const fecha = (fila.fecha || "").replace("T", " ").replace("Z", "");
 
   return `
-    <tr>
+    <tr${claseFila ? ` class="${claseFila}"` : ""}>
       <td class="num">${esc(fila.id_orden)}</td>
       <td>${esc(fila.tipo)}</td>
       <td>${esc(fila.material)}</td>
-      <td>${esc(fila.sku)}</td>
+      <td class="sku">${esc(fila.sku)}</td>
       <td>${esc(fila.codigos_de_barra)}</td>
       <td>${esc(fila.descripcion)}</td>
       <td>${esc(fila.grupo)}</td>
