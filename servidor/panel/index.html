@@ -150,9 +150,10 @@
       <h2>Recuento</h2>
       <p class="ayuda">
         Al cerrar un conteo pueden quedar diferencias fuera de tolerancia.
-        Marcá los SKU que hay que recontar y abrí un recuento: mientras esté
-        abierto, el celular de quien lo tenga asignado solo va a aceptar esos
-        artículos.
+        Elegí las ubicaciones que van a recuento —entran todos los SKU que
+        estén A RECONTAR ahí— y asigná de una vez quién la recuenta.
+        Mientras el recuento esté abierto, el celular de quien lo tenga
+        asignado solo va a aceptar esos artículos.
       </p>
 
       <form id="form-tolerancia" class="tolerancia">
@@ -167,28 +168,19 @@
         <button>Guardar tolerancia</button>
       </form>
 
-      <h3>SKU a recontar</h3>
+      <h3>Ubicaciones a recontar</h3>
       <p class="ayuda">
         Arranca vacío: hay que marcar a propósito lo que entra al recuento.
+        Cada ubicación lleva todos sus SKU A RECONTAR — no se puede recontar
+        solo una parte.
       </p>
       <div class="filtros">
         <input id="recuento-filtro-texto" type="search" placeholder="Buscar por SKU o descripción">
-        <button id="recuento-seleccionar-todos" class="secundario" type="button">Seleccionar todos</button>
-        <button id="recuento-deseleccionar-todos" class="secundario" type="button">Deseleccionar todos</button>
+        <button id="recuento-seleccionar-todos" class="secundario" type="button">Seleccionar todas</button>
+        <button id="recuento-deseleccionar-todos" class="secundario" type="button">Deseleccionar todas</button>
       </div>
-      <div class="tabla-envoltorio" id="recuento-envoltorio-tabla">
-        <table id="tabla-recuento">
-          <thead>
-            <tr>
-              <th></th><th>SKU</th><th>Descripción</th><th>Ubicación</th>
-              <th class="num">Sistema</th><th class="num">Último conteo</th>
-              <th class="num">Dif.</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <button id="abrir-recuento">Abrir recuento con los SKU marcados</button>
+      <div id="recuento-ubicaciones"></div>
+      <button id="abrir-recuento">Abrir recuento con las ubicaciones marcadas</button>
 
       <h3>Recuentos abiertos</h3>
       <div id="recuentos-abiertos"></div>

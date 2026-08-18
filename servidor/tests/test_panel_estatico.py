@@ -375,7 +375,7 @@ def test_recuento_arranca_sin_nada_seleccionado():
     """El cliente pidió explícitamente que el listado no venga preseleccionado."""
     js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
 
-    assert "seleccionados: new Set()" in js
+    assert "seleccionadas: new Set()" in js
 
 
 def test_recuento_permite_abrir_un_recuento():
@@ -385,6 +385,27 @@ def test_recuento_permite_abrir_un_recuento():
     assert "abrir-recuento" in html
     assert "/pasadas" in js
     assert "articulo_ids" in js
+
+
+def test_recuento_selecciona_por_ubicacion_no_por_sku():
+    """El cliente pidió elegir ubicaciones enteras, no SKU sueltos."""
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "data-recuento-ubicacion" in js
+    assert "data-recuento-operario" in js
+
+
+def test_recuento_asigna_operario_al_abrir_sin_pisar_otras_ubicaciones_del_mismo():
+    """Dos ubicaciones para el mismo operario van en un solo PUT.
+
+    `asignaciones.reemplazar` reemplaza la lista entera de esa persona en esa
+    pasada: dos llamadas separadas —una por ubicación— harían que la segunda
+    borre la primera. Se agrupan por operario antes de mandar el pedido.
+    """
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    cuerpo = _cuerpo_de(js, "abrirRecuento")
+    assert "porOperario" in cuerpo
 
 
 def test_recuento_muestra_el_avance_de_cada_recuento_abierto():
@@ -399,3 +420,11 @@ def test_recuento_reusa_el_dialogo_de_sectores_para_asignar():
 
     assert "showModal" in js
     assert _cuerpo_de(js, "abrirSectores") is not None
+
+
+def test_recuento_permite_borrar_un_recuento_abierto():
+    js = (RUTA_PANEL / "app.js").read_text(encoding="utf-8")
+
+    assert "data-recuento-borrar" in js
+    assert '"DELETE"' in js
+    assert "confirm(" in _cuerpo_de(js, "borrarRecuento")

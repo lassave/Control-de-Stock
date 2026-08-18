@@ -17,8 +17,11 @@ const estado = {
   recuento: {
     filtroTexto: "",
     // Arranca vacío a propósito: hay que marcar a mano lo que entra al
-    // recuento, no al revés.
-    seleccionados: new Set(),
+    // recuento, no al revés. Son ubicaciones, no SKU: cada una entra
+    // entera, con todos sus SKU A RECONTAR.
+    seleccionadas: new Set(),
+    // Ubicación -> id de operario elegido en el selector de esa fila.
+    operarioPorUbicacion: {},
     filas: [],
     avancePorPasada: {},
   },
@@ -310,14 +313,22 @@ async function refrescarReparto() {
 
 // --- Recuento ----------------------------------------------------------------
 
-function dibujarFilaRecuento(fila) {
-  const marcada = estado.recuento.seleccionados.has(fila.id) ? " checked" : "";
+/** Las filas A RECONTAR agrupadas por ubicación, cada una con su cuenta. */
+function agruparRecuentoPorUbicacion(filas) {
+  const porUbicacion = {};
+  filas.forEach((fila) => {
+    if (!fila.ubicacion) return; // sin ubicación no hay a quién asignársela
+    (porUbicacion[fila.ubicacion] = porUbicacion[fila.ubicacion] || []).push(fila);
+  });
+  return porUbicacion;
+}
+
+/** Una fila del detalle de productos de una ubicación, dentro de su desplegable. */
+function dibujarProductoDeUbicacionRecuento(fila) {
   return `
     <tr>
-      <td><input type="checkbox" data-recuento-sku="${esc(fila.id)}"${marcada}></td>
       <td>${esc(fila.sku)}</td>
       <td>${esc(fila.descripcion)}</td>
-      <td>${esc(fila.ubicacion)}</td>
       <td class="num">${esc(milesimasATexto(fila.stock_sistema))}</td>
       <td class="num">${esc(milesimasATexto(fila.ultimo_conteo))}</td>
       <td class="num">${esc(milesimasATexto(fila.dif))}</td>
@@ -325,10 +336,54 @@ function dibujarFilaRecuento(fila) {
 }
 
 /**
- * La tolerancia y el listado A RECONTAR. No entra al refresco automático de
- * cada 4 segundos: perdería lo que se está tipeando en el formulario o
- * recién marcando en la lista. Se refresca a propósito: al entrar a la
- * pestaña, al guardar la tolerancia y al abrir un recuento.
+ * Una ubicación a recontar: casilla y operario siempre visibles en el
+ * resumen, el detalle de sus productos recién al desplegar. `abiertas` es
+ * el conjunto de ubicaciones que ya estaban desplegadas antes de este
+ * redibujado, para que abrir un recuento no las cierre solas.
+ */
+function dibujarFilaUbicacionRecuento(ubicacion, filas, abiertas) {
+  const marcada = estado.recuento.seleccionadas.has(ubicacion) ? " checked" : "";
+  const operarioElegido = estado.recuento.operarioPorUbicacion[ubicacion] || "";
+  const opciones = (estado.operarios || [])
+    .map((o) => {
+      const seleccionado = String(o.id) === String(operarioElegido) ? " selected" : "";
+      return `<option value="${esc(o.id)}"${seleccionado}>${esc(o.nombre)}</option>`;
+    })
+    .join("");
+  const abierta = abiertas.has(ubicacion) ? " open" : "";
+  const productos = filas.map(dibujarProductoDeUbicacionRecuento).join("");
+
+  return `
+    <details class="fila-ubicacion-recuento" data-ubicacion="${esc(ubicacion)}"${abierta}>
+      <summary>
+        <label class="casilla">
+          <input type="checkbox" data-recuento-ubicacion="${esc(ubicacion)}"${marcada}>
+          ${esc(ubicacion)} — ${esc(filas.length)} SKU
+        </label>
+        <select data-recuento-operario="${esc(ubicacion)}">
+          <option value="">Sin asignar todavía</option>
+          ${opciones}
+        </select>
+        <span class="flecha-desplegar" aria-hidden="true">▾</span>
+      </summary>
+      <table class="detalle-operario">
+        <thead>
+          <tr>
+            <th>SKU</th><th>Descripción</th>
+            <th class="num">Sistema</th><th class="num">Último conteo</th>
+            <th class="num">Dif.</th>
+          </tr>
+        </thead>
+        <tbody>${productos}</tbody>
+      </table>
+    </details>`;
+}
+
+/**
+ * La tolerancia y el listado de ubicaciones A RECONTAR. No entra al
+ * refresco automático de cada 4 segundos: perdería lo que se está tipeando
+ * en el formulario o recién marcando en la lista. Se refresca a propósito:
+ * al entrar a la pestaña, al guardar la tolerancia y al abrir un recuento.
  */
 async function refrescarRecuentoChecklist() {
   if (!estado.sesion) return;
@@ -343,11 +398,81 @@ async function refrescarRecuentoChecklist() {
   const datos = await pedir(`/api/sesiones/${estado.sesion.id}/tablero?${parametros}`);
   estado.recuento.filas = datos.filas;
 
-  const envoltorio = $("#recuento-envoltorio-tabla");
-  const scroll = envoltorio.scrollTop;
-  $("#tabla-recuento tbody").innerHTML = datos.filas.map(dibujarFilaRecuento).join("")
-    || `<tr><td colspan="7">No hay ningún SKU fuera de tolerancia.</td></tr>`;
-  envoltorio.scrollTop = scroll;
+  const porUbicacion = agruparRecuentoPorUbicacion(datos.filas);
+  const ubicaciones = Object.keys(porUbicacion).sort();
+
+  // Por data-ubicacion, no por posición: reordenar alfabéticamente en cada
+  // refresco no puede cerrar una fila que el responsable dejó abierta.
+  const abiertas = new Set(
+    [...document.querySelectorAll("#recuento-ubicaciones details[open]")]
+      .map((detalle) => detalle.dataset.ubicacion),
+  );
+
+  $("#recuento-ubicaciones").innerHTML = ubicaciones
+    .map((ubicacion) => dibujarFilaUbicacionRecuento(ubicacion, porUbicacion[ubicacion], abiertas))
+    .join("") || "<p>No hay ninguna ubicación con SKU fuera de tolerancia.</p>";
+}
+
+/**
+ * Abre el recuento con las ubicaciones marcadas: entran todos sus SKU A
+ * RECONTAR, y de una vez se asigna a quien haya elegido cada fila.
+ *
+ * Agrupada por operario antes de asignar: `PUT .../asignacion` reemplaza el
+ * reparto entero de esa persona en la pasada, así que si el mismo operario
+ * quedó elegido en dos ubicaciones, hace falta un solo pedido con las dos
+ * juntas — dos pedidos separados harían que el segundo borre al primero.
+ */
+async function abrirRecuento() {
+  if (!estado.sesion) return;
+  const ubicaciones = [...estado.recuento.seleccionadas];
+  if (!ubicaciones.length) {
+    alert("Marcá al menos una ubicación para recontar.");
+    return;
+  }
+
+  const articulo_ids = estado.recuento.filas
+    .filter((fila) => ubicaciones.includes(fila.ubicacion))
+    .map((fila) => fila.id);
+
+  try {
+    const recuento = await pedir(`/api/sesiones/${estado.sesion.id}/pasadas`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ articulo_ids }),
+    });
+
+    const porOperario = {};
+    ubicaciones.forEach((ubicacion) => {
+      const operarioId = estado.recuento.operarioPorUbicacion[ubicacion];
+      if (!operarioId) return;
+      (porOperario[operarioId] = porOperario[operarioId] || []).push(ubicacion);
+    });
+
+    const fallos = [];
+    for (const [operarioId, ubicacionesDeEse] of Object.entries(porOperario)) {
+      try {
+        await pedir(
+          `/api/sesiones/${estado.sesion.id}/operarios/${operarioId}/asignacion`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ubicaciones: ubicacionesDeEse, pasada_id: recuento.id }),
+          },
+        );
+      } catch (error) {
+        fallos.push(error.message);
+      }
+    }
+
+    estado.recuento.seleccionadas = new Set();
+    estado.recuento.operarioPorUbicacion = {};
+    await refrescarRecuentoChecklist();
+    await refrescarRecuentosAbiertos();
+
+    if (fallos.length) alert(fallos.join("\n"));
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function dibujarFilaAvanceRecuento(item) {
@@ -382,7 +507,12 @@ function dibujarTarjetaRecuento(pasada, avance) {
 
   return `
     <div class="tarjeta-recuento">
-      <h4>${esc(pasada.etiqueta)} — ${esc(pasada.cantidad_sku)} SKU</h4>
+      <div class="encabezado-tarjeta-recuento">
+        <h4>${esc(pasada.etiqueta)} — ${esc(pasada.cantidad_sku)} SKU</h4>
+        <button class="secundario" type="button" data-recuento-borrar="${esc(pasada.id)}">
+          Borrar
+        </button>
+      </div>
       <div class="operarios-del-recuento">${operarios}</div>
       <table class="detalle-operario">
         <thead>
@@ -420,6 +550,25 @@ async function refrescarRecuentosAbiertos() {
 
   $("#recuentos-abiertos").innerHTML = tarjetas.join("")
     || "<p>Ningún recuento abierto todavía.</p>";
+}
+
+/**
+ * Borra un recuento abierto por error. El servidor es quien manda: rechaza
+ * con 409 en cuanto tiene un conteo cargado, y ese mensaje es el que se le
+ * muestra al responsable — no hay que adivinarlo acá con lo que ya bajó.
+ */
+async function borrarRecuento(pasadaId) {
+  if (!estado.sesion) return;
+  if (!confirm("¿Borrar este recuento? No se puede deshacer.")) return;
+
+  try {
+    await pedir(`/api/sesiones/${estado.sesion.id}/pasadas/${pasadaId}`, {
+      method: "DELETE",
+    });
+    await refrescarRecuentosAbiertos();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 // --- Sesiones --------------------------------------------------------------
@@ -835,45 +984,43 @@ function conectarEventos() {
     refrescarRecuentoChecklist();
   });
 
-  $("#tabla-recuento").addEventListener("change", (evento) => {
-    const id = evento.target.dataset.recuentoSku;
-    if (!id) return;
-    if (evento.target.checked) estado.recuento.seleccionados.add(Number(id));
-    else estado.recuento.seleccionados.delete(Number(id));
+  $("#recuento-ubicaciones").addEventListener("change", (evento) => {
+    const ubicacionCasilla = evento.target.dataset.recuentoUbicacion;
+    if (ubicacionCasilla) {
+      if (evento.target.checked) estado.recuento.seleccionadas.add(ubicacionCasilla);
+      else estado.recuento.seleccionadas.delete(ubicacionCasilla);
+      return;
+    }
+    const ubicacionSelector = evento.target.dataset.recuentoOperario;
+    if (ubicacionSelector) {
+      if (evento.target.value) {
+        estado.recuento.operarioPorUbicacion[ubicacionSelector] = evento.target.value;
+      } else {
+        delete estado.recuento.operarioPorUbicacion[ubicacionSelector];
+      }
+    }
   });
 
   $("#recuento-seleccionar-todos").addEventListener("click", () => {
-    estado.recuento.filas.forEach((f) => estado.recuento.seleccionados.add(f.id));
+    Object.keys(agruparRecuentoPorUbicacion(estado.recuento.filas))
+      .forEach((ubicacion) => estado.recuento.seleccionadas.add(ubicacion));
     refrescarRecuentoChecklist();
   });
 
   $("#recuento-deseleccionar-todos").addEventListener("click", () => {
-    estado.recuento.seleccionados.clear();
+    estado.recuento.seleccionadas.clear();
     refrescarRecuentoChecklist();
   });
 
-  $("#abrir-recuento").addEventListener("click", async () => {
-    if (!estado.sesion) return;
-    const articulo_ids = [...estado.recuento.seleccionados];
-    if (!articulo_ids.length) {
-      alert("Marcá al menos un SKU para recontar.");
-      return;
-    }
-    try {
-      await pedir(`/api/sesiones/${estado.sesion.id}/pasadas`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articulo_ids }),
-      });
-      estado.recuento.seleccionados = new Set();
-      await refrescarRecuentoChecklist();
-      await refrescarRecuentosAbiertos();
-    } catch (error) {
-      alert(error.message);
-    }
-  });
+  $("#abrir-recuento").addEventListener("click", abrirRecuento);
 
   $("#recuentos-abiertos").addEventListener("click", (evento) => {
+    const pasadaABorrar = evento.target.dataset.recuentoBorrar;
+    if (pasadaABorrar) {
+      borrarRecuento(Number(pasadaABorrar));
+      return;
+    }
+
     const operarioId = evento.target.dataset.recuentoSectores;
     if (!operarioId) return;
     const pasadaId = Number(evento.target.dataset.recuentoPasada);

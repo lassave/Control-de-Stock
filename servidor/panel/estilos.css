@@ -360,7 +360,15 @@ dialog { max-width: 28rem; border: 1px solid var(--borde); border-radius: 8px; }
   margin-bottom: 0.75rem;
 }
 
-.tarjeta-recuento h4 { margin: 0 0 0.2rem; }
+.tarjeta-recuento h4 { margin: 0; }
+
+.encabezado-tarjeta-recuento {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.2rem;
+}
 
 .operarios-del-recuento {
   display: flex;
@@ -377,4 +385,17 @@ dialog { max-width: 28rem; border: 1px solid var(--borde); border-radius: 8px; }
   border-radius: 5px;
   padding: 0.25rem 0.25rem 0.25rem 0.6rem;
   font-size: 0.85rem;
+}
+
+.fila-ubicacion-recuento {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.4rem;
 }
