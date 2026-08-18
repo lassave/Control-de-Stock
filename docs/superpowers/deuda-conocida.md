@@ -256,6 +256,18 @@ mismo flujo y corrige el estado. No se alcanzó a observar en la práctica —el
 refresco es parte de la misma vinculación, no un paso aparte— pero es una
 ventana real si algo entre medio llegara a fallar.
 
+**El panel entero usa `confirm()`/`alert()` nativos, y Firefox los puede
+bloquear en silencio.** Después de varios diálogos seguidos en la misma
+pestaña —algo común probando "Borrar" y sus errores uno atrás del otro—,
+Firefox ofrece «No permitir que este sitio cree más diálogos». Si se tilda
+sin querer, la pestaña queda con todos los `confirm()`/`alert()` mudos para
+siempre: ni error en consola, ni reacción visible, en ningún botón que
+dependa de uno —"Borrar" un recuento, "Cerrar sesión", cualquier error de
+`pedir()`—. Pasó de verdad probando el borrado de recuentos. Se arregla
+cerrando la pestaña y abriendo una nueva; no hay forma de detectarlo desde
+el código ni de revertirlo desde la página. Si esto vuelve a pasar, la
+solución de fondo es dejar de depender de diálogos nativos del navegador.
+
 ## Textos
 
 **El aviso de repetido da la hora pero no el día.** En un inventario que cruza
