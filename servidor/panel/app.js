@@ -227,18 +227,21 @@ function dibujarDetalleOperario(item) {
  * tocado la flecha.
  */
 function dibujarTarjetaOperario(operario, abiertos) {
-  const ubicacionesTexto = operario.ubicaciones.map((u) => esc(u)).join(", ");
+  const ubicaciones = operario.ubicaciones
+    .map((u) => `<span class="chip-ubicacion">${esc(u)}</span>`).join("");
   const detalle = operario.detalle.map(dibujarDetalleOperario).join("");
   const abierto = abiertos.has(operario.operario) ? " open" : "";
+  // El borde lateral dice de un vistazo si terminó, está en curso, o no
+  // empezó, sin tener que leer el número de avance.
+  const claseAvance = operario.avance_pct === 100 ? " completo"
+    : operario.avance_pct > 0 ? " en-curso" : "";
 
   return `
-    <details class="tarjeta-operario" data-operario="${esc(operario.operario)}"${abierto}>
+    <details class="tarjeta-operario${claseAvance}" data-operario="${esc(operario.operario)}"${abierto}>
       <summary>
         <div class="resumen-operario">
           <strong>${esc(operario.operario)}</strong>
-          <span class="ubicaciones-resumen">
-            Ubicación asignada: ${ubicacionesTexto}
-          </span>
+          <span class="ubicaciones-resumen">${ubicaciones}</span>
         </div>
         <div class="resumen-numerico">
           <div class="dato">
@@ -736,7 +739,7 @@ function dibujarOperario(operario, haySesion) {
   // vacío no le dice nada a quien mira la tarjeta.
   const sectoresAsignados = operario.ubicaciones_asignadas.length
     ? `<p class="sectores-asignados">Sectores: ` +
-      `${operario.ubicaciones_asignadas.map((u) => esc(u)).join(", ")}</p>`
+      `${operario.ubicaciones_asignadas.map((u) => `<span class="chip-ubicacion">${esc(u)}</span>`).join("")}</p>`
     : "";
   // El token es lo único con lo que se vincula un celular. Va en un campo
   // de solo lectura para poder seleccionarlo y copiarlo: son 43 caracteres
@@ -892,9 +895,31 @@ async function copiarToken(boton) {
   setTimeout(() => { boton.textContent = "Copiar"; }, 2500);
 }
 
+// --- Tema --------------------------------------------------------------------
+
+const CLAVE_TEMA = "control-de-stock-tema";
+
+/** Antes de conectar nada: sin esto, la pantalla parpadea al tema del
+ * sistema y recién después salta al que la persona había elegido. */
+function aplicarTemaGuardado() {
+  const guardado = localStorage.getItem(CLAVE_TEMA);
+  if (guardado) document.documentElement.dataset.theme = guardado;
+}
+
+function alternarTema() {
+  const oscuroAhora = document.documentElement.dataset.theme === "dark"
+    || (!document.documentElement.dataset.theme
+      && matchMedia("(prefers-color-scheme: dark)").matches);
+  const nuevo = oscuroAhora ? "light" : "dark";
+  document.documentElement.dataset.theme = nuevo;
+  localStorage.setItem(CLAVE_TEMA, nuevo);
+}
+
 // --- Arranque --------------------------------------------------------------
 
 function conectarEventos() {
+  $("#cambiar-tema").addEventListener("click", alternarTema);
+
   document.querySelectorAll(".pestanas button").forEach((boton) => {
     boton.addEventListener("click", () => {
       document.querySelectorAll(".pestanas button")
@@ -1092,6 +1117,7 @@ function conectarEventos() {
 }
 
 async function iniciar() {
+  aplicarTemaGuardado();
   conectarEventos();
   try {
     await cargarSesiones();

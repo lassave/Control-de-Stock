@@ -15,6 +15,45 @@
   --gris-fondo: #edeade;
 }
 
+/* Sigue la preferencia del sistema operativo, salvo que se haya tocado el
+   botón de tema — ahí gana lo que la persona eligió, sea cual sea el modo
+   del sistema. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fondo: #17181a;
+    --panel: #202224;
+    --borde: #34363a;
+    --borde-fuerte: #46484d;
+    --texto: #ece9e2;
+    --tenue: #9a9c92;
+    --acento: #e07a3e;
+    --acento-tenue: #3a2a1e;
+    --verde: #6cbf8b;
+    --verde-fondo: #1c2e22;
+    --ambar: #d0973f;
+    --rojo: #e2685a;
+    --rojo-fondo: #33201d;
+    --gris-fondo: #26282a;
+  }
+}
+
+:root[data-theme="dark"] {
+  --fondo: #17181a;
+  --panel: #202224;
+  --borde: #34363a;
+  --borde-fuerte: #46484d;
+  --texto: #ece9e2;
+  --tenue: #9a9c92;
+  --acento: #e07a3e;
+  --acento-tenue: #3a2a1e;
+  --verde: #6cbf8b;
+  --verde-fondo: #1c2e22;
+  --ambar: #d0973f;
+  --rojo: #e2685a;
+  --rojo-fondo: #33201d;
+  --gris-fondo: #26282a;
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -33,6 +72,8 @@ body {
   background: var(--panel);
   border-bottom: 1px solid var(--borde);
 }
+
+.barra-derecha { display: flex; align-items: center; gap: 0.75rem; }
 
 .barra h1 {
   font-family: "Bahnschrift", "Arial Narrow", system-ui, sans-serif;
@@ -276,7 +317,17 @@ tbody tr:hover { background: var(--acento-tenue); }
   height: 148px;
   border: 1px solid var(--borde);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
+}
+
+.chip-ubicacion {
+  display: inline-block;
+  padding: 0.08rem 0.5rem;
+  border-radius: 4px;
+  background: var(--gris-fondo);
+  color: var(--tenue);
+  font-size: 0.75rem;
+  margin: 0.1rem 0.25rem 0.1rem 0;
 }
 
 .ayuda { color: var(--tenue); max-width: 60ch; }
@@ -289,10 +340,15 @@ dialog { max-width: 28rem; border: 1px solid var(--borde); border-radius: 8px; }
 .tarjeta-operario {
   background: var(--panel);
   border: 1px solid var(--borde);
+  border-left: 3px solid var(--borde-fuerte);
   border-radius: 8px;
   padding: 0.9rem 1.1rem;
   margin-bottom: 0.75rem;
 }
+
+/* De un vistazo, sin leer el número: terminó, está en curso, o no empezó. */
+.tarjeta-operario.completo { border-left-color: var(--verde); }
+.tarjeta-operario.en-curso { border-left-color: var(--acento); }
 
 .tarjeta-operario summary {
   cursor: pointer;
@@ -334,11 +390,17 @@ dialog { max-width: 28rem; border: 1px solid var(--borde); border-radius: 8px; }
   min-width: 4.5rem;
 }
 
-.resumen-numerico .valor { font-size: 1.3rem; font-weight: 600; }
+.resumen-numerico .valor {
+  font-family: "Bahnschrift", "Arial Narrow", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
+}
 .resumen-numerico .rotulo {
   color: var(--tenue);
   font-size: 0.72rem;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
   text-align: center;
 }
 
