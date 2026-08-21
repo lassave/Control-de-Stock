@@ -208,3 +208,15 @@ def test_rechaza_encabezados_duplicados():
 
     with pytest.raises(ValueError, match="duplicada"):
         lectura_csv.leer(contenido)
+
+
+def test_tolera_varias_columnas_sin_nombre_en_el_medio():
+    """Algunos ERP exportan columnas separadoras sin encabezado entre grupos
+    de datos, no solo al final. Dos columnas sin nombre no son "la misma
+    columna repetida": ninguna es mapeable, así que no hay ambigüedad."""
+    contenido = "sku;;descripcion;;stock\n1;;Tornillo;;10\n".encode("utf-8")
+
+    encabezados, filas = lectura_csv.leer(contenido)
+
+    assert encabezados == ["sku", "", "descripcion", "", "stock"]
+    assert filas == [["1", "", "Tornillo", "", "10"]]

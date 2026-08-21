@@ -111,8 +111,14 @@ def leer(contenido: bytes) -> tuple[list[str], list[list[str]]]:
     if not encabezados:
         raise ValueError("La primera fila del archivo no tiene nombres de columna")
 
+    # Las columnas sin nombre no compiten entre sí: no son mapeables a ningún
+    # campo, así que dos de ellas no son ambiguas como sí lo serían dos
+    # columnas "sku". Muchos ERP las usan como separador visual en el medio
+    # de la planilla, no solo al final.
     vistos = set()
     for encabezado in encabezados:
+        if not encabezado:
+            continue
         clave = encabezado.lower()
         if clave in vistos:
             raise ValueError(f"La columna «{encabezado}» está duplicada en el archivo")
