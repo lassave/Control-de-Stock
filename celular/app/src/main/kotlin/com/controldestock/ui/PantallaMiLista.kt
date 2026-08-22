@@ -215,10 +215,7 @@ private fun TarjetaUbicacion(
             // Con peso: sin esto, una ubicación con nombre largo empuja la
             // flecha fuera de la tarjeta en vez de ajustar el propio ancho.
             // Verificado en un celular real.
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "UBICACIÓN ASIGNADA:",
                     style = MaterialTheme.typography.labelMedium,
@@ -228,7 +225,6 @@ private fun TarjetaUbicacion(
                     ubicacion.ubicacion,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 8.dp),
                 )
             }
             TextButton(onClick = alTocarFlecha) {

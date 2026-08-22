@@ -113,7 +113,8 @@ class PantallaMiListaTest {
 
         compose.onNodeWithText("UBICACIÓN ASIGNADA:").assertIsDisplayed()
         compose.onNodeWithText("P-3").assertIsDisplayed()
-        compose.onNodeWithText("40").performScrollTo().assertIsDisplayed() // total
+        scrollHasta("40")
+        compose.onNodeWithText("40").assertIsDisplayed() // total
         compose.onNodeWithText("12").assertIsDisplayed() // contados
         compose.onNodeWithText("28").assertIsDisplayed() // sin contar
     }
