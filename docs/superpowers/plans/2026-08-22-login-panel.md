@@ -1421,14 +1421,18 @@ git commit -m "Suma las pantallas de primera cuenta y login al panel"
 **Files:**
 - Modify: `servidor/panel/index.html`
 - Modify: `servidor/panel/app.js`
-- Modify: `servidor/tests/test_panel_estatico.py:75` (guardián de escapado)
+- Modify: `servidor/tests/test_panel_estatico.py` (la línea `DATOS_DEL_SERVIDOR = re.compile(...)`, guardián de escapado — su número de línea se corrió con la Task 5, buscarla por contenido, no por línea)
 
 **Interfaces:**
 - Consumes: `GET /api/usuarios`, `POST /api/usuarios/{id}/desactivar` (Task 6), `crearCuentaYMostrarQr` (Task 7).
 
 - [ ] **Step 1: Sumar `cuenta` a la lista blanca del guardián de escapado**
 
-En `servidor/tests/test_panel_estatico.py`, línea 75, cambiar:
+En `servidor/tests/test_panel_estatico.py`, buscar la línea que empieza
+con `DATOS_DEL_SERVIDOR = re.compile(` —su número de línea original era
+75, pero la Task 5 insertó 2 líneas antes en este mismo archivo (la
+fixture `cliente`), así que buscarla por contenido, no por número—.
+Cambiar:
 
 ```python
 DATOS_DEL_SERVIDOR = re.compile(r"\b(fila|sesion|operario|vista|resultado|estado|novedad)\.")
