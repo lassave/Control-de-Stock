@@ -141,6 +141,23 @@ CREATE TABLE IF NOT EXISTS evento_auditoria (
     detalle         TEXT
 );
 
+-- Cuentas para entrar al panel. Separadas de `operario` a propósito: son
+-- dos identidades sin relación entre sí, y compartir tabla o vocabulario
+-- las confundiría la primera vez que alguien lea el esquema.
+CREATE TABLE IF NOT EXISTS cuenta_panel (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario     TEXT NOT NULL UNIQUE,
+    clave_hash  TEXT NOT NULL,
+    otp_secreto TEXT NOT NULL,
+    activo      INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS sesion_panel (
+    token      TEXT PRIMARY KEY,
+    cuenta_id  INTEGER NOT NULL REFERENCES cuenta_panel(id),
+    creado_en  TEXT NOT NULL
+);
+
 INSERT OR IGNORE INTO unidad (codigo, nombre, admite_decimales) VALUES
     ('UN',   'Unidad',      0),
     ('CJ',   'Caja',        0),

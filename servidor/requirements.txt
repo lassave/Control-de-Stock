@@ -4,3 +4,4 @@ python-multipart==0.0.20
 segno==1.6.6
 pytest==8.3.4
 httpx==0.28.1
+pyotp==2.9.0
