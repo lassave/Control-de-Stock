@@ -1322,3 +1322,27 @@ def test_borrar_pasada_inexistente_devuelve_404(cliente, sesion):
     respuesta = cliente.delete(f"/api/sesiones/{sesion['id']}/pasadas/999")
 
     assert respuesta.status_code == 404
+
+
+def test_listar_usuarios_incluye_la_cuenta_de_prueba(cliente):
+    cuerpo = cliente.get("/api/usuarios").json()
+
+    assert any(u["usuario"] == "prueba" for u in cuerpo)
+    assert "clave_hash" not in cuerpo[0]
+    assert "otp_secreto" not in cuerpo[0]
+
+
+def test_dar_de_baja_un_usuario(cliente):
+    creada = cliente.post(
+        "/api/auth/cuentas", json={"usuario": "temporal", "clave": "clave-larga-123"}
+    ).json()
+
+    respuesta = cliente.post(f"/api/usuarios/{creada['id']}/desactivar")
+
+    assert respuesta.status_code == 200
+    usuarios = cliente.get("/api/usuarios").json()
+    assert not any(u["usuario"] == "temporal" for u in usuarios)
+
+
+def test_dar_de_baja_un_usuario_inexistente_da_404(cliente):
+    assert cliente.post("/api/usuarios/999999/desactivar").status_code == 404

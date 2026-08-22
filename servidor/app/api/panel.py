@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import Response
 
 from app import red, reloj
-from app.repos import asignaciones, operarios, pasada_item, sesiones
+from app.repos import asignaciones, cuentas_panel, operarios, pasada_item, sesiones
 from app.servicios import exportacion, importacion, novedades, reparto, tablero, vinculacion
 from app.api.auth import verificar_sesion
 
@@ -377,6 +377,20 @@ def qr_de_operario(operario_id: int, request: Request):
     texto = vinculacion.contenido(url, operario["token_dispositivo"])
 
     return Response(content=vinculacion.svg(texto), media_type="image/svg+xml")
+
+
+@router.get("/usuarios")
+def listar_usuarios(request: Request):
+    return cuentas_panel.listar(_con(request))
+
+
+@router.post("/usuarios/{cuenta_id}/desactivar")
+def desactivar_usuario(cuenta_id: int, request: Request):
+    try:
+        cuentas_panel.desactivar(_con(request), cuenta_id)
+    except ValueError as error:
+        raise _no_encontrada(error) from error
+    return {"activo": False}
 
 
 @router.get("/sesiones/{sesion_id}/exportar/{tipo_exportacion}")
