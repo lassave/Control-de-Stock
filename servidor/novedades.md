@@ -7,7 +7,7 @@
   después de correr "Publicar app.bat".
 -->
 
-## 2026-08-21 · build 223
+## 2026-08-22 · build 226
 
 - Botón de linterna en la pantalla de escaneo, para contar en depósitos oscuros.
 - «Productos asignados» tiene un diseño nuevo: tarjetas por ubicación que se pueden colapsar, y tema oscuro o claro a elección.
