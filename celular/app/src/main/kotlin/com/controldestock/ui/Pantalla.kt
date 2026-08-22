@@ -113,3 +113,14 @@ fun atrasCierra(hallazgo: Hallazgo?, altaDe: String?, ingresandoAMano: Boolean):
     hallazgo is Hallazgo.Encontrado -> Atras.CierraFicha
     else -> Atras.VuelveALaLista
 }
+
+/**
+ * Lo que se muestra al operario para identificar qué versión tiene instalada.
+ *
+ * Con el mismo `versionName` que ya escribe `app.apk.txt` al publicar y el
+ * `versionCode` que Android rechaza si es menor al ya instalado: son los dos
+ * datos que hacen falta para diagnosticar «se cerró al abrir» sin depender
+ * de conectar el celular por USB.
+ */
+fun textoDeVersion(versionName: String, versionCode: Int): String =
+    "v$versionName (build $versionCode)"

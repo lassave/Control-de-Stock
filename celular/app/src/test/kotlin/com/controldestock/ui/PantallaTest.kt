@@ -183,6 +183,16 @@ class PantallaTest {
     }
 
     @Test
+    fun `el texto de version junta el nombre y el numero de build`() {
+        assertEquals("v2026-08-21 (build 223)", textoDeVersion("2026-08-21", 223))
+    }
+
+    @Test
+    fun `el texto de version tambien sirve para un build de desarrollo`() {
+        assertEquals("vdesarrollo (build 1)", textoDeVersion("desarrollo", 1))
+    }
+
+    @Test
     fun `un desconocido en pantalla no cuenta como algo abierto`() {
         // La franja roja no tapa la cámara: atrás puede volver a la lista
         // con un desconocido en pantalla.

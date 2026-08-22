@@ -50,6 +50,7 @@ class PantallaMiListaTest {
         pendientes: Int = 0,
         estadoDeSubida: EstadoDeSubida = EstadoDeSubida.Quieto,
         oscuro: Boolean = false,
+        version: String = "v2026-08-21 (build 223)",
         alActualizar: () -> Unit = {},
         alSubir: () -> Unit = {},
         alContar: () -> Unit = {},
@@ -64,6 +65,7 @@ class PantallaMiListaTest {
                 pendientes = pendientes,
                 estadoDeSubida = estadoDeSubida,
                 oscuro = oscuro,
+                version = version,
                 alActualizar = alActualizar,
                 alSubir = alSubir,
                 alContar = alContar,
@@ -237,5 +239,12 @@ class PantallaMiListaTest {
         montar(oscuro = false)
 
         compose.onNodeWithText("☀️").assertIsDisplayed()
+    }
+
+    @Test
+    fun `el pie de pagina muestra la version instalada`() {
+        montar(version = "v2026-08-21 (build 223)")
+
+        compose.onNodeWithText("v2026-08-21 (build 223)").assertIsDisplayed()
     }
 }

@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -55,6 +56,7 @@ import com.controldestock.ui.estadoTrasSubir
 import com.controldestock.ui.fichaAbierta
 import com.controldestock.ui.hayQueAnunciar
 import com.controldestock.ui.pantallaSegun
+import com.controldestock.ui.textoDeVersion
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -64,6 +66,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val base = BaseLocal.de(this)
         TrabajoDeSincronizacion.programar(this)
+
+        // Se lee acá y no adentro de un composable: es el mismo dato durante
+        // toda la vida de la Activity, y `PackageManager` no cambia con la
+        // recomposición.
+        val info = packageManager.getPackageInfo(packageName, 0)
+        val version = textoDeVersion(
+            info.versionName ?: "?",
+            PackageInfoCompat.getLongVersionCode(info).toInt(),
+        )
 
         setContent {
             val contexto = LocalContext.current
@@ -76,6 +87,7 @@ class MainActivity : ComponentActivity() {
                     App(
                         base,
                         oscuro = oscuro,
+                        version = version,
                         alCambiarTema = {
                             val nuevo = !oscuro
                             preferenciaDeOscuro = nuevo
@@ -89,7 +101,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun App(base: BaseLocal, oscuro: Boolean, alCambiarTema: () -> Unit) {
+private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema: () -> Unit) {
     val alcance = rememberCoroutineScope()
     var pantalla by remember { mutableStateOf<Pantalla>(Pantalla.Cargando) }
     var vinculando by remember { mutableStateOf(false) }
@@ -333,6 +345,7 @@ private fun App(base: BaseLocal, oscuro: Boolean, alCambiarTema: () -> Unit) {
             pendientes = pendientes,
             estadoDeSubida = estadoDeSubida,
             oscuro = oscuro,
+            version = version,
             alCambiarTema = alCambiarTema,
             alActualizar = { alcance.launch { refrescarListaAsignada() } },
             alSubir = {

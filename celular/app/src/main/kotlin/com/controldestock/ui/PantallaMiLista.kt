@@ -56,6 +56,7 @@ fun PantallaMiLista(
     pendientes: Int,
     estadoDeSubida: EstadoDeSubida,
     oscuro: Boolean,
+    version: String,
     alActualizar: () -> Unit,
     alSubir: () -> Unit,
     alContar: () -> Unit,
@@ -154,6 +155,16 @@ fun PantallaMiLista(
             alActualizar = alActualizar,
             alSubir = alSubir,
             alContar = alContar,
+        )
+
+        // Para diagnosticar «se cerró al abrir» sin depender de conectar el
+        // celular por USB: ver la deuda conocida del cierre por versión vieja.
+        Text(
+            version,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         )
     }
 }
