@@ -150,12 +150,34 @@ def test_endpoint_del_panel_con_sesion_funciona(cliente_sin_loguear):
 
 
 def test_dispositivos_sigue_sin_pedir_sesion_de_panel(cliente_sin_loguear):
-    """La vinculación de celulares no tiene nada que ver con esto."""
+    """La vinculación de celulares no tiene nada que ver con esto.
+
+    Un token inventado ya da 401 por su cuenta —`_contexto` en
+    `dispositivos.py` rechaza cualquier token de operario que no exista,
+    sesión de panel aparte—, así que probarlo con eso no demostraría
+    nada. Acá se crea un operario y una sesión de inventario de verdad
+    estando logueado, se cierra la sesión de panel, y se comprueba que
+    `/api/dispositivo/vincular` igual funciona con el token real.
+    """
+    cuenta = _crear_primera_cuenta(cliente_sin_loguear)
+    codigo = pyotp.TOTP(pyotp.parse_uri(cuenta["otpauth_url"]).secret).now()
+    cliente_sin_loguear.post(
+        "/api/auth/login",
+        json={"usuario": "pablo", "clave": "clave-larga-123", "codigo_otp": codigo},
+    )
+    cliente_sin_loguear.post("/api/sesiones", json={"nombre": "Cliente X"})
+    operario = cliente_sin_loguear.post(
+        "/api/operarios", json={"nombre": "Juan"}
+    ).json()
+
+    cliente_sin_loguear.post("/api/auth/logout")
+
     respuesta = cliente_sin_loguear.post(
-        "/api/dispositivo/vincular", headers={"X-Token": "token-inventado"}
+        "/api/dispositivo/vincular",
+        headers={"X-Token": operario["token_dispositivo"]},
     )
 
-    assert respuesta.status_code != 401
+    assert respuesta.status_code == 200
 
 
 def test_app_apk_sigue_sin_pedir_sesion_de_panel(cliente_sin_loguear):
