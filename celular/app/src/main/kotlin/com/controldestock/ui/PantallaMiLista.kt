@@ -1,28 +1,32 @@
 package com.controldestock.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -40,7 +44,8 @@ import com.controldestock.nucleo.UbicacionAsignada
  *
  * Una tarjeta por ubicación asignada, no una sola: a diferencia de un
  * operario con un único sector, acá puede tener varias, y cada una necesita
- * su propio resumen.
+ * su propio resumen. Cada una se puede colapsar: con muchas ubicaciones
+ * asignadas, desplazarse por todas para llegar a la de abajo cansa.
  */
 @Composable
 fun PantallaMiLista(
@@ -50,22 +55,43 @@ fun PantallaMiLista(
     avisoDeActualizacion: String?,
     pendientes: Int,
     estadoDeSubida: EstadoDeSubida,
+    oscuro: Boolean,
     alActualizar: () -> Unit,
     alSubir: () -> Unit,
     alContar: () -> Unit,
+    alCambiarTema: () -> Unit,
 ) {
+    // Por defecto, todas expandidas: una ubicación ausente acá vale «true»,
+    // no «false» — si no, cada una nueva que baje el reparto arrancaría
+    // colapsada y el operario tendría que ir abriéndolas una por una.
+    val expandidas = remember { mutableStateMapOf<String, Boolean>() }
+
     Column(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(
-                "PRODUCTOS ASIGNADOS",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                pasada,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        "INVENTARIO",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "PRODUCTOS ASIGNADOS",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        pasada,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                BotonDeTema(oscuro = oscuro, alTocar = alCambiarTema)
+            }
             avisoDeActualizacion?.let {
                 Text(
                     it,
@@ -90,16 +116,33 @@ fun PantallaMiLista(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f)
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp)
+                    .testTag("lista-de-productos"),
             ) {
+                item(key = "encabezado-listado") { EncabezadoDeListado() }
+
                 ubicaciones.forEach { ubicacion ->
+                    val expandida = expandidas[ubicacion.ubicacion] ?: true
+
                     item(key = "tarjeta-${ubicacion.ubicacion}") {
-                        TarjetaUbicacion(ubicacion)
+                        TarjetaUbicacion(
+                            ubicacion = ubicacion,
+                            expandida = expandida,
+                            alTocarFlecha = {
+                                expandidas[ubicacion.ubicacion] = !expandida
+                            },
+                        )
                     }
-                    items(
-                        ubicacion.renglones,
-                        key = { "${ubicacion.ubicacion}-${it.sku}" },
-                    ) { renglon -> Renglon(renglon) }
+
+                    if (expandida) {
+                        item(key = "metricas-${ubicacion.ubicacion}") {
+                            FilaDeMetricas(ubicacion)
+                        }
+                        items(
+                            ubicacion.renglones,
+                            key = { "${ubicacion.ubicacion}-${it.sku}" },
+                        ) { renglon -> TarjetaProducto(renglon) }
+                    }
                 }
             }
         }
@@ -116,89 +159,190 @@ fun PantallaMiLista(
 }
 
 @Composable
-private fun TarjetaUbicacion(ubicacion: UbicacionAsignada) {
+private fun BotonDeTema(oscuro: Boolean, alTocar: () -> Unit) {
+    TextButton(onClick = alTocar) {
+        Text(if (oscuro) "🌙" else "☀️", style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+@Composable
+private fun EncabezadoDeListado() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "LISTADO DE PRODUCTOS",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "ID | SKU",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun TarjetaUbicacion(
+    ubicacion: UbicacionAsignada,
+    expandida: Boolean,
+    alTocarFlecha: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Con peso: sin esto, una ubicación con nombre largo empuja la
+            // flecha fuera de la tarjeta en vez de ajustar el propio ancho.
+            // Verificado en un celular real.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    "UBICACIÓN ASIGNADA:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    ubicacion.ubicacion,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+            TextButton(onClick = alTocarFlecha) {
+                Text(if (expandida) "▾" else "▸", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilaDeMetricas(ubicacion: UbicacionAsignada) {
     val sinContar = ubicacion.total - ubicacion.contados
 
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TarjetaDeMetrica("TOTAL", ubicacion.total, modifier = Modifier.weight(1f))
+        TarjetaDeMetrica(
+            "CONTADOS", ubicacion.contados, Verde, modifier = Modifier.weight(1f),
+        )
+        TarjetaDeMetrica(
+            "SIN CONTAR", sinContar, Ambar, modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun TarjetaDeMetrica(
+    etiqueta: String,
+    valor: Int,
+    color: Color? = null,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = modifier,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                color?.let {
+                    Box(modifier = Modifier.size(8.dp).background(it, CircleShape))
+                }
+                Text(
+                    etiqueta,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                "$valor",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = color ?: MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TarjetaProducto(renglon: RenglonAsignado) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                "UBICACIÓN ASIGNADA",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                ubicacion.ubicacion,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
             ) {
-                Estadistica("TOTAL", ubicacion.total)
-                Estadistica("CONTADOS", ubicacion.contados, Verde)
-                Estadistica("SIN CONTAR", sinContar, Ambar)
+                Text(
+                    "ID: ${"%03d".format(renglon.idOrden)} | SKU: ${renglon.sku}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                if (renglon.fueContado) Etiqueta("CONTADO", Verde) else Etiqueta("PENDIENTE", Ambar)
             }
-        }
-    }
-}
-
-@Composable
-private fun Estadistica(etiqueta: String, valor: Int, color: Color? = null) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            etiqueta,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            "$valor",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = color ?: MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-@Composable
-private fun Renglon(renglon: RenglonAsignado) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
             Text(
                 renglon.descripcion,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(top = 4.dp),
             )
-            Text(
-                "SKU: ${renglon.sku} · ${renglon.codigos} · ${renglon.unidad}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
-            if (renglon.fueContado) {
-                Etiqueta("CONTADO", Verde)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    "${Cantidades.aTexto(renglon.contado!!)} ${renglon.unidad}",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 4.dp),
+                    renglon.codigos,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            } else {
-                // Sin cantidad a propósito: un pendiente no tiene nada propio
-                // que mostrar todavía, y mostrar cualquier otro número ahí
-                // insinuaría el stock del sistema, que el celular tiene
-                // prohibido exponer.
-                Etiqueta("PENDIENTE", Ambar)
+                CantidadDelRenglon(renglon)
             }
         }
+    }
+}
+
+@Composable
+private fun CantidadDelRenglon(renglon: RenglonAsignado) {
+    // Un pendiente muestra el guion y la unidad, nunca un número: ni el que
+    // cargó el operario —no cargó nada— ni ningún otro, porque insinuaría el
+    // stock del sistema, que el celular tiene prohibido exponer.
+    val texto = if (renglon.fueContado) {
+        "${Cantidades.aTexto(renglon.contado!!)} ${renglon.unidad}"
+    } else {
+        "- ${renglon.unidad}"
+    }
+    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surface) {
+        Text(
+            texto,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
     }
 }
 
@@ -234,25 +378,19 @@ private fun BarraInferior(
                 estado = estadoDeSubida,
                 alSubir = alSubir,
             )
-            OutlinedButton(
+            TextButton(
                 onClick = alActualizar,
                 enabled = !actualizando,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             ) {
-                Text(if (actualizando) "Actualizando…" else "Actualizar")
+                Text(if (actualizando) "ACTUALIZANDO…" else "ACTUALIZAR")
             }
-            Spacer(modifier = Modifier.width(8.dp))
             // El único camino a la cámara desde acá: siempre habilitado,
             // aunque no haya nada asignado, porque sin reparto el operario
             // puede contar cualquier cosa, como antes de que esta pantalla
-            // existiera. Con palabra y no solo un símbolo, para que no haga
-            // falta adivinar qué hace.
-            Button(
-                onClick = alContar,
-                shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(),
-            ) {
-                Text("Contar")
+            // existiera.
+            FilledIconButton(onClick = alContar) {
+                Text("+", style = MaterialTheme.typography.headlineSmall)
             }
         }
     }

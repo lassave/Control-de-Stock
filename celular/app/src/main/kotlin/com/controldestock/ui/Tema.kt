@@ -1,6 +1,5 @@
 package com.controldestock.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -24,10 +23,17 @@ private val Oscuro = darkColorScheme(
     error = Color(0xFFE08B84),
 )
 
+/**
+ * Qué tema mostrar: el que el operario eligió a mano, o si nunca tocó nada,
+ * el que ya trae el celular.
+ */
+fun esOscuro(preferencia: Boolean?, sistemaOscuro: Boolean): Boolean =
+    preferencia ?: sistemaOscuro
+
 @Composable
-fun Tema(contenido: @Composable () -> Unit) {
+fun Tema(oscuro: Boolean, contenido: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) Oscuro else Claro,
+        colorScheme = if (oscuro) Oscuro else Claro,
         content = contenido,
     )
 }

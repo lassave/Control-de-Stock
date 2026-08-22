@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.controldestock.datos.BaseLocal
+import com.controldestock.datos.PreferenciasDeTema
 import com.controldestock.datos.UnidadEntidad
 import com.controldestock.datos.VinculacionEntidad
 import com.controldestock.nucleo.ConteoLocal
@@ -48,6 +50,7 @@ import com.controldestock.ui.PantallaMiLista
 import com.controldestock.ui.PantallaVinculacion
 import com.controldestock.ui.Tema
 import com.controldestock.ui.atrasCierra
+import com.controldestock.ui.esOscuro
 import com.controldestock.ui.estadoTrasSubir
 import com.controldestock.ui.fichaAbierta
 import com.controldestock.ui.hayQueAnunciar
@@ -63,9 +66,22 @@ class MainActivity : ComponentActivity() {
         TrabajoDeSincronizacion.programar(this)
 
         setContent {
-            Tema {
+            val contexto = LocalContext.current
+            val preferenciasDeTema = remember { PreferenciasDeTema(contexto) }
+            var preferenciaDeOscuro by remember { mutableStateOf(preferenciasDeTema.leer()) }
+            val oscuro = esOscuro(preferenciaDeOscuro, isSystemInDarkTheme())
+
+            Tema(oscuro = oscuro) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    App(base)
+                    App(
+                        base,
+                        oscuro = oscuro,
+                        alCambiarTema = {
+                            val nuevo = !oscuro
+                            preferenciaDeOscuro = nuevo
+                            preferenciasDeTema.guardar(nuevo)
+                        },
+                    )
                 }
             }
         }
@@ -73,7 +89,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun App(base: BaseLocal) {
+private fun App(base: BaseLocal, oscuro: Boolean, alCambiarTema: () -> Unit) {
     val alcance = rememberCoroutineScope()
     var pantalla by remember { mutableStateOf<Pantalla>(Pantalla.Cargando) }
     var vinculando by remember { mutableStateOf(false) }
@@ -316,6 +332,8 @@ private fun App(base: BaseLocal) {
             avisoDeActualizacion = avisoDeActualizacion,
             pendientes = pendientes,
             estadoDeSubida = estadoDeSubida,
+            oscuro = oscuro,
+            alCambiarTema = alCambiarTema,
             alActualizar = { alcance.launch { refrescarListaAsignada() } },
             alSubir = {
                 if (subiendo.compareAndSet(false, true)) {
