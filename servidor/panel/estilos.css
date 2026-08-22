@@ -299,6 +299,17 @@ tbody tr:hover { background: var(--acento-tenue); }
    el input y "Copiar" hacía que el botón "Sectores" se saliera del esquema. */
 .fila-sectores { margin-top: 0.4rem; }
 
+.novedad {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.novedad h3 { margin: 0 0 0.4rem; }
+.novedad ul { margin: 0; padding-left: 1.2rem; }
+
 .instalacion {
   display: flex;
   gap: 1rem;

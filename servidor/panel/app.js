@@ -895,6 +895,23 @@ async function copiarToken(boton) {
   setTimeout(() => { boton.textContent = "Copiar"; }, 2500);
 }
 
+// --- Novedades ---------------------------------------------------------------
+
+/** Una versión publicada, con su título y las viñetas de lo que cambió. */
+function dibujarNovedad(novedad) {
+  return `
+    <article class="novedad">
+      <h3>${esc(novedad.titulo)}</h3>
+      <ul>${novedad.items.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>
+    </article>`;
+}
+
+async function cargarNovedades() {
+  const lista = await pedir("/api/novedades");
+  $("#lista-novedades").innerHTML = lista.map(dibujarNovedad).join("")
+    || "<p class=\"ayuda\">Todavía no hay novedades cargadas.</p>";
+}
+
 // --- Tema --------------------------------------------------------------------
 
 const CLAVE_TEMA = "control-de-stock-tema";
@@ -935,6 +952,7 @@ function conectarEventos() {
         refrescarRecuentoChecklist();
         refrescarRecuentosAbiertos();
       }
+      if (boton.dataset.vista === "novedades") cargarNovedades();
     });
   });
 

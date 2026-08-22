@@ -8,7 +8,7 @@ from fastapi.responses import Response
 
 from app import red, reloj
 from app.repos import asignaciones, operarios, pasada_item, sesiones
-from app.servicios import exportacion, importacion, reparto, tablero, vinculacion
+from app.servicios import exportacion, importacion, novedades, reparto, tablero, vinculacion
 
 router = APIRouter(prefix="/api")
 
@@ -19,6 +19,10 @@ BOM = "﻿"
 # El APK se deja junto al servidor cuando hay una versión compilada. No está
 # en git: es un binario que se regenera, y el repositorio no es su lugar.
 RUTA_APK = Path(__file__).parent.parent.parent / "app.apk"
+
+# A diferencia del APK, este sí está en git: lo mantiene a mano quien
+# publica, no lo genera ninguna compilación.
+RUTA_NOVEDADES = Path(__file__).parent.parent.parent / "novedades.md"
 
 MEDIA_APK = "application/vnd.android.package-archive"
 
@@ -481,6 +485,19 @@ def estado_de_instalacion(request: Request):
         "version": _version_publicada(),
         "publicado": reloj.desde_epoch(RUTA_APK.stat().st_mtime),
     }
+
+
+@router.get("/novedades")
+def ver_novedades():
+    """Qué cambió en cada versión publicada, para quien mira el panel.
+
+    Lista vacía y no un 404 si falta el archivo: sin novedades que mostrar
+    la pestaña queda en blanco, que es preferible a un error.
+    """
+    if not RUTA_NOVEDADES.exists():
+        return []
+
+    return novedades.leer(RUTA_NOVEDADES.read_text(encoding="utf-8"))
 
 
 @router.get("/instalacion/qr")

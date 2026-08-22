@@ -657,6 +657,30 @@ def test_sin_apk_no_se_informa_ninguna_version(cliente, sin_apk):
     assert cuerpo["publicado"] == ""
 
 
+@pytest.fixture
+def con_novedades(monkeypatch, tmp_path):
+    from app.api import panel as modulo_panel
+
+    archivo = tmp_path / "novedades.md"
+    archivo.write_text("## build 223\n- Primer cambio\n", encoding="utf-8")
+    monkeypatch.setattr(modulo_panel, "RUTA_NOVEDADES", archivo)
+    return archivo
+
+
+def test_las_novedades_se_devuelven_parseadas(cliente, con_novedades):
+    cuerpo = cliente.get("/api/novedades").json()
+
+    assert cuerpo == [{"titulo": "build 223", "items": ["Primer cambio"]}]
+
+
+def test_sin_el_archivo_de_novedades_devuelve_lista_vacia(cliente, monkeypatch, tmp_path):
+    from app.api import panel as modulo_panel
+
+    monkeypatch.setattr(modulo_panel, "RUTA_NOVEDADES", tmp_path / "no-existe.md")
+
+    assert cliente.get("/api/novedades").json() == []
+
+
 def test_una_version_con_saltos_de_linea_no_ensucia_el_panel(cliente, con_apk):
     """El archivo lo escribe la publicación, pero es un archivo del disco:
     el que llegue con un salto de línea de más no puede romper el renglón."""
