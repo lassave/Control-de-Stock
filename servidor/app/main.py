@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import db
-from app.api import dispositivos, panel
+from app.api import auth, dispositivos, panel
 
 RUTA_PANEL = Path(__file__).parent.parent / "panel"
 RUTA_DB_POR_DEFECTO = Path(__file__).parent.parent / "inventario.db"
@@ -45,6 +45,7 @@ def crear_app(ruta_db=None):
         app.state.con.close()
 
     app = FastAPI(title="Control de Stock", lifespan=ciclo_de_vida)
+    app.include_router(auth.router)
     app.include_router(panel.router)
     app.include_router(dispositivos.router)
 

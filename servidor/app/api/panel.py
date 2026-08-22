@@ -3,14 +3,15 @@
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
 from app import red, reloj
 from app.repos import asignaciones, operarios, pasada_item, sesiones
 from app.servicios import exportacion, importacion, novedades, reparto, tablero, vinculacion
+from app.api.auth import verificar_sesion
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(verificar_sesion)])
 
 # Marca de orden de bytes. Sin ella, el Excel de un Windows en español lee
 # el CSV como cp1252 y las descripciones con acentos llegan ilegibles.
