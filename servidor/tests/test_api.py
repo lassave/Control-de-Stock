@@ -6,8 +6,11 @@ from app.main import crear_app
 
 @pytest.fixture
 def cliente(tmp_path):
+    from tests.conftest import loguear
+
     app = crear_app(str(tmp_path / "prueba.db"))
     with TestClient(app) as cliente:
+        loguear(cliente)
         yield cliente
 
 

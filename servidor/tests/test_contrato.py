@@ -61,6 +61,9 @@ def vivo(tmp_path_factory):
     respuestas = {}
 
     with TestClient(app) as c:
+        from tests.conftest import loguear
+        loguear(c)
+
         sesion = c.post("/api/sesiones", json={"nombre": "Contrato"}).json()
         c.post(
             f"/api/sesiones/{sesion['id']}/maestro",
