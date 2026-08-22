@@ -40,13 +40,12 @@ def verificar_clave(clave: str, clave_hash: str) -> bool:
         return False
     try:
         iteraciones = int(iteraciones)
-    except ValueError:
+        calculada = hashlib.pbkdf2_hmac(
+            "sha256", clave.encode("utf-8"), sal.encode("utf-8"), iteraciones
+        )
+        return secrets.compare_digest(calculada.hex(), derivada_hex)
+    except (ValueError, TypeError):
         return False
-
-    calculada = hashlib.pbkdf2_hmac(
-        "sha256", clave.encode("utf-8"), sal.encode("utf-8"), iteraciones
-    )
-    return secrets.compare_digest(calculada.hex(), derivada_hex)
 
 
 def generar_secreto_totp() -> str:

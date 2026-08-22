@@ -47,3 +47,15 @@ def test_la_url_otpauth_lleva_el_usuario_y_el_nombre_del_sistema():
     assert url.startswith("otpauth://totp/")
     assert "pablo" in url
     assert "Control%20de%20Stock" in url or "Control+de+Stock" in url
+
+
+def test_un_hash_con_iteraciones_cero_no_verifica_en_vez_de_explotar():
+    """La iteración de pbkdf2_hmac con valor <= 0 levanta ValueError.
+    verificar_clave debe retornar False en vez de propagar la excepción."""
+    assert not autenticacion.verificar_clave("cualquiera", "pbkdf2_sha256$0$deadbeef$aa")
+
+
+def test_un_hash_con_caracteres_no_ascii_no_verifica_en_vez_de_explotar():
+    """secrets.compare_digest levanta TypeError con strings que tienen
+    caracteres no-ASCII. verificar_clave debe retornar False."""
+    assert not autenticacion.verificar_clave("cualquiera", "pbkdf2_sha256$1000$deadbeef$héllo1")
