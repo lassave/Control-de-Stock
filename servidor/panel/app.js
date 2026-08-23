@@ -945,6 +945,13 @@ async function cargarEstadoDeAuth() {
   return auth;
 }
 
+// `arrancarPanel()` se puede llamar más de una vez —doble click en "Entrar"
+// o en "Ya lo escaneé, entrar" antes de que la primera llamada esconda la
+// pantalla de auth—, y sin esta bandera cada llamada apilaría su propio
+// `setInterval`, multiplicando el refresco automático para el resto de la
+// sesión.
+let refrescoIniciado = false;
+
 async function arrancarPanel() {
   mostrarPanel();
   try {
@@ -954,7 +961,10 @@ async function arrancarPanel() {
     $("#sesion-actual").classList.add("error");
     $("#sesion-actual").textContent = `No se pudo conectar: ${error.message}`;
   }
-  setInterval(refrescarSinRomper, 4000);
+  if (!refrescoIniciado) {
+    refrescoIniciado = true;
+    setInterval(refrescarSinRomper, 4000);
+  }
 }
 
 async function enviarLogin(evento) {
