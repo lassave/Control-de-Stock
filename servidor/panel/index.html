@@ -9,25 +9,62 @@
 <body>
   <header class="barra">
     <h1>Control de Stock</h1>
-    <div class="barra-derecha">
+    <div class="barra-derecha oculta" id="barra-derecha">
       <button id="cambiar-tema" class="secundario" type="button" aria-label="Cambiar entre tema claro y oscuro">
         🌓 Tema
       </button>
       <div id="sesion-actual" class="sesion-actual"></div>
+      <span id="usuario-logueado" class="usuario-logueado"></span>
+      <button id="cerrar-sesion-panel" class="secundario" type="button">Cerrar sesión</button>
     </div>
   </header>
 
-  <nav class="pestanas">
+  <nav class="pestanas oculta" id="pestanas">
     <button data-vista="tablero" class="activa">Tablero</button>
     <button data-vista="maestro">Importar maestro</button>
     <button data-vista="operarios">Operarios</button>
     <button data-vista="reparto">Avance por ubicación</button>
     <button data-vista="recuento">Recuento</button>
     <button data-vista="sesiones">Sesiones</button>
+    <button data-vista="usuarios">Usuarios</button>
     <button data-vista="novedades">Novedades</button>
   </nav>
 
   <main>
+    <section id="vista-primera-cuenta" class="vista oculta">
+      <h2>Creá la primera cuenta del panel</h2>
+      <p class="ayuda">
+        Todavía no hay ninguna cuenta para entrar acá. Esta va a poder
+        crear las demás después.
+      </p>
+      <form id="form-primera-cuenta">
+        <input id="primera-cuenta-usuario" placeholder="Usuario" required>
+        <input id="primera-cuenta-clave" type="password" placeholder="Contraseña" required>
+        <button>Crear cuenta</button>
+      </form>
+      <p class="error" id="primera-cuenta-error"></p>
+      <div id="primera-cuenta-qr-envoltorio" class="qr-otp oculta">
+        <p class="ayuda">
+          Escaneá este código con tu app autenticadora (Google
+          Authenticator, Authy, o cualquier otra) antes de continuar.
+          <strong>No se puede volver a mostrar.</strong>
+        </p>
+        <img id="primera-cuenta-qr" class="qr" alt="Código para configurar el segundo factor">
+        <button id="primera-cuenta-continuar" type="button">Ya lo escaneé, entrar</button>
+      </div>
+    </section>
+
+    <section id="vista-login" class="vista oculta">
+      <h2>Iniciar sesión</h2>
+      <form id="form-login">
+        <input id="login-usuario" placeholder="Usuario" required>
+        <input id="login-clave" type="password" placeholder="Contraseña" required>
+        <input id="login-otp" placeholder="Código de 6 dígitos" required inputmode="numeric" pattern="[0-9]*">
+        <button>Entrar</button>
+      </form>
+      <p class="error" id="login-error"></p>
+    </section>
+
     <section id="vista-tablero" class="vista">
       <div id="metricas" class="metricas"></div>
 

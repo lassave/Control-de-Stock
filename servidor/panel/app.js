@@ -912,6 +912,121 @@ async function cargarNovedades() {
     || "<p class=\"ayuda\">Todavía no hay novedades cargadas.</p>";
 }
 
+// --- Autenticación -----------------------------------------------------------
+
+/** Tapa todo —pestañas y contenido— salvo la vista de autenticación pedida. */
+function mostrarSoloVista(nombre) {
+  document.querySelectorAll(".vista").forEach((vista) => vista.classList.add("oculta"));
+  $(`#vista-${nombre}`).classList.remove("oculta");
+  $("#pestanas").classList.add("oculta");
+  $("#barra-derecha").classList.add("oculta");
+}
+
+/** Vuelve al panel de siempre, con el Tablero como pestaña activa. */
+function mostrarPanel() {
+  document.querySelectorAll(".vista").forEach((vista) => vista.classList.add("oculta"));
+  $("#vista-tablero").classList.remove("oculta");
+  $("#pestanas").classList.remove("oculta");
+  $("#barra-derecha").classList.remove("oculta");
+}
+
+/** Pide el estado de auth y muestra la pantalla que corresponda. Nunca
+ * dispara ningún otro pedido: eso queda para `arrancarPanel()`, y solo si
+ * hay sesión. */
+async function cargarEstadoDeAuth() {
+  const auth = await pedir("/api/auth/estado");
+  estado.usuarioActual = auth.usuario;
+
+  if (!auth.hay_cuentas) {
+    mostrarSoloVista("primera-cuenta");
+  } else if (!auth.logueado) {
+    mostrarSoloVista("login");
+  }
+  return auth;
+}
+
+async function arrancarPanel() {
+  mostrarPanel();
+  try {
+    await cargarSesiones();
+    await cargarOperarios();
+  } catch (error) {
+    $("#sesion-actual").classList.add("error");
+    $("#sesion-actual").textContent = `No se pudo conectar: ${error.message}`;
+  }
+}
+
+async function enviarLogin(evento) {
+  evento.preventDefault();
+  $("#login-error").textContent = "";
+  try {
+    await pedir("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        usuario: $("#login-usuario").value,
+        clave: $("#login-clave").value,
+        codigo_otp: $("#login-otp").value,
+      }),
+    });
+    await arrancarPanel();
+  } catch (error) {
+    $("#login-error").textContent = error.message;
+  }
+}
+
+async function cerrarSesionDePanel() {
+  await pedir("/api/auth/logout", { method: "POST" });
+  location.reload();
+}
+
+/**
+ * Crea una cuenta y muestra su QR una sola vez.
+ *
+ * `prefijo` identifica el juego de elementos a usar —`primera-cuenta` o
+ * `usuario-nuevo`—, para no duplicar esta función pantalla por pantalla.
+ */
+async function crearCuentaYMostrarQr(prefijo, usuario, clave) {
+  const errorEl = $(`#${prefijo}-error`);
+  errorEl.textContent = "";
+  try {
+    const cuenta = await pedir("/api/auth/cuentas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usuario, clave }),
+    });
+    // Como imagen y no como `innerHTML`: mismo criterio que el resto del
+    // panel con los QR de vinculación, y evita tratar el SVG como marcado
+    // vivo de la página.
+    $(`#${prefijo}-qr`).src = `data:image/svg+xml;base64,${btoa(cuenta.qr_svg)}`;
+    $(`#${prefijo}-qr-envoltorio`).classList.remove("oculta");
+    $(`#form-${prefijo}`).classList.add("oculta");
+    return cuenta;
+  } catch (error) {
+    errorEl.textContent = error.message;
+    return null;
+  }
+}
+
+function conectarEventosDeAuth() {
+  $("#form-primera-cuenta").addEventListener("submit", async (evento) => {
+    evento.preventDefault();
+    await crearCuentaYMostrarQr(
+      "primera-cuenta",
+      $("#primera-cuenta-usuario").value,
+      $("#primera-cuenta-clave").value,
+    );
+  });
+
+  $("#primera-cuenta-continuar").addEventListener("click", async () => {
+    const auth = await cargarEstadoDeAuth();
+    if (auth.logueado) await arrancarPanel();
+  });
+
+  $("#form-login").addEventListener("submit", enviarLogin);
+  $("#cerrar-sesion-panel").addEventListener("click", cerrarSesionDePanel);
+}
+
 // --- Tema --------------------------------------------------------------------
 
 const CLAVE_TEMA = "control-de-stock-tema";
@@ -935,6 +1050,7 @@ function alternarTema() {
 // --- Arranque --------------------------------------------------------------
 
 function conectarEventos() {
+  conectarEventosDeAuth();
   $("#cambiar-tema").addEventListener("click", alternarTema);
 
   document.querySelectorAll(".pestanas button").forEach((boton) => {
@@ -1137,13 +1253,8 @@ function conectarEventos() {
 async function iniciar() {
   aplicarTemaGuardado();
   conectarEventos();
-  try {
-    await cargarSesiones();
-    await cargarOperarios();
-  } catch (error) {
-    $("#sesion-actual").classList.add("error");
-    $("#sesion-actual").textContent = `No se pudo conectar: ${error.message}`;
-  }
+  const auth = await cargarEstadoDeAuth();
+  if (auth.logueado) await arrancarPanel();
   setInterval(refrescarSinRomper, 4000);
 }
 
