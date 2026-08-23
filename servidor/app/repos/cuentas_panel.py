@@ -75,20 +75,23 @@ def desactivar(con, cuenta_id):
             raise ValueError(f"No existe la cuenta {cuenta_id}")
 
 
-def crear_sesion(con, cuenta_id):
+def crear_sesion(con, cuenta_id, recordar=False):
     token = secrets.token_urlsafe(32)
     with con:
         con.execute(
-            "INSERT INTO sesion_panel (token, cuenta_id, creado_en) VALUES (?, ?, ?)",
-            (token, cuenta_id, reloj.ahora()),
+            "INSERT INTO sesion_panel (token, cuenta_id, creado_en, recordar) "
+            "VALUES (?, ?, ?, ?)",
+            (token, cuenta_id, reloj.ahora(), int(recordar)),
         )
     return token
 
 
 def sesion_valida(con, token):
-    """La cuenta dueña de esta sesión, o None si no existe, venció, o la cuenta se dio de baja."""
+    """La cuenta dueña de esta sesión, o None si no existe, venció, o la
+    cuenta se dio de baja. Una sesión con `recordar = 1` no vence nunca
+    por tiempo."""
     fila = con.execute(
-        "SELECT s.creado_en, c.id, c.usuario, c.activo "
+        "SELECT s.creado_en, s.recordar, c.id, c.usuario, c.activo, c.rol "
         "FROM sesion_panel s JOIN cuenta_panel c ON c.id = s.cuenta_id "
         "WHERE s.token = ?",
         (token,),
@@ -96,13 +99,14 @@ def sesion_valida(con, token):
     if fila is None or not fila["activo"]:
         return None
 
-    creado = datetime.strptime(fila["creado_en"], "%Y-%m-%dT%H:%M:%SZ").replace(
-        tzinfo=timezone.utc
-    )
-    if datetime.now(timezone.utc) - creado > timedelta(days=DIAS_DE_SESION):
-        return None
+    if not fila["recordar"]:
+        creado = datetime.strptime(fila["creado_en"], "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+        if datetime.now(timezone.utc) - creado > timedelta(days=DIAS_DE_SESION):
+            return None
 
-    return {"id": fila["id"], "usuario": fila["usuario"]}
+    return {"id": fila["id"], "usuario": fila["usuario"], "rol": fila["rol"]}
 
 
 def borrar_sesion(con, token):

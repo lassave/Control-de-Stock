@@ -121,7 +121,24 @@ def test_crear_sesion_y_validarla(con):
     token = cuentas_panel.crear_sesion(con, creada["id"])
     validada = cuentas_panel.sesion_valida(con, token)
 
-    assert validada == {"id": creada["id"], "usuario": "pablo"}
+    assert validada == {"id": creada["id"], "usuario": "pablo", "rol": "menor"}
+
+
+def test_una_sesion_recordada_no_vence_aunque_pasen_mas_de_30_dias(con, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+    token = cuentas_panel.crear_sesion(con, creada["id"], recordar=True)
+
+    vencida = (datetime.now(timezone.utc) - timedelta(days=400)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    con.execute(
+        "UPDATE sesion_panel SET creado_en = ? WHERE token = ?", (vencida, token)
+    )
+    con.commit()
+
+    assert cuentas_panel.sesion_valida(con, token) is not None
 
 
 def test_un_token_que_no_existe_no_es_valido(con):
