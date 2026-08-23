@@ -936,6 +936,7 @@ function mostrarPanel() {
 async function cargarEstadoDeAuth() {
   const auth = await pedir("/api/auth/estado");
   estado.usuarioActual = auth.usuario;
+  $("#usuario-logueado").textContent = auth.usuario ?? "";
 
   if (!auth.hay_cuentas) {
     mostrarSoloVista("primera-cuenta");
@@ -1036,6 +1037,47 @@ function conectarEventosDeAuth() {
 
   $("#form-login").addEventListener("submit", enviarLogin);
   $("#cerrar-sesion-panel").addEventListener("click", cerrarSesionDePanel);
+
+  $("#form-usuario-nuevo").addEventListener("submit", async (evento) => {
+    evento.preventDefault();
+    const cuenta = await crearCuentaYMostrarQr(
+      "usuario-nuevo",
+      $("#usuario-nuevo-nombre").value,
+      $("#usuario-nuevo-clave").value,
+    );
+    if (cuenta) await cargarUsuarios();
+  });
+
+  $("#usuario-nuevo-listo").addEventListener("click", () => {
+    $("#usuario-nuevo-qr-envoltorio").classList.add("oculta");
+    $("#form-usuario-nuevo").classList.remove("oculta");
+    $("#usuario-nuevo-nombre").value = "";
+    $("#usuario-nuevo-clave").value = "";
+  });
+
+  $("#lista-usuarios").addEventListener("click", (evento) => {
+    const id = evento.target.dataset.bajaUsuario;
+    if (id) darDeBajaUsuario(id);
+  });
+}
+
+function dibujarUsuario(cuenta) {
+  const botonBaja = cuenta.usuario === estado.usuarioActual
+    ? ""
+    : `<button class="secundario" data-baja-usuario="${esc(cuenta.id)}">Dar de baja</button>`;
+  return `<li>${esc(cuenta.usuario)} ${botonBaja}</li>`;
+}
+
+async function cargarUsuarios() {
+  const lista = await pedir("/api/usuarios");
+  $("#lista-usuarios").innerHTML = lista.map(dibujarUsuario).join("")
+    || "<li>Todavía no hay usuarios.</li>";
+}
+
+async function darDeBajaUsuario(cuentaId) {
+  if (!confirm("¿Dar de baja esta cuenta? No va a poder volver a entrar.")) return;
+  await pedir(`/api/usuarios/${cuentaId}/desactivar`, { method: "POST" });
+  await cargarUsuarios();
 }
 
 // --- Tema --------------------------------------------------------------------
@@ -1080,6 +1122,7 @@ function conectarEventos() {
         refrescarRecuentosAbiertos();
       }
       if (boton.dataset.vista === "novedades") cargarNovedades();
+      if (boton.dataset.vista === "usuarios") cargarUsuarios();
     });
   });
 

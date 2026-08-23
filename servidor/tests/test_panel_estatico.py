@@ -75,7 +75,7 @@ def test_los_estados_usan_texto_ademas_de_color():
         assert estado in contenido
 
 
-DATOS_DEL_SERVIDOR = re.compile(r"\b(fila|sesion|operario|vista|resultado|estado|novedad)\.")
+DATOS_DEL_SERVIDOR = re.compile(r"\b(fila|sesion|operario|vista|resultado|estado|novedad|cuenta)\.")
 
 # Solo se auditan las plantillas que arman marcado. Lo que va por
 # `textContent` no interpreta HTML, y escaparlo ahí mostraría «&amp;» en

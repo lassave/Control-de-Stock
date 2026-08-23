@@ -243,6 +243,28 @@
       <p class="ayuda">Qué cambió en cada versión de la app del celular.</p>
       <div id="lista-novedades"></div>
     </section>
+
+    <section id="vista-usuarios" class="vista oculta">
+      <h2>Usuarios del panel</h2>
+      <p class="ayuda">Quién puede entrar a este panel.</p>
+
+      <form id="form-usuario-nuevo">
+        <input id="usuario-nuevo-nombre" placeholder="Usuario" required>
+        <input id="usuario-nuevo-clave" type="password" placeholder="Contraseña" required>
+        <button>Agregar</button>
+      </form>
+      <p class="error" id="usuario-nuevo-error"></p>
+      <div id="usuario-nuevo-qr-envoltorio" class="qr-otp oculta">
+        <p class="ayuda">
+          Escaneá este código con la app autenticadora de quien va a usar
+          esta cuenta. <strong>No se puede volver a mostrar.</strong>
+        </p>
+        <img id="usuario-nuevo-qr" class="qr" alt="Código para configurar el segundo factor">
+        <button id="usuario-nuevo-listo" type="button">Listo</button>
+      </div>
+
+      <ul id="lista-usuarios" class="lista"></ul>
+    </section>
   </main>
 
   <script src="app.js"></script>
