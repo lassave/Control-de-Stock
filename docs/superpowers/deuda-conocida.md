@@ -278,11 +278,13 @@ falló nada: el alta subió y el conteo entró.
 
 ## Login del panel
 
-**No hay recuperación de OTP perdido.** Si quien usa una cuenta pierde el
-teléfono con la app autenticadora, no hay forma de volver a ver el QR
-—`POST /api/auth/cuentas` lo muestra una sola vez, a propósito, por
-diseño—. Otra cuenta ya logueada tiene que dar de baja esa cuenta y
-crearla de nuevo, o en su defecto cirugía directa sobre `inventario.db`.
+**No hay forma de volver a ver un QR ya mostrado.** Si quien usa una
+cuenta pierde el teléfono con la app autenticadora, `POST
+/api/auth/cuentas` no lo muestra una segunda vez, a propósito, por
+diseño. El camino de recuperación es que otra cuenta ya logueada dé de
+baja esa cuenta y la cree de nuevo con el mismo usuario —el usuario de
+una cuenta dada de baja queda libre para una cuenta nueva, así que esto
+funciona sin cirugía directa sobre `inventario.db`.
 
 **Sin rate limiting en el login.** Corre en la red de un depósito, no
 expuesto a internet; se aceptó como riesgo razonable en el diseño de
@@ -291,3 +293,10 @@ expuesto a internet; se aceptó como riesgo razonable en el diseño de
 **Ninguna cuenta puede cambiar su propia contraseña u OTP.** Se puede
 crear una cuenta nueva y dar de baja la vieja. Si en el uso real esto
 resulta incómodo, es una extensión chica y acotada.
+
+**La primera cuenta la puede crear cualquiera en la wifi del depósito.**
+Hasta que existe una cuenta, `POST /api/auth/cuentas` está abierto sin
+sesión —a propósito, así arranca el sistema—, así que cualquiera
+conectado a esa wifi (incluido el celular de un operario) podría crear
+esa primera cuenta antes que el cliente. Se acepta como riesgo razonable:
+el cliente controla cuándo conecta el servidor a la red por primera vez.
