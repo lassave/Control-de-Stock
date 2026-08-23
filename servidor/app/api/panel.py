@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import Response
 
 from app import red, reloj
+from app.api.auth import verificar_sesion
 from app.repos import asignaciones, cuentas_panel, operarios, pasada_item, sesiones
 from app.servicios import exportacion, importacion, novedades, reparto, tablero, vinculacion
-from app.api.auth import verificar_sesion
 
 router = APIRouter(prefix="/api", dependencies=[Depends(verificar_sesion)])
 
