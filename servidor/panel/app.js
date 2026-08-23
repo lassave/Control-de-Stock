@@ -981,6 +981,7 @@ async function enviarLogin(evento) {
         codigo_otp: $("#login-otp").value,
       }),
     });
+    await cargarEstadoDeAuth();
     await arrancarPanel();
   } catch (error) {
     $("#login-error").textContent = error.message;
