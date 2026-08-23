@@ -1346,3 +1346,13 @@ def test_dar_de_baja_un_usuario(cliente):
 
 def test_dar_de_baja_un_usuario_inexistente_da_404(cliente):
     assert cliente.post("/api/usuarios/999999/desactivar").status_code == 404
+
+
+def test_no_se_puede_dar_de_baja_a_uno_mismo(cliente):
+    propia = next(u for u in cliente.get("/api/usuarios").json() if u["usuario"] == "prueba")
+
+    respuesta = cliente.post(f"/api/usuarios/{propia['id']}/desactivar")
+
+    assert respuesta.status_code == 400
+    usuarios = cliente.get("/api/usuarios").json()
+    assert any(u["usuario"] == "prueba" for u in usuarios)

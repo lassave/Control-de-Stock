@@ -385,7 +385,11 @@ def listar_usuarios(request: Request):
 
 
 @router.post("/usuarios/{cuenta_id}/desactivar")
-def desactivar_usuario(cuenta_id: int, request: Request):
+def desactivar_usuario(
+    cuenta_id: int, request: Request, cuenta_actual: dict = Depends(verificar_sesion)
+):
+    if cuenta_id == cuenta_actual["id"]:
+        raise HTTPException(status_code=400, detail="No podés dar de baja tu propia cuenta")
     try:
         cuentas_panel.desactivar(_con(request), cuenta_id)
     except ValueError as error:
