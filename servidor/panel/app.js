@@ -50,6 +50,7 @@ function esc(valor) {
 async function pedir(url, opciones = {}) {
   const respuesta = await fetch(url, opciones);
   if (!respuesta.ok) {
+    if (respuesta.status === 401) await cargarEstadoDeAuth();
     const cuerpo = await respuesta.json().catch(() => ({}));
     throw new Error(cuerpo.detail || "No se pudo completar la operación");
   }
@@ -1032,6 +1033,7 @@ function conectarEventosDeAuth() {
   });
 
   $("#primera-cuenta-continuar").addEventListener("click", async () => {
+    $("#primera-cuenta-qr").src = "";
     const auth = await cargarEstadoDeAuth();
     if (auth.logueado) await arrancarPanel();
   });
@@ -1051,6 +1053,7 @@ function conectarEventosDeAuth() {
 
   $("#usuario-nuevo-listo").addEventListener("click", () => {
     $("#usuario-nuevo-qr-envoltorio").classList.add("oculta");
+    $("#usuario-nuevo-qr").src = "";
     $("#form-usuario-nuevo").classList.remove("oculta");
     $("#usuario-nuevo-nombre").value = "";
     $("#usuario-nuevo-clave").value = "";
@@ -1077,8 +1080,12 @@ async function cargarUsuarios() {
 
 async function darDeBajaUsuario(cuentaId) {
   if (!confirm("¿Dar de baja esta cuenta? No va a poder volver a entrar.")) return;
-  await pedir(`/api/usuarios/${cuentaId}/desactivar`, { method: "POST" });
-  await cargarUsuarios();
+  try {
+    await pedir(`/api/usuarios/${cuentaId}/desactivar`, { method: "POST" });
+    await cargarUsuarios();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 // --- Tema --------------------------------------------------------------------
@@ -1308,8 +1315,13 @@ function conectarEventos() {
 async function iniciar() {
   aplicarTemaGuardado();
   conectarEventos();
-  const auth = await cargarEstadoDeAuth();
-  if (auth.logueado) await arrancarPanel();
+  try {
+    const auth = await cargarEstadoDeAuth();
+    if (auth.logueado) await arrancarPanel();
+  } catch (error) {
+    mostrarSoloVista("login");
+    $("#login-error").textContent = `No se pudo conectar: ${error.message}`;
+  }
 }
 
 iniciar();
