@@ -144,17 +144,24 @@ CREATE TABLE IF NOT EXISTS evento_auditoria (
 -- Cuentas para entrar al panel. Separadas de `operario` a propósito: son
 -- dos identidades sin relación entre sí, y compartir tabla o vocabulario
 -- las confundiría la primera vez que alguien lea el esquema.
+--
+-- Hay exactamente un superusuario, para siempre: se crea a mano, directo
+-- contra la base, nunca a través de un endpoint. Las cuentas de rol
+-- `menor` no tienen segundo factor —el login no lo pide para nadie, y
+-- ellas se recuperan por mail, no por TOTP— así que `otp_secreto` es
+-- opcional.
 CREATE TABLE IF NOT EXISTS cuenta_panel (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     usuario     TEXT NOT NULL,
     clave_hash  TEXT NOT NULL,
-    otp_secreto TEXT NOT NULL,
-    activo      INTEGER NOT NULL DEFAULT 1
+    otp_secreto TEXT,
+    activo      INTEGER NOT NULL DEFAULT 1,
+    rol         TEXT NOT NULL DEFAULT 'menor' CHECK (rol IN ('superusuario', 'menor'))
 );
 
 -- Única solo entre cuentas activas: como `desactivar()` es una baja
--- lógica (nunca se borra la fila), esto permite recrear una cuenta con el
--- mismo usuario después de darla de baja —es el único camino de
+-- lógica (nunca se borra la fila), esto permite recrear una cuenta con
+-- el mismo usuario después de darla de baja —es el único camino de
 -- recuperación de un OTP perdido.
 CREATE UNIQUE INDEX IF NOT EXISTS cuenta_panel_usuario_activo
     ON cuenta_panel(usuario) WHERE activo = 1;
@@ -162,7 +169,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS cuenta_panel_usuario_activo
 CREATE TABLE IF NOT EXISTS sesion_panel (
     token      TEXT PRIMARY KEY,
     cuenta_id  INTEGER NOT NULL REFERENCES cuenta_panel(id),
-    creado_en  TEXT NOT NULL
+    creado_en  TEXT NOT NULL,
+    -- Con "Recordarme" tildado: la sesión no vence por tiempo, solo con
+    -- un logout explícito. `sesion_valida()` no revisa el vencimiento
+    -- de estas filas.
+    recordar   INTEGER NOT NULL DEFAULT 0
+);
+
+-- Un código de recuperación por cuenta: pedir uno nuevo reemplaza al
+-- anterior, no lo acumula. Solo lo usan las cuentas de rol `menor`
+-- —el superusuario recupera con el TOTP que ya tiene, sin necesitar
+-- esta tabla—.
+CREATE TABLE IF NOT EXISTS codigo_recuperacion (
+    cuenta_id   INTEGER PRIMARY KEY REFERENCES cuenta_panel(id),
+    codigo_hash TEXT NOT NULL,
+    creado_en   TEXT NOT NULL
 );
 
 INSERT OR IGNORE INTO unidad (codigo, nombre, admite_decimales) VALUES
