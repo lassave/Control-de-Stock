@@ -56,7 +56,7 @@ La base `servidor/inventario.db` se crea sola al arrancar y está en
 ```
 servidor/app/repos/       hablan con la base (SQL directo, sin ORM)
 servidor/app/servicios/   reglas de negocio, se prueban sin levantar nada
-servidor/app/api/         panel.py y dispositivos.py
+servidor/app/api/         panel.py, dispositivos.py y auth.py
 servidor/panel/           HTML/CSS/JS sin dependencias
 docs/superpowers/specs/   diseños aprobados
 docs/superpowers/plans/   planes de implementación

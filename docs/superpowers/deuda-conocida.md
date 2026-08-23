@@ -275,3 +275,19 @@ turnos, «a las 23:50» no distingue hace diez minutos de hace nueve horas.
 
 **«Ese código ya estaba» se muestra en la franja roja de error**, cuando no
 falló nada: el alta subió y el conteo entró.
+
+## Login del panel
+
+**No hay recuperación de OTP perdido.** Si quien usa una cuenta pierde el
+teléfono con la app autenticadora, no hay forma de volver a ver el QR
+—`POST /api/auth/cuentas` lo muestra una sola vez, a propósito, por
+diseño—. Otra cuenta ya logueada tiene que dar de baja esa cuenta y
+crearla de nuevo, o en su defecto cirugía directa sobre `inventario.db`.
+
+**Sin rate limiting en el login.** Corre en la red de un depósito, no
+expuesto a internet; se aceptó como riesgo razonable en el diseño de
+2026-08-22, no por descuido.
+
+**Ninguna cuenta puede cambiar su propia contraseña u OTP.** Se puede
+crear una cuenta nueva y dar de baja la vieja. Si en el uso real esto
+resulta incómodo, es una extensión chica y acotada.
