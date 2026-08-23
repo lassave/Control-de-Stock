@@ -184,3 +184,55 @@ def test_app_apk_sigue_sin_pedir_sesion_de_panel(cliente_sin_loguear):
     respuesta = cliente_sin_loguear.get("/app.apk")
 
     assert respuesta.status_code != 401
+
+
+def test_login_sin_otp_funciona(cliente_sin_loguear):
+    from app.repos import cuentas_panel
+    con = cliente_sin_loguear.app.state.con
+    cuentas_panel.crear(con, "pablo", "clave-larga-123")
+
+    respuesta = cliente_sin_loguear.post(
+        "/api/auth/login", json={"usuario": "pablo", "clave": "clave-larga-123"}
+    )
+
+    assert respuesta.status_code == 200
+    assert "sesion_panel" in respuesta.cookies
+
+
+def test_login_con_recordarme_pone_una_cookie_de_diez_anios(cliente_sin_loguear):
+    from app.repos import cuentas_panel
+    con = cliente_sin_loguear.app.state.con
+    cuentas_panel.crear(con, "pablo", "clave-larga-123")
+
+    respuesta = cliente_sin_loguear.post(
+        "/api/auth/login",
+        json={"usuario": "pablo", "clave": "clave-larga-123", "recordarme": True},
+    )
+
+    import time
+    cookie = next(c for c in respuesta.cookies.jar if c.name == "sesion_panel")
+    # cookie.expires es una marca de tiempo absoluta (epoch): comparar contra
+    # "ahora + 5 años" confirma que vence lejos en el futuro, sin depender del
+    # valor exacto de SEGUNDOS_RECORDAR.
+    assert cookie.expires > time.time() + 60 * 60 * 24 * 365 * 5
+
+
+def test_estado_sin_login_no_trae_rol(cliente_sin_loguear):
+    cuerpo = cliente_sin_loguear.get("/api/auth/estado").json()
+
+    assert cuerpo == {"logueado": False, "usuario": None, "rol": None}
+
+
+def test_requerir_superusuario_rechaza_una_cuenta_menor(cliente_sin_loguear):
+    from app.repos import cuentas_panel
+    con = cliente_sin_loguear.app.state.con
+    cuentas_panel.crear(con, "pablo", "clave-larga-123")
+    cliente_sin_loguear.post(
+        "/api/auth/login", json={"usuario": "pablo", "clave": "clave-larga-123"}
+    )
+
+    respuesta = cliente_sin_loguear.post(
+        "/api/auth/cuentas", json={"usuario": "otra@x.com", "clave": "clave-larga-456"}
+    )
+
+    assert respuesta.status_code == 403

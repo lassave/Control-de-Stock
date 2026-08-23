@@ -1,19 +1,25 @@
-"""Login del panel: cuentas, sesión, y el segundo factor por TOTP.
+"""Login del panel: cuentas, sesión, roles, y la recuperación de contraseña.
 
-Sin autenticación —es el único lugar donde no puede haberla, por
-definición—. `panel.router` importa `verificar_sesion` de acá para
-protegerse a sí mismo.
+Sin autenticación en el propio router —es el único lugar donde no puede
+haberla, por definición—. `panel.router` importa `verificar_sesion` y
+`requerir_superusuario` de acá para protegerse a sí mismo.
 """
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.repos import cuentas_panel
-from app.servicios import autenticacion, vinculacion
+from app.servicios import autenticacion, correo
 
 router = APIRouter(prefix="/api/auth")
 
 COOKIE_SESION = "sesion_panel"
 SEGUNDOS_DE_SESION = 60 * 60 * 24 * 30
+# "Recordarme": no vuelve a pedir login salvo un logout explícito. La
+# cookie necesita un vencimiento largo para eso —`sesion_valida()` ya no
+# chequea el vencimiento del lado del servidor para estas sesiones, pero
+# el navegador igual descarta una cookie sin `max_age`—, así que se usa
+# un número grande en vez de "para siempre" (no existe esa opción en HTTP).
+SEGUNDOS_RECORDAR = 60 * 60 * 24 * 365 * 10
 
 
 def _con(request):
@@ -33,6 +39,15 @@ def verificar_sesion(request: Request) -> dict:
     return cuenta
 
 
+def requerir_superusuario(cuenta: dict = Depends(verificar_sesion)) -> dict:
+    """Como `verificar_sesion`, pero además exige el rol superusuario."""
+    if cuenta["rol"] != "superusuario":
+        raise HTTPException(
+            status_code=403, detail="Esta acción es solo para el superusuario"
+        )
+    return cuenta
+
+
 @router.get("/estado")
 def estado(request: Request):
     con = _con(request)
@@ -42,7 +57,7 @@ def estado(request: Request):
     return {
         "logueado": cuenta is not None,
         "usuario": cuenta["usuario"] if cuenta else None,
-        "hay_cuentas": cuentas_panel.existe_alguna(con),
+        "rol": cuenta["rol"] if cuenta else None,
     }
 
 
@@ -53,12 +68,10 @@ async def login(request: Request, response: Response):
 
     usuario = (cuerpo.get("usuario") or "").strip()
     clave = cuerpo.get("clave") or ""
-    codigo_otp = cuerpo.get("codigo_otp") or ""
+    recordarme = bool(cuerpo.get("recordarme"))
 
-    # Un solo mensaje para las tres formas de fallar: no le confirma a
-    # quien prueba a ciegas cuál de los tres datos acertó.
     credenciales_invalidas = HTTPException(
-        status_code=401, detail="Usuario, contraseña o código incorrecto"
+        status_code=401, detail="Usuario o contraseña incorrecto"
     )
 
     cuenta = cuentas_panel.por_usuario(con, usuario)
@@ -66,13 +79,12 @@ async def login(request: Request, response: Response):
         raise credenciales_invalidas
     if not autenticacion.verificar_clave(clave, cuenta["clave_hash"]):
         raise credenciales_invalidas
-    if not autenticacion.verificar_totp(cuenta["otp_secreto"], codigo_otp):
-        raise credenciales_invalidas
 
-    token = cuentas_panel.crear_sesion(con, cuenta["id"])
+    token = cuentas_panel.crear_sesion(con, cuenta["id"], recordar=recordarme)
     response.set_cookie(
         COOKIE_SESION, token,
-        httponly=True, samesite="lax", max_age=SEGUNDOS_DE_SESION,
+        httponly=True, samesite="lax",
+        max_age=SEGUNDOS_RECORDAR if recordarme else SEGUNDOS_DE_SESION,
     )
     return {"usuario": cuenta["usuario"]}
 
@@ -87,25 +99,15 @@ def logout(request: Request, response: Response):
 
 
 @router.post("/cuentas")
-async def crear_cuenta(request: Request):
-    """Sin cuentas todavía, se permite sin sesión: es el arranque. Con al
-    menos una ya creada, exige sesión válida como cualquier otro endpoint
-    del panel — acá adentro, con un `if`, porque expresarlo como una
-    dependencia de FastAPI sería más confuso que la condición misma."""
-    con = _con(request)
-    if cuentas_panel.existe_alguna(con):
-        verificar_sesion(request)
+async def crear_cuenta(request: Request, _: dict = Depends(requerir_superusuario)):
+    raise NotImplementedError("completado en la Task 7 de este plan")
 
-    cuerpo = await request.json()
-    try:
-        creada = cuentas_panel.crear(con, cuerpo.get("usuario"), cuerpo.get("clave"))
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
 
-    otpauth = autenticacion.otpauth_url(creada["otp_secreto"], creada["usuario"])
-    return {
-        "id": creada["id"],
-        "usuario": creada["usuario"],
-        "otpauth_url": otpauth,
-        "qr_svg": vinculacion.svg(otpauth),
-    }
+@router.post("/recuperar/solicitar")
+async def recuperar_solicitar(request: Request):
+    raise NotImplementedError("completado en la Task 8 de este plan")
+
+
+@router.post("/recuperar/confirmar")
+async def recuperar_confirmar(request: Request):
+    raise NotImplementedError("completado en la Task 8 de este plan")
