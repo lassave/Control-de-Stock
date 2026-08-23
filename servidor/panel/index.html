@@ -38,8 +38,8 @@
         crear las demás después.
       </p>
       <form id="form-primera-cuenta">
-        <input id="primera-cuenta-usuario" placeholder="Usuario" required>
-        <input id="primera-cuenta-clave" type="password" placeholder="Contraseña" required>
+        <input id="primera-cuenta-usuario" placeholder="Usuario" required autocomplete="username">
+        <input id="primera-cuenta-clave" type="password" placeholder="Contraseña" required autocomplete="new-password">
         <button>Crear cuenta</button>
       </form>
       <p class="error" id="primera-cuenta-error"></p>
@@ -57,9 +57,9 @@
     <section id="vista-login" class="vista oculta">
       <h2>Iniciar sesión</h2>
       <form id="form-login">
-        <input id="login-usuario" placeholder="Usuario" required>
-        <input id="login-clave" type="password" placeholder="Contraseña" required>
-        <input id="login-otp" placeholder="Código de 6 dígitos" required inputmode="numeric" pattern="[0-9]*">
+        <input id="login-usuario" placeholder="Usuario" required autocomplete="username">
+        <input id="login-clave" type="password" placeholder="Contraseña" required autocomplete="current-password">
+        <input id="login-otp" placeholder="Código de 6 dígitos" required inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6">
         <button>Entrar</button>
       </form>
       <p class="error" id="login-error"></p>
@@ -249,8 +249,8 @@
       <p class="ayuda">Quién puede entrar a este panel.</p>
 
       <form id="form-usuario-nuevo">
-        <input id="usuario-nuevo-nombre" placeholder="Usuario" required>
-        <input id="usuario-nuevo-clave" type="password" placeholder="Contraseña" required>
+        <input id="usuario-nuevo-nombre" placeholder="Usuario" required autocomplete="username">
+        <input id="usuario-nuevo-clave" type="password" placeholder="Contraseña" required autocomplete="new-password">
         <button>Agregar</button>
       </form>
       <p class="error" id="usuario-nuevo-error"></p>
