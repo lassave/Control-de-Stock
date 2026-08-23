@@ -110,3 +110,14 @@ squash**: un squash-merge dejaría a `master` con menos commits que los que
 ya tiene instalados un celular real, y la próxima publicación quedaría por
 debajo del número ya instalado — Android la rechazaría con un error que no
 explica nada.
+
+## Configurar la recuperación de contraseña por mail
+
+Las cuentas de rol menor recuperan la contraseña por un código que
+llega por mail (Administrator la recupera con TOTP, sin mail de por
+medio). Ese envío necesita una casilla de Gmail con contraseña de
+aplicación, en `C:\clientes\claves\control-de-stock-mail.properties` —o
+la ruta que indique `CONTROL_DE_STOCK_MAIL`—.
+`servidor/correo-de-ejemplo.properties` documenta el formato. Sin ese
+archivo, o con campos sin completar, el panel arranca igual: recién
+falla al pedirse una recuperación, con un mensaje que explica qué falta.
