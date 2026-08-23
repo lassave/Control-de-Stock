@@ -26,8 +26,8 @@ def crear(con, usuario, clave):
     usuario = (usuario or "").strip() if isinstance(usuario, str) else ""
     if not usuario:
         raise ValueError("La cuenta necesita un usuario")
-    if not clave:
-        raise ValueError("La cuenta necesita una contraseña")
+    if not clave or len(clave) < 8:
+        raise ValueError("La contraseña tiene que tener al menos 8 caracteres")
 
     clave_hash = autenticacion.hashear_clave(clave)
     secreto = autenticacion.generar_secreto_totp()

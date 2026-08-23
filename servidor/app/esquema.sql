@@ -146,11 +146,18 @@ CREATE TABLE IF NOT EXISTS evento_auditoria (
 -- las confundiría la primera vez que alguien lea el esquema.
 CREATE TABLE IF NOT EXISTS cuenta_panel (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    usuario     TEXT NOT NULL UNIQUE,
+    usuario     TEXT NOT NULL,
     clave_hash  TEXT NOT NULL,
     otp_secreto TEXT NOT NULL,
     activo      INTEGER NOT NULL DEFAULT 1
 );
+
+-- Única solo entre cuentas activas: como `desactivar()` es una baja
+-- lógica (nunca se borra la fila), esto permite recrear una cuenta con el
+-- mismo usuario después de darla de baja —es el único camino de
+-- recuperación de un OTP perdido.
+CREATE UNIQUE INDEX IF NOT EXISTS cuenta_panel_usuario_activo
+    ON cuenta_panel(usuario) WHERE activo = 1;
 
 CREATE TABLE IF NOT EXISTS sesion_panel (
     token      TEXT PRIMARY KEY,

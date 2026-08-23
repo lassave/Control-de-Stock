@@ -28,6 +28,17 @@ def test_sin_clave_no_se_puede_crear(con):
         cuentas_panel.crear(con, "pablo", "")
 
 
+def test_clave_de_menos_de_8_caracteres_no_se_puede_crear(con):
+    with pytest.raises(ValueError, match="8 caracteres"):
+        cuentas_panel.crear(con, "pablo", "1234567")
+
+
+def test_clave_de_8_caracteres_se_acepta(con):
+    creada = cuentas_panel.crear(con, "pablo", "12345678")
+
+    assert creada["usuario"] == "pablo"
+
+
 def test_existe_alguna_es_falso_sin_cuentas(con):
     assert cuentas_panel.existe_alguna(con) is False
 
@@ -80,6 +91,24 @@ def test_una_cuenta_desactivada_no_aparece_por_usuario(con):
     assert cuentas_panel.por_usuario(con, "pablo") is None
 
 
+def test_se_puede_recrear_una_cuenta_con_el_usuario_de_una_dada_de_baja(con):
+    vieja = cuentas_panel.crear(con, "temporal", "clave-larga-123")
+    cuentas_panel.desactivar(con, vieja["id"])
+
+    nueva = cuentas_panel.crear(con, "temporal", "otra-clave-larga")
+
+    cuenta = cuentas_panel.por_usuario(con, "temporal")
+    assert cuenta["id"] == nueva["id"]
+    assert cuenta["id"] != vieja["id"]
+
+
+def test_no_se_puede_repetir_usuario_entre_dos_cuentas_activas(con):
+    cuentas_panel.crear(con, "pablo", "clave-larga-123")
+
+    with pytest.raises(ValueError, match="pablo"):
+        cuentas_panel.crear(con, "pablo", "otra-clave-larga")
+
+
 def test_crear_sesion_y_validarla(con):
     creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
 
@@ -98,6 +127,16 @@ def test_borrar_sesion_la_invalida(con):
     token = cuentas_panel.crear_sesion(con, creada["id"])
 
     cuentas_panel.borrar_sesion(con, token)
+
+    assert cuentas_panel.sesion_valida(con, token) is None
+
+
+def test_dar_de_baja_la_cuenta_invalida_sus_sesiones_abiertas(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+    token = cuentas_panel.crear_sesion(con, creada["id"])
+    assert cuentas_panel.sesion_valida(con, token) is not None
+
+    cuentas_panel.desactivar(con, creada["id"])
 
     assert cuentas_panel.sesion_valida(con, token) is None
 
