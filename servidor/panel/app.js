@@ -954,6 +954,7 @@ async function arrancarPanel() {
     $("#sesion-actual").classList.add("error");
     $("#sesion-actual").textContent = `No se pudo conectar: ${error.message}`;
   }
+  setInterval(refrescarSinRomper, 4000);
 }
 
 async function enviarLogin(evento) {
@@ -1255,7 +1256,6 @@ async function iniciar() {
   conectarEventos();
   const auth = await cargarEstadoDeAuth();
   if (auth.logueado) await arrancarPanel();
-  setInterval(refrescarSinRomper, 4000);
 }
 
 iniciar();
