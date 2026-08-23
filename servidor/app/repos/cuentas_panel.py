@@ -16,12 +16,13 @@ CAMPOS_PUBLICOS = "id, usuario, activo"
 DIAS_DE_SESION = 30
 
 
-def crear(con, usuario, clave):
-    """Da de alta una cuenta con un secreto TOTP nuevo.
+def crear(con, usuario, clave, rol="menor"):
+    """Da de alta una cuenta. Solo el superusuario tiene TOTP —las cuentas
+    de rol menor no lo necesitan: el login no lo pide para nadie, y ellas
+    se recuperan por mail, no por segundo factor.
 
-    Devuelve el secreto en texto plano: es la única vez que existe fuera
-    de la base, porque el llamador lo necesita para armar el QR de alta.
-    Nadie vuelve a pedirlo después.
+    Si genera un secreto, lo devuelve en texto plano: es la única vez que
+    existe fuera de la base. Nadie vuelve a pedirlo después.
     """
     usuario = (usuario or "").strip() if isinstance(usuario, str) else ""
     if not usuario:
@@ -30,14 +31,14 @@ def crear(con, usuario, clave):
         raise ValueError("La contraseña tiene que tener al menos 8 caracteres")
 
     clave_hash = autenticacion.hashear_clave(clave)
-    secreto = autenticacion.generar_secreto_totp()
+    secreto = autenticacion.generar_secreto_totp() if rol == "superusuario" else None
 
     try:
         with con:
             cursor = con.execute(
-                "INSERT INTO cuenta_panel (usuario, clave_hash, otp_secreto) "
-                "VALUES (?, ?, ?)",
-                (usuario, clave_hash, secreto),
+                "INSERT INTO cuenta_panel (usuario, clave_hash, otp_secreto, rol) "
+                "VALUES (?, ?, ?, ?)",
+                (usuario, clave_hash, secreto, rol),
             )
             cuenta_id = cursor.lastrowid
     except sqlite3.IntegrityError as error:
@@ -45,17 +46,13 @@ def crear(con, usuario, clave):
             raise ValueError(f"Ya existe una cuenta con el usuario «{usuario}»") from error
         raise
 
-    return {"id": cuenta_id, "usuario": usuario, "otp_secreto": secreto}
-
-
-def existe_alguna(con):
-    return con.execute("SELECT 1 FROM cuenta_panel LIMIT 1").fetchone() is not None
+    return {"id": cuenta_id, "usuario": usuario, "otp_secreto": secreto, "rol": rol}
 
 
 def por_usuario(con, usuario):
-    """Con clave_hash y otp_secreto: solo para verificar un login, nunca se expone."""
+    """Con clave_hash, otp_secreto y rol: solo para login/recuperación, nunca se expone."""
     fila = con.execute(
-        "SELECT id, usuario, clave_hash, otp_secreto FROM cuenta_panel "
+        "SELECT id, usuario, clave_hash, otp_secreto, rol FROM cuenta_panel "
         "WHERE usuario = ? AND activo = 1",
         (usuario,),
     ).fetchone()

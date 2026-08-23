@@ -3,12 +3,20 @@ import pytest
 from app.repos import cuentas_panel
 
 
-def test_crear_devuelve_el_secreto_totp_en_texto_plano(con):
+def test_crear_superusuario_devuelve_el_secreto_totp_en_texto_plano(con):
+    creada = cuentas_panel.crear(con, "Administrator", "clave-larga-123", rol="superusuario")
+
+    assert creada["usuario"] == "Administrator"
+    assert creada["otp_secreto"]
+    assert creada["rol"] == "superusuario"
+    assert "id" in creada
+
+
+def test_crear_menor_no_genera_secreto_totp(con):
     creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
 
-    assert creada["usuario"] == "pablo"
-    assert creada["otp_secreto"]
-    assert "id" in creada
+    assert creada["otp_secreto"] is None
+    assert creada["rol"] == "menor"
 
 
 def test_no_se_puede_repetir_usuario(con):
@@ -39,23 +47,21 @@ def test_clave_de_8_caracteres_se_acepta(con):
     assert creada["usuario"] == "pablo"
 
 
-def test_existe_alguna_es_falso_sin_cuentas(con):
-    assert cuentas_panel.existe_alguna(con) is False
-
-
-def test_existe_alguna_es_verdadero_con_una_cuenta(con):
-    cuentas_panel.crear(con, "pablo", "clave-larga-123")
-
-    assert cuentas_panel.existe_alguna(con) is True
-
-
-def test_por_usuario_trae_el_hash_y_el_secreto(con):
+def test_por_usuario_trae_el_hash_y_el_rol(con):
     cuentas_panel.crear(con, "pablo", "clave-larga-123")
 
     cuenta = cuentas_panel.por_usuario(con, "pablo")
 
     assert cuenta["usuario"] == "pablo"
     assert cuenta["clave_hash"]
+    assert cuenta["rol"] == "menor"
+
+
+def test_por_usuario_de_un_superusuario_trae_el_secreto(con):
+    cuentas_panel.crear(con, "Administrator", "clave-larga-123", rol="superusuario")
+
+    cuenta = cuentas_panel.por_usuario(con, "Administrator")
+
     assert cuenta["otp_secreto"]
 
 
