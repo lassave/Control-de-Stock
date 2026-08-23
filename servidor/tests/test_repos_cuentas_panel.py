@@ -1,6 +1,7 @@
 import pytest
 
 from app.repos import cuentas_panel
+from app.servicios import autenticacion
 
 
 def test_crear_superusuario_devuelve_el_secreto_totp_en_texto_plano(con):
@@ -177,5 +178,95 @@ def test_una_sesion_vencida_no_es_valida(con, monkeypatch):
         "UPDATE sesion_panel SET creado_en = ? WHERE token = ?", (vencida, token)
     )
     con.commit()
+
+    assert cuentas_panel.sesion_valida(con, token) is None
+
+
+def test_generar_codigo_de_recuperacion_es_de_6_digitos(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+
+    codigo = cuentas_panel.generar_codigo_recuperacion(con, creada["id"])
+
+    assert len(codigo) == 6
+    assert codigo.isdigit()
+
+
+def test_el_codigo_de_recuperacion_generado_es_valido(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+    codigo = cuentas_panel.generar_codigo_recuperacion(con, creada["id"])
+
+    assert cuentas_panel.verificar_codigo_recuperacion(con, creada["id"], codigo) is True
+
+
+def test_un_codigo_incorrecto_no_es_valido(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+    cuentas_panel.generar_codigo_recuperacion(con, creada["id"])
+
+    assert cuentas_panel.verificar_codigo_recuperacion(con, creada["id"], "000000") is False
+
+
+def test_sin_ningun_codigo_pedido_no_hay_codigo_valido(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+
+    assert cuentas_panel.verificar_codigo_recuperacion(con, creada["id"], "123456") is False
+
+
+def test_pedir_un_codigo_nuevo_invalida_el_anterior(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+    viejo = cuentas_panel.generar_codigo_recuperacion(con, creada["id"])
+    cuentas_panel.generar_codigo_recuperacion(con, creada["id"])
+
+    assert cuentas_panel.verificar_codigo_recuperacion(con, creada["id"], viejo) is False
+
+
+def test_un_codigo_vencido_no_es_valido(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+    codigo = cuentas_panel.generar_codigo_recuperacion(con, creada["id"])
+
+    from datetime import datetime, timedelta, timezone
+    vencido = (datetime.now(timezone.utc) - timedelta(minutes=16)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    con.execute(
+        "UPDATE codigo_recuperacion SET creado_en = ? WHERE cuenta_id = ?",
+        (vencido, creada["id"]),
+    )
+    con.commit()
+
+    assert cuentas_panel.verificar_codigo_recuperacion(con, creada["id"], codigo) is False
+
+
+def test_cambiar_clave_actualiza_el_hash(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+
+    cuentas_panel.cambiar_clave(con, creada["id"], "clave-nueva-456")
+
+    cuenta = cuentas_panel.por_usuario(con, "pablo")
+    assert autenticacion.verificar_clave("clave-nueva-456", cuenta["clave_hash"])
+    assert not autenticacion.verificar_clave("clave-larga-123", cuenta["clave_hash"])
+
+
+def test_cambiar_clave_con_una_debil_avisa(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+
+    with pytest.raises(ValueError, match="8 caracteres"):
+        cuentas_panel.cambiar_clave(con, creada["id"], "corta")
+
+
+def test_cambiar_clave_borra_el_codigo_de_recuperacion_pendiente(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+    codigo = cuentas_panel.generar_codigo_recuperacion(con, creada["id"])
+
+    cuentas_panel.cambiar_clave(con, creada["id"], "clave-nueva-456")
+
+    assert cuentas_panel.verificar_codigo_recuperacion(con, creada["id"], codigo) is False
+
+
+def test_cambiar_clave_cierra_las_sesiones_abiertas(con):
+    creada = cuentas_panel.crear(con, "pablo", "clave-larga-123")
+    token = cuentas_panel.crear_sesion(con, creada["id"])
+    assert cuentas_panel.sesion_valida(con, token) is not None
+
+    cuentas_panel.cambiar_clave(con, creada["id"], "clave-nueva-456")
 
     assert cuentas_panel.sesion_valida(con, token) is None

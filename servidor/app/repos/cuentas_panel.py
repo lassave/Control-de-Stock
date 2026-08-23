@@ -112,3 +112,51 @@ def sesion_valida(con, token):
 def borrar_sesion(con, token):
     with con:
         con.execute("DELETE FROM sesion_panel WHERE token = ?", (token,))
+
+
+MINUTOS_CODIGO_RECUPERACION = 15
+
+
+def generar_codigo_recuperacion(con, cuenta_id):
+    """Reemplaza cualquier código pendiente de esta cuenta —no se acumulan—."""
+    codigo = f"{secrets.randbelow(1_000_000):06d}"
+    codigo_hash = autenticacion.hashear_clave(codigo)
+    with con:
+        con.execute(
+            "INSERT INTO codigo_recuperacion (cuenta_id, codigo_hash, creado_en) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(cuenta_id) DO UPDATE SET "
+            "codigo_hash = excluded.codigo_hash, creado_en = excluded.creado_en",
+            (cuenta_id, codigo_hash, reloj.ahora()),
+        )
+    return codigo
+
+
+def verificar_codigo_recuperacion(con, cuenta_id, codigo):
+    fila = con.execute(
+        "SELECT codigo_hash, creado_en FROM codigo_recuperacion WHERE cuenta_id = ?",
+        (cuenta_id,),
+    ).fetchone()
+    if fila is None:
+        return False
+
+    creado = datetime.strptime(fila["creado_en"], "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=timezone.utc
+    )
+    if datetime.now(timezone.utc) - creado > timedelta(minutes=MINUTOS_CODIGO_RECUPERACION):
+        return False
+
+    return autenticacion.verificar_clave(codigo, fila["codigo_hash"])
+
+
+def cambiar_clave(con, cuenta_id, clave_nueva):
+    if not clave_nueva or len(clave_nueva) < 8:
+        raise ValueError("La contraseña tiene que tener al menos 8 caracteres")
+
+    clave_hash = autenticacion.hashear_clave(clave_nueva)
+    with con:
+        con.execute(
+            "UPDATE cuenta_panel SET clave_hash = ? WHERE id = ?", (clave_hash, cuenta_id)
+        )
+        con.execute("DELETE FROM codigo_recuperacion WHERE cuenta_id = ?", (cuenta_id,))
+        con.execute("DELETE FROM sesion_panel WHERE cuenta_id = ?", (cuenta_id,))
