@@ -278,25 +278,30 @@ falló nada: el alta subió y el conteo entró.
 
 ## Login del panel
 
-**No hay forma de volver a ver un QR ya mostrado.** Si quien usa una
-cuenta pierde el teléfono con la app autenticadora, `POST
-/api/auth/cuentas` no lo muestra una segunda vez, a propósito, por
-diseño. El camino de recuperación es que otra cuenta ya logueada dé de
-baja esa cuenta y la cree de nuevo con el mismo usuario —el usuario de
-una cuenta dada de baja queda libre para una cuenta nueva, así que esto
-funciona sin cirugía directa sobre `inventario.db`.
+**Un solo superusuario, para siempre.** Se crea a mano, directo contra
+la base — no hay, ni va a haber, ningún camino en el panel para crear
+un segundo superusuario ni para ascender una cuenta de rol menor. Si
+alguna vez hiciera falta cambiarlo, es la misma clase de operación que
+"borrá `inventario.db` para empezar de cero": cirugía directa sobre la
+base.
 
-**Sin rate limiting en el login.** Corre en la red de un depósito, no
-expuesto a internet; se aceptó como riesgo razonable en el diseño de
-2026-08-22, no por descuido.
+**Recuperación sin límite de intentos.** Ni el código OTP del
+superusuario ni el código por mail de una cuenta de rol menor tienen un
+freno de reintentos — mismo criterio que el login: red del depósito, sin
+exposición a internet. Es un poco más sensible que el login porque
+termina en un cambio de contraseña, pero se acepta el mismo riesgo por
+consistencia, no por descuido.
 
-**Ninguna cuenta puede cambiar su propia contraseña u OTP.** Se puede
-crear una cuenta nueva y dar de baja la vieja. Si en el uso real esto
-resulta incómodo, es una extensión chica y acotada.
+**Una falla al mandar el mail de recuperación no se le avisa a quien la
+pide.** El paso 1 de "olvidé mi contraseña" siempre contesta el mismo
+mensaje genérico, exista la cuenta o no, sea del rol que sea — así que
+si el mail falla (sin internet, credenciales de Gmail mal puestas), la
+persona ve el mismo mensaje de éxito y nunca le llega nada. El error
+completo queda en la consola del servidor (`print`, en la misma ventana
+que "Dejá esta ventana abierta mientras dure el conteo"), no en ningún
+otro lado. Si esto resulta confuso en el uso real, vale la pena
+revisarlo.
 
-**La primera cuenta la puede crear cualquiera en la wifi del depósito.**
-Hasta que existe una cuenta, `POST /api/auth/cuentas` está abierto sin
-sesión —a propósito, así arranca el sistema—, así que cualquiera
-conectado a esa wifi (incluido el celular de un operario) podría crear
-esa primera cuenta antes que el cliente. Se acepta como riesgo razonable:
-el cliente controla cuándo conecta el servidor a la red por primera vez.
+**Ninguna cuenta puede cambiar su propia contraseña estando logueada.**
+Se pasa por "olvidé mi contraseña" incluso para eso. Si en el uso real
+esto resulta incómodo, es una extensión chica y acotada.
