@@ -161,8 +161,7 @@ CREATE TABLE IF NOT EXISTS cuenta_panel (
 
 -- Única solo entre cuentas activas: como `desactivar()` es una baja
 -- lógica (nunca se borra la fila), esto permite recrear una cuenta con
--- el mismo usuario después de darla de baja —es el único camino de
--- recuperación de un OTP perdido.
+-- el mismo usuario después de darla de baja.
 CREATE UNIQUE INDEX IF NOT EXISTS cuenta_panel_usuario_activo
     ON cuenta_panel(usuario) WHERE activo = 1;
 
