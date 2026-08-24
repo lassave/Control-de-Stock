@@ -5,6 +5,8 @@ haberla, por definición—. `panel.router` importa `verificar_sesion` y
 `requerir_superusuario` de acá para protegerse a sí mismo.
 """
 
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.repos import cuentas_panel
@@ -137,7 +139,10 @@ async def recuperar_solicitar(request: Request):
         try:
             correo.mandar_codigo_recuperacion(cuenta["usuario"], codigo)
         except correo.ErrorDeCorreo as error:
-            print(f"No se pudo mandar el mail de recuperación a {cuenta['usuario']}: {error}")
+            print(
+                f"No se pudo mandar el mail de recuperación a {cuenta['usuario']}: {error}",
+                flush=True,
+            )
 
     return {"mensaje": MENSAJE_RECUPERAR_SOLICITADO}
 
@@ -158,6 +163,11 @@ async def recuperar_confirmar(request: Request):
         raise codigo_invalido
 
     if cuenta["rol"] == "superusuario":
+        # Demora fija para emparejar el costo por intento con el de una
+        # cuenta menor, que ya lo paga en `verificar_codigo_recuperacion`
+        # vía `pbkdf2_hmac`: sin esto, el TOTP se fuerza-bruta mucho más
+        # rápido al no hacer ningún trabajo criptográfico por intento.
+        time.sleep(0.1)
         valido = autenticacion.verificar_totp(cuenta["otp_secreto"], codigo)
     else:
         valido = cuentas_panel.verificar_codigo_recuperacion(con, cuenta["id"], codigo)
