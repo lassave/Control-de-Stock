@@ -111,6 +111,29 @@ ya tiene instalados un celular real, y la próxima publicación quedaría por
 debajo del número ya instalado — Android la rechazaría con un error que no
 explica nada.
 
+## Crear el superusuario del panel
+
+Hay exactamente un superusuario del panel, para siempre —no hay ningún
+endpoint que lo cree—. Se crea una sola vez, corriendo:
+
+```powershell
+.\servidor\.venv\Scripts\python.exe servidor\crear_superusuario.py
+```
+
+Pide usuario y contraseña, y muestra un código QR (guardado como
+`servidor/superusuario-qr.svg`, hay que borrarlo después de escanearlo)
+para configurar la app autenticadora. Ese código no se puede volver a
+generar: si se pierde el acceso al segundo factor, hay que correr este
+script de nuevo con un usuario distinto —no se puede reusar el mismo
+mientras la cuenta vieja siga activa— o dar de baja la cuenta vieja
+primero desde la base.
+
+**Nota para esta instalación en particular:** el servidor productivo de
+este cliente ya creó las tablas `cuenta_panel`/`sesion_panel` con el
+esquema viejo (sin roles, todavía vacías). Antes de correr este script
+ahí, hay que borrar esas dos tablas a mano para que se recreen con el
+esquema nuevo —el resto de la base (inventario real) no se toca—.
+
 ## Configurar la recuperación de contraseña por mail
 
 Las cuentas de rol menor recuperan la contraseña por un código que
