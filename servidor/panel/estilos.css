@@ -112,7 +112,7 @@ main { padding: 1.25rem; }
 /* Los bloques que además definen su propio `display` necesitan nombrarse
    acá: tienen la misma especificidad que `.oculta` y, al estar más abajo en
    la hoja, ganarían por orden y quedarían siempre visibles. */
-.vista.oculta, .instalacion.oculta, .qr-otp.oculta, .oculta { display: none; }
+.vista.oculta, .instalacion.oculta, .oculta { display: none; }
 
 .metricas {
   display: grid;
@@ -510,15 +510,6 @@ tbody tr.fila-alerta {
   background: color-mix(in srgb, var(--rojo-fondo) 55%, var(--panel));
 }
 tbody tr.fila-ok { border-left-color: var(--verde); }
-
-.qr-otp {
-  margin-top: 1rem;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.6rem;
-  max-width: 32rem;
-}
 
 .usuario-logueado {
   color: var(--tenue);
