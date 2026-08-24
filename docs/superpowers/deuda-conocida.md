@@ -285,12 +285,25 @@ alguna vez hiciera falta cambiarlo, es la misma clase de operación que
 "borrá `inventario.db` para empezar de cero": cirugía directa sobre la
 base.
 
-**Recuperación sin límite de intentos.** Ni el código OTP del
-superusuario ni el código por mail de una cuenta de rol menor tienen un
-freno de reintentos — mismo criterio que el login: red del depósito, sin
-exposición a internet. Es un poco más sensible que el login porque
-termina en un cambio de contraseña, pero se acepta el mismo riesgo por
-consistencia, no por descuido.
+**Si el superusuario pierde el acceso a su app autenticadora, no hay
+recuperación automática.** A diferencia de una cuenta de rol menor
+(recupera por mail), el superusuario recupera con el código de su app
+autenticadora — sin ese código, no hay forma de entrar al panel. El
+único camino es `servidor/crear_superusuario.py` de nuevo con otro
+usuario, o dar de baja la cuenta vieja directo en la base primero para
+poder reusar el mismo usuario.
+
+**Recuperación sin límite de intentos, salvo una demora fija en la rama
+del superusuario.** El código por mail de una cuenta de rol menor no
+tiene freno de reintentos —mismo criterio que el login: red del
+depósito, sin exposición a internet—, pero sí está protegido por el
+costo de `pbkdf2_hmac` en cada verificación. La rama del superusuario
+(TOTP) es más rápida de verificar por naturaleza, así que tiene además
+una demora fija de 100ms por intento, para no dejar la única cuenta que
+administra usuarios más expuesta que el resto.
+
+**Sin límite de intentos en el login normal.** Mismo criterio que el
+resto: red del depósito, sin exposición a internet.
 
 **Una falla al mandar el mail de recuperación no se le avisa a quien la
 pide.** El paso 1 de "olvidé mi contraseña" siempre contesta el mismo
