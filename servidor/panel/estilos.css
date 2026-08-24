@@ -524,3 +524,22 @@ tbody tr.fila-ok { border-left-color: var(--verde); }
   color: var(--tenue);
   font-size: 0.9rem;
 }
+
+.recordarme {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--tenue);
+}
+
+.recordarme input { width: auto; }
+
+button.enlace {
+  background: none;
+  border: none;
+  color: var(--acento);
+  text-decoration: underline;
+  padding: 0.3rem 0;
+  cursor: pointer;
+}

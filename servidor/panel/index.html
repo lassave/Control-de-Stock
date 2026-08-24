@@ -31,38 +31,35 @@
   </nav>
 
   <main>
-    <section id="vista-primera-cuenta" class="vista oculta">
-      <h2>Creá la primera cuenta del panel</h2>
-      <p class="ayuda">
-        Todavía no hay ninguna cuenta para entrar acá. Esta va a poder
-        crear las demás después.
-      </p>
-      <form id="form-primera-cuenta">
-        <input id="primera-cuenta-usuario" placeholder="Usuario" required autocomplete="username">
-        <input id="primera-cuenta-clave" type="password" placeholder="Contraseña" required autocomplete="new-password">
-        <button>Crear cuenta</button>
-      </form>
-      <p class="error" id="primera-cuenta-error"></p>
-      <div id="primera-cuenta-qr-envoltorio" class="qr-otp oculta">
-        <p class="ayuda">
-          Escaneá este código con tu app autenticadora (Google
-          Authenticator, Authy, o cualquier otra) antes de continuar.
-          <strong>No se puede volver a mostrar.</strong>
-        </p>
-        <img id="primera-cuenta-qr" class="qr" alt="Código para configurar el segundo factor">
-        <button id="primera-cuenta-continuar" type="button">Ya lo escaneé, entrar</button>
-      </div>
-    </section>
-
     <section id="vista-login" class="vista oculta">
       <h2>Iniciar sesión</h2>
       <form id="form-login">
         <input id="login-usuario" placeholder="Usuario" required autocomplete="username">
         <input id="login-clave" type="password" placeholder="Contraseña" required autocomplete="current-password">
-        <input id="login-otp" placeholder="Código de 6 dígitos" required inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6">
+        <label class="recordarme">
+          <input id="login-recordarme" type="checkbox">
+          Recordarme
+        </label>
         <button>Entrar</button>
       </form>
       <p class="error" id="login-error"></p>
+      <button id="ir-a-recuperar" class="enlace" type="button">¿Olvidaste tu contraseña?</button>
+    </section>
+
+    <section id="vista-recuperar" class="vista oculta">
+      <h2>Recuperar contraseña</h2>
+      <form id="form-recuperar-solicitar">
+        <input id="recuperar-usuario" placeholder="Usuario" required autocomplete="username">
+        <button>Enviar</button>
+      </form>
+      <p class="ayuda" id="recuperar-mensaje"></p>
+      <form id="form-recuperar-confirmar" class="oculta">
+        <input id="recuperar-codigo" placeholder="Código" required inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="6">
+        <input id="recuperar-clave-nueva" type="password" placeholder="Contraseña nueva" required autocomplete="new-password">
+        <button>Cambiar contraseña</button>
+      </form>
+      <p class="error" id="recuperar-error"></p>
+      <button id="volver-a-login" class="enlace" type="button">Volver a iniciar sesión</button>
     </section>
 
     <section id="vista-tablero" class="vista">
@@ -249,19 +246,11 @@
       <p class="ayuda">Quién puede entrar a este panel.</p>
 
       <form id="form-usuario-nuevo">
-        <input id="usuario-nuevo-nombre" placeholder="Usuario" required autocomplete="username">
+        <input id="usuario-nuevo-nombre" placeholder="Mail" required autocomplete="username">
         <input id="usuario-nuevo-clave" type="password" placeholder="Contraseña" required autocomplete="new-password">
         <button>Agregar</button>
       </form>
       <p class="error" id="usuario-nuevo-error"></p>
-      <div id="usuario-nuevo-qr-envoltorio" class="qr-otp oculta">
-        <p class="ayuda">
-          Escaneá este código con la app autenticadora de quien va a usar
-          esta cuenta. <strong>No se puede volver a mostrar.</strong>
-        </p>
-        <img id="usuario-nuevo-qr" class="qr" alt="Código para configurar el segundo factor">
-        <button id="usuario-nuevo-listo" type="button">Listo</button>
-      </div>
 
       <ul id="lista-usuarios" class="lista"></ul>
     </section>

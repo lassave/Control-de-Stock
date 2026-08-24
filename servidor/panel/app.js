@@ -938,10 +938,9 @@ async function cargarEstadoDeAuth() {
   const auth = await pedir("/api/auth/estado");
   estado.usuarioActual = auth.usuario;
   $("#usuario-logueado").textContent = auth.usuario ?? "";
+  $('[data-vista="usuarios"]').classList.toggle("oculta", auth.rol !== "superusuario");
 
-  if (!auth.hay_cuentas) {
-    mostrarSoloVista("primera-cuenta");
-  } else if (!auth.logueado) {
+  if (!auth.logueado) {
     mostrarSoloVista("login");
   }
   return auth;
@@ -979,7 +978,7 @@ async function enviarLogin(evento) {
       body: JSON.stringify({
         usuario: $("#login-usuario").value,
         clave: $("#login-clave").value,
-        codigo_otp: $("#login-otp").value,
+        recordarme: $("#login-recordarme").checked,
       }),
     });
     await cargarEstadoDeAuth();
@@ -989,74 +988,77 @@ async function enviarLogin(evento) {
   }
 }
 
+async function solicitarRecuperacion(evento) {
+  evento.preventDefault();
+  $("#recuperar-mensaje").textContent = "";
+  $("#recuperar-error").textContent = "";
+  try {
+    const respuesta = await pedir("/api/auth/recuperar/solicitar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usuario: $("#recuperar-usuario").value }),
+    });
+    $("#recuperar-mensaje").textContent = respuesta.mensaje;
+    $("#form-recuperar-confirmar").classList.remove("oculta");
+  } catch (error) {
+    $("#recuperar-mensaje").textContent = error.message;
+  }
+}
+
+async function confirmarRecuperacion(evento) {
+  evento.preventDefault();
+  $("#recuperar-error").textContent = "";
+  try {
+    await pedir("/api/auth/recuperar/confirmar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        usuario: $("#recuperar-usuario").value,
+        codigo: $("#recuperar-codigo").value,
+        clave_nueva: $("#recuperar-clave-nueva").value,
+      }),
+    });
+    mostrarSoloVista("login");
+    $("#login-error").textContent = "Contraseña cambiada. Iniciá sesión de nuevo.";
+    $("#form-recuperar-confirmar").classList.add("oculta");
+    $("#recuperar-mensaje").textContent = "";
+  } catch (error) {
+    $("#recuperar-error").textContent = error.message;
+  }
+}
+
 async function cerrarSesionDePanel() {
   await pedir("/api/auth/logout", { method: "POST" });
   location.reload();
 }
 
-/**
- * Crea una cuenta y muestra su QR una sola vez.
- *
- * `prefijo` identifica el juego de elementos a usar —`primera-cuenta` o
- * `usuario-nuevo`—, para no duplicar esta función pantalla por pantalla.
- */
-async function crearCuentaYMostrarQr(prefijo, usuario, clave) {
-  const errorEl = $(`#${prefijo}-error`);
-  errorEl.textContent = "";
-  try {
-    const cuenta = await pedir("/api/auth/cuentas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ usuario, clave }),
-    });
-    // Como imagen y no como `innerHTML`: mismo criterio que el resto del
-    // panel con los QR de vinculación, y evita tratar el SVG como marcado
-    // vivo de la página.
-    $(`#${prefijo}-qr`).src = `data:image/svg+xml;base64,${btoa(cuenta.qr_svg)}`;
-    $(`#${prefijo}-qr-envoltorio`).classList.remove("oculta");
-    $(`#form-${prefijo}`).classList.add("oculta");
-    return cuenta;
-  } catch (error) {
-    errorEl.textContent = error.message;
-    return null;
-  }
-}
-
 function conectarEventosDeAuth() {
-  $("#form-primera-cuenta").addEventListener("submit", async (evento) => {
-    evento.preventDefault();
-    await crearCuentaYMostrarQr(
-      "primera-cuenta",
-      $("#primera-cuenta-usuario").value,
-      $("#primera-cuenta-clave").value,
-    );
-  });
-
-  $("#primera-cuenta-continuar").addEventListener("click", async () => {
-    $("#primera-cuenta-qr").src = "";
-    const auth = await cargarEstadoDeAuth();
-    if (auth.logueado) await arrancarPanel();
-  });
-
   $("#form-login").addEventListener("submit", enviarLogin);
   $("#cerrar-sesion-panel").addEventListener("click", cerrarSesionDePanel);
 
+  $("#ir-a-recuperar").addEventListener("click", () => mostrarSoloVista("recuperar"));
+  $("#volver-a-login").addEventListener("click", () => mostrarSoloVista("login"));
+  $("#form-recuperar-solicitar").addEventListener("submit", solicitarRecuperacion);
+  $("#form-recuperar-confirmar").addEventListener("submit", confirmarRecuperacion);
+
   $("#form-usuario-nuevo").addEventListener("submit", async (evento) => {
     evento.preventDefault();
-    const cuenta = await crearCuentaYMostrarQr(
-      "usuario-nuevo",
-      $("#usuario-nuevo-nombre").value,
-      $("#usuario-nuevo-clave").value,
-    );
-    if (cuenta) await cargarUsuarios();
-  });
-
-  $("#usuario-nuevo-listo").addEventListener("click", () => {
-    $("#usuario-nuevo-qr-envoltorio").classList.add("oculta");
-    $("#usuario-nuevo-qr").src = "";
-    $("#form-usuario-nuevo").classList.remove("oculta");
-    $("#usuario-nuevo-nombre").value = "";
-    $("#usuario-nuevo-clave").value = "";
+    $("#usuario-nuevo-error").textContent = "";
+    try {
+      await pedir("/api/auth/cuentas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          usuario: $("#usuario-nuevo-nombre").value,
+          clave: $("#usuario-nuevo-clave").value,
+        }),
+      });
+      $("#usuario-nuevo-nombre").value = "";
+      $("#usuario-nuevo-clave").value = "";
+      await cargarUsuarios();
+    } catch (error) {
+      $("#usuario-nuevo-error").textContent = error.message;
+    }
   });
 
   $("#lista-usuarios").addEventListener("click", (evento) => {
