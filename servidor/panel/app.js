@@ -942,7 +942,8 @@ async function cargarEstadoDeAuth() {
   $("#usuario-logueado").textContent = auth.usuario ?? "";
   $('[data-vista="usuarios"]').classList.toggle("oculta", auth.rol !== "superusuario");
 
-  if (!auth.logueado) {
+  const enRecuperacion = !$("#vista-recuperar").classList.contains("oculta");
+  if (!auth.logueado && !enRecuperacion) {
     mostrarSoloVista("login");
   }
   return auth;
@@ -973,6 +974,7 @@ async function arrancarPanel() {
 async function enviarLogin(evento) {
   evento.preventDefault();
   $("#login-error").textContent = "";
+  $("#login-mensaje").textContent = "";
   try {
     await pedir("/api/auth/login", {
       method: "POST",
@@ -1029,8 +1031,8 @@ async function confirmarRecuperacion(evento) {
         clave_nueva: $("#recuperar-clave-nueva").value,
       }),
     });
-    alert("Contraseña cambiada. Iniciá sesión de nuevo.");
     mostrarSoloVista("login");
+    $("#login-mensaje").textContent = "Contraseña cambiada. Iniciá sesión de nuevo.";
   } catch (error) {
     $("#recuperar-error").textContent = error.message;
   }
