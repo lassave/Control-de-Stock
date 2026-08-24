@@ -42,6 +42,7 @@
         </label>
         <button>Entrar</button>
       </form>
+      <p class="ayuda" id="login-mensaje"></p>
       <p class="error" id="login-error"></p>
       <button id="ir-a-recuperar" class="enlace" type="button">¿Olvidaste tu contraseña?</button>
     </section>
@@ -246,7 +247,7 @@
       <p class="ayuda">Quién puede entrar a este panel.</p>
 
       <form id="form-usuario-nuevo">
-        <input id="usuario-nuevo-nombre" placeholder="Mail" required autocomplete="username">
+        <input id="usuario-nuevo-nombre" type="email" placeholder="Mail" required autocomplete="username">
         <input id="usuario-nuevo-clave" type="password" placeholder="Contraseña" required autocomplete="new-password">
         <button>Agregar</button>
       </form>
