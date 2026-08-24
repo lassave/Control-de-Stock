@@ -59,3 +59,7 @@ def test_un_hash_con_caracteres_no_ascii_no_verifica_en_vez_de_explotar():
     """secrets.compare_digest levanta TypeError con strings que tienen
     caracteres no-ASCII. verificar_clave debe retornar False."""
     assert not autenticacion.verificar_clave("cualquiera", "pbkdf2_sha256$1000$deadbeef$héllo1")
+
+
+def test_verificar_totp_sin_secreto_da_falso():
+    assert autenticacion.verificar_totp(None, "123456") is False

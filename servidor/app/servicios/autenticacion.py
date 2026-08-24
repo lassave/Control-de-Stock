@@ -54,6 +54,8 @@ def generar_secreto_totp() -> str:
 
 def verificar_totp(secreto: str, codigo: str) -> bool:
     """Admite un paso de 30 segundos de diferencia de reloj para cada lado."""
+    if not secreto:
+        return False
     return pyotp.TOTP(secreto).verify(codigo, valid_window=1)
 
 
