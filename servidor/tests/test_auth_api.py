@@ -1,3 +1,5 @@
+import time
+
 import pyotp
 import pytest
 from fastapi.testclient import TestClient
@@ -44,7 +46,20 @@ def test_login_con_recordarme_pone_una_cookie_de_diez_anios(cliente_sin_loguear)
     )
 
     cookie = next(c for c in respuesta.cookies.jar if c.name == "sesion_panel")
-    assert cookie.expires - cookie.expires % 100 > 315_000_000
+    assert cookie.expires > time.time() + 60 * 60 * 24 * 365 * 5
+
+
+def test_login_sin_recordarme_pone_una_cookie_de_treinta_dias(cliente_sin_loguear):
+    con = cliente_sin_loguear.app.state.con
+    cuentas_panel.crear(con, "pablo", "clave-larga-123")
+
+    respuesta = cliente_sin_loguear.post(
+        "/api/auth/login", json={"usuario": "pablo", "clave": "clave-larga-123"}
+    )
+
+    cookie = next(c for c in respuesta.cookies.jar if c.name == "sesion_panel")
+    ahora = time.time()
+    assert ahora + 25 * 24 * 3600 < cookie.expires < ahora + 35 * 24 * 3600
 
 
 def test_login_con_clave_incorrecta(cliente_sin_loguear):
