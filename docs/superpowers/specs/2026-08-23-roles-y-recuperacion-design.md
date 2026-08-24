@@ -48,6 +48,9 @@ ALTER TABLE cuenta_panel ADD COLUMN rol TEXT NOT NULL DEFAULT 'menor'
     CHECK (rol IN ('superusuario', 'menor'));
 ```
 
+(`otp_secreto` deja de ser `NOT NULL` — ver más abajo, "Las cuentas de
+rol menor no tienen TOTP")
+
 (la base se recrea desde cero en cada instalación nueva —no hay sistema
 de migraciones en este proyecto—, así que en la práctica esto se suma
 directo a la sentencia `CREATE TABLE` de `esquema.sql`; el `ALTER TABLE`
@@ -144,6 +147,17 @@ paso 1 de la recuperación **no lo distingue del caso de éxito** —misma
 razón que el resto del diseño: una respuesta distinta ahí confirmaría
 que la cuenta existe y es de rol menor—. El error completo queda en la
 consola del servidor. Documentado como deuda conocida.
+
+## Las cuentas de rol menor no tienen TOTP
+
+Como el login ya no pide OTP para nadie, y la recuperación de una cuenta
+`menor` es por mail (no por TOTP), esas cuentas no tienen ningún uso para
+un secreto TOTP. `otp_secreto` pasa a ser `NULL`able en `cuenta_panel`, y
+`cuentas_panel.crear()` solo lo genera cuando `rol == "superusuario"`. El
+endpoint de alta (`POST /api/auth/cuentas`, que ahora solo crea cuentas
+`menor`) deja de devolver `otpauth_url`/`qr_svg` — no hay nada que
+escanear—, y la pantalla de "agregar usuario" del panel pierde el paso
+del QR: se crea la cuenta y ya está lista para usarse.
 
 ## Alta de cuentas: se cierra la ventana sin sesión
 
