@@ -100,7 +100,17 @@ def logout(request: Request, response: Response):
 
 @router.post("/cuentas")
 async def crear_cuenta(request: Request, _: dict = Depends(requerir_superusuario)):
-    raise NotImplementedError("completado en la Task 7 de este plan")
+    """El rol nunca sale del cliente: esta ruta solo crea cuentas de rol
+    menor. Hay exactamente un superusuario, y se crea a mano contra la
+    base, nunca por acá."""
+    con = _con(request)
+    cuerpo = await request.json()
+    try:
+        creada = cuentas_panel.crear(con, cuerpo.get("usuario"), cuerpo.get("clave"), rol="menor")
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    return {"id": creada["id"], "usuario": creada["usuario"]}
 
 
 @router.post("/recuperar/solicitar")

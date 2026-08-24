@@ -236,3 +236,44 @@ def test_requerir_superusuario_rechaza_una_cuenta_menor(cliente_sin_loguear):
     )
 
     assert respuesta.status_code == 403
+
+
+def _crear_superusuario_y_loguearse(cliente, usuario="Administrator", clave="clave-larga-123"):
+    from app.repos import cuentas_panel
+    con = cliente.app.state.con
+    cuentas_panel.crear(con, usuario, clave, rol="superusuario")
+    cliente.post("/api/auth/login", json={"usuario": usuario, "clave": clave})
+
+
+def test_crear_cuenta_sin_sesion_da_401(cliente_sin_loguear):
+    respuesta = cliente_sin_loguear.post(
+        "/api/auth/cuentas", json={"usuario": "ana@x.com", "clave": "clave-larga-456"}
+    )
+
+    assert respuesta.status_code == 401
+
+
+def test_superusuario_puede_crear_una_cuenta_menor(cliente_sin_loguear):
+    _crear_superusuario_y_loguearse(cliente_sin_loguear)
+
+    respuesta = cliente_sin_loguear.post(
+        "/api/auth/cuentas", json={"usuario": "ana@x.com", "clave": "clave-larga-456"}
+    )
+
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo == {"id": cuerpo["id"], "usuario": "ana@x.com"}
+
+
+def test_crear_cuenta_ignora_el_rol_del_pedido(cliente_sin_loguear):
+    from app.repos import cuentas_panel
+    _crear_superusuario_y_loguearse(cliente_sin_loguear)
+
+    cliente_sin_loguear.post(
+        "/api/auth/cuentas",
+        json={"usuario": "ana@x.com", "clave": "clave-larga-456", "rol": "superusuario"},
+    )
+
+    con = cliente_sin_loguear.app.state.con
+    creada = cuentas_panel.por_usuario(con, "ana@x.com")
+    assert creada["rol"] == "menor"
