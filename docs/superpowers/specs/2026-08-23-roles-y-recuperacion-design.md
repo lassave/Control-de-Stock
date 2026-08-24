@@ -140,8 +140,10 @@ real se toma de una variable de entorno, y sin ese archivo o con
 credenciales incompletas el sistema **arranca igual** —el mail solo hace
 falta para recuperar contraseña, no para el uso normal del panel—. Si el
 envío falla en el momento (sin internet, credenciales mal puestas), el
-paso 1 de la recuperación lo avisa con un mensaje claro en vez de fallar
-en silencio o mentir que se mandó.
+paso 1 de la recuperación **no lo distingue del caso de éxito** —misma
+razón que el resto del diseño: una respuesta distinta ahí confirmaría
+que la cuenta existe y es de rol menor—. El error completo queda en la
+consola del servidor. Documentado como deuda conocida.
 
 ## Alta de cuentas: se cierra la ventana sin sesión
 
