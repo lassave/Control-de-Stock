@@ -277,3 +277,119 @@ def test_crear_cuenta_ignora_el_rol_del_pedido(cliente_sin_loguear):
     con = cliente_sin_loguear.app.state.con
     creada = cuentas_panel.por_usuario(con, "ana@x.com")
     assert creada["rol"] == "menor"
+
+
+def test_solicitar_recuperacion_siempre_da_el_mismo_mensaje(cliente_sin_loguear):
+    respuesta_existe = cliente_sin_loguear.post(
+        "/api/auth/recuperar/solicitar", json={"usuario": "nadie@x.com"}
+    )
+
+    assert respuesta_existe.status_code == 200
+    assert respuesta_existe.json()["mensaje"]
+
+
+def test_solicitar_recuperacion_de_una_cuenta_menor_manda_un_mail(
+    cliente_sin_loguear, monkeypatch
+):
+    from app.repos import cuentas_panel
+    from app.servicios import correo
+
+    con = cliente_sin_loguear.app.state.con
+    cuentas_panel.crear(con, "ana@x.com", "clave-larga-123")
+
+    mandados = []
+    monkeypatch.setattr(
+        correo, "mandar_codigo_recuperacion",
+        lambda destinatario, codigo: mandados.append((destinatario, codigo)),
+    )
+
+    cliente_sin_loguear.post("/api/auth/recuperar/solicitar", json={"usuario": "ana@x.com"})
+
+    assert len(mandados) == 1
+    assert mandados[0][0] == "ana@x.com"
+    assert len(mandados[0][1]) == 6
+
+
+def test_solicitar_recuperacion_del_superusuario_no_manda_mail(
+    cliente_sin_loguear, monkeypatch
+):
+    from app.repos import cuentas_panel
+    from app.servicios import correo
+
+    con = cliente_sin_loguear.app.state.con
+    cuentas_panel.crear(con, "Administrator", "clave-larga-123", rol="superusuario")
+
+    mandados = []
+    monkeypatch.setattr(
+        correo, "mandar_codigo_recuperacion",
+        lambda destinatario, codigo: mandados.append((destinatario, codigo)),
+    )
+
+    cliente_sin_loguear.post(
+        "/api/auth/recuperar/solicitar", json={"usuario": "Administrator"}
+    )
+
+    assert mandados == []
+
+
+def test_confirmar_recuperacion_del_superusuario_con_totp(cliente_sin_loguear):
+    from app.repos import cuentas_panel
+
+    con = cliente_sin_loguear.app.state.con
+    creada = cuentas_panel.crear(con, "Administrator", "clave-larga-123", rol="superusuario")
+    codigo = pyotp.TOTP(creada["otp_secreto"]).now()
+
+    respuesta = cliente_sin_loguear.post(
+        "/api/auth/recuperar/confirmar",
+        json={"usuario": "Administrator", "codigo": codigo, "clave_nueva": "clave-nueva-456"},
+    )
+
+    assert respuesta.status_code == 200
+    login = cliente_sin_loguear.post(
+        "/api/auth/login", json={"usuario": "Administrator", "clave": "clave-nueva-456"}
+    )
+    assert login.status_code == 200
+
+
+def test_confirmar_recuperacion_de_una_cuenta_menor_con_el_codigo_de_mail(cliente_sin_loguear):
+    from app.repos import cuentas_panel
+
+    con = cliente_sin_loguear.app.state.con
+    creada = cuentas_panel.crear(con, "ana@x.com", "clave-larga-123")
+    codigo = cuentas_panel.generar_codigo_recuperacion(con, creada["id"])
+
+    respuesta = cliente_sin_loguear.post(
+        "/api/auth/recuperar/confirmar",
+        json={"usuario": "ana@x.com", "codigo": codigo, "clave_nueva": "clave-nueva-456"},
+    )
+
+    assert respuesta.status_code == 200
+
+
+def test_confirmar_recuperacion_con_codigo_incorrecto_da_401(cliente_sin_loguear):
+    from app.repos import cuentas_panel
+
+    con = cliente_sin_loguear.app.state.con
+    cuentas_panel.crear(con, "ana@x.com", "clave-larga-123")
+
+    respuesta = cliente_sin_loguear.post(
+        "/api/auth/recuperar/confirmar",
+        json={"usuario": "ana@x.com", "codigo": "000000", "clave_nueva": "clave-nueva-456"},
+    )
+
+    assert respuesta.status_code == 401
+
+
+def test_confirmar_recuperacion_con_clave_nueva_debil_da_400(cliente_sin_loguear):
+    from app.repos import cuentas_panel
+
+    con = cliente_sin_loguear.app.state.con
+    creada = cuentas_panel.crear(con, "ana@x.com", "clave-larga-123")
+    codigo = cuentas_panel.generar_codigo_recuperacion(con, creada["id"])
+
+    respuesta = cliente_sin_loguear.post(
+        "/api/auth/recuperar/confirmar",
+        json={"usuario": "ana@x.com", "codigo": codigo, "clave_nueva": "corta"},
+    )
+
+    assert respuesta.status_code == 400

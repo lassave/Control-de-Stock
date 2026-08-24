@@ -113,11 +113,61 @@ async def crear_cuenta(request: Request, _: dict = Depends(requerir_superusuario
     return {"id": creada["id"], "usuario": creada["usuario"]}
 
 
+MENSAJE_RECUPERAR_SOLICITADO = "Si la cuenta existe, ya podés poner el código."
+
+
 @router.post("/recuperar/solicitar")
 async def recuperar_solicitar(request: Request):
-    raise NotImplementedError("completado en la Task 8 de este plan")
+    """Mismo mensaje siempre, exista o no la cuenta, sea cual sea su rol:
+    no hay que confirmarle a quien prueba a ciegas ninguno de los dos datos.
+
+    Al superusuario no le manda nada —su código ya vive en la app
+    autenticadora, no hay nada que generar—. A una cuenta de rol menor le
+    genera un código y se lo manda por mail; si el envío falla, se avisa
+    por consola en vez de romper la respuesta genérica —una respuesta
+    distinta ahí confirmaría que la cuenta existe y es de rol menor—.
+    """
+    cuerpo = await request.json()
+    con = _con(request)
+    usuario = (cuerpo.get("usuario") or "").strip()
+
+    cuenta = cuentas_panel.por_usuario(con, usuario)
+    if cuenta is not None and cuenta["rol"] == "menor":
+        codigo = cuentas_panel.generar_codigo_recuperacion(con, cuenta["id"])
+        try:
+            correo.mandar_codigo_recuperacion(cuenta["usuario"], codigo)
+        except correo.ErrorDeCorreo as error:
+            print(f"No se pudo mandar el mail de recuperación a {cuenta['usuario']}: {error}")
+
+    return {"mensaje": MENSAJE_RECUPERAR_SOLICITADO}
 
 
 @router.post("/recuperar/confirmar")
 async def recuperar_confirmar(request: Request):
-    raise NotImplementedError("completado en la Task 8 de este plan")
+    cuerpo = await request.json()
+    con = _con(request)
+
+    usuario = (cuerpo.get("usuario") or "").strip()
+    codigo = cuerpo.get("codigo") or ""
+    clave_nueva = cuerpo.get("clave_nueva") or ""
+
+    codigo_invalido = HTTPException(status_code=401, detail="Código o datos incorrectos")
+
+    cuenta = cuentas_panel.por_usuario(con, usuario)
+    if cuenta is None:
+        raise codigo_invalido
+
+    if cuenta["rol"] == "superusuario":
+        valido = autenticacion.verificar_totp(cuenta["otp_secreto"], codigo)
+    else:
+        valido = cuentas_panel.verificar_codigo_recuperacion(con, cuenta["id"], codigo)
+
+    if not valido:
+        raise codigo_invalido
+
+    try:
+        cuentas_panel.cambiar_clave(con, cuenta["id"], clave_nueva)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    return {"ok": True}
