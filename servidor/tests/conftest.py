@@ -16,18 +16,18 @@ def con():
     conexion.close()
 
 
-def loguear(cliente):
+def loguear(cliente, rol="superusuario"):
     """Crea una cuenta de panel directo contra la base del `TestClient` ya
     arrancado, y le pisa la cookie de sesión.
 
-    Directo contra la base y no vía `/api/auth/*`: encadenar el login real
-    en cada uno de los cientos de tests que ya existían antes de esta
-    cuenta los volvería frágiles ante cualquier cambio futuro del propio
-    flujo de login, que ya tiene sus propios tests en `test_auth_api.py`.
+    Superusuario por default: la mayoría de los ~500 tests que usan esto
+    no tienen nada que ver con roles, y necesitan poder tocar cualquier
+    endpoint —incluidos los de gestión de usuarios— sin pensar en esto.
+    Los tests que sí prueban la restricción de rol pasan `rol="menor"`.
     """
     from app.repos import cuentas_panel
 
     con = cliente.app.state.con
-    creada = cuentas_panel.crear(con, "prueba", "clave-de-prueba-123")
+    creada = cuentas_panel.crear(con, "prueba", "clave-de-prueba-123", rol=rol)
     token = cuentas_panel.crear_sesion(con, creada["id"])
     cliente.cookies.set("sesion_panel", token)

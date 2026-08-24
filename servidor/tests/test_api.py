@@ -1356,3 +1356,21 @@ def test_no_se_puede_dar_de_baja_a_uno_mismo(cliente):
     assert respuesta.status_code == 400
     usuarios = cliente.get("/api/usuarios").json()
     assert any(u["usuario"] == "prueba" for u in usuarios)
+
+
+def test_listar_usuarios_rechaza_una_cuenta_menor(tmp_path):
+    from tests.conftest import loguear
+
+    app = crear_app(str(tmp_path / "prueba-menor.db"))
+    with TestClient(app) as otro_cliente:
+        loguear(otro_cliente, rol="menor")
+        assert otro_cliente.get("/api/usuarios").status_code == 403
+
+
+def test_dar_de_baja_rechaza_una_cuenta_menor(tmp_path):
+    from tests.conftest import loguear
+
+    app = crear_app(str(tmp_path / "prueba-menor2.db"))
+    with TestClient(app) as otro_cliente:
+        loguear(otro_cliente, rol="menor")
+        assert otro_cliente.post("/api/usuarios/1/desactivar").status_code == 403

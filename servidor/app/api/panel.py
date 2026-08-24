@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import Response
 
 from app import red, reloj
-from app.api.auth import verificar_sesion
+from app.api.auth import requerir_superusuario, verificar_sesion
 from app.repos import asignaciones, cuentas_panel, operarios, pasada_item, sesiones
 from app.servicios import exportacion, importacion, novedades, reparto, tablero, vinculacion
 
@@ -380,13 +380,13 @@ def qr_de_operario(operario_id: int, request: Request):
 
 
 @router.get("/usuarios")
-def listar_usuarios(request: Request):
+def listar_usuarios(request: Request, _: dict = Depends(requerir_superusuario)):
     return cuentas_panel.listar(_con(request))
 
 
 @router.post("/usuarios/{cuenta_id}/desactivar")
 def desactivar_usuario(
-    cuenta_id: int, request: Request, cuenta_actual: dict = Depends(verificar_sesion)
+    cuenta_id: int, request: Request, cuenta_actual: dict = Depends(requerir_superusuario)
 ):
     if cuenta_id == cuenta_actual["id"]:
         raise HTTPException(status_code=400, detail="No podés dar de baja tu propia cuenta")
