@@ -50,7 +50,9 @@ function esc(valor) {
 async function pedir(url, opciones = {}) {
   const respuesta = await fetch(url, opciones);
   if (!respuesta.ok) {
-    if (respuesta.status === 401) await cargarEstadoDeAuth();
+    if (respuesta.status === 401 && !url.startsWith("/api/auth/recuperar/")) {
+      await cargarEstadoDeAuth();
+    }
     const cuerpo = await respuesta.json().catch(() => ({}));
     throw new Error(cuerpo.detail || "No se pudo completar la operación");
   }
@@ -988,6 +990,15 @@ async function enviarLogin(evento) {
   }
 }
 
+/** Resetea lo que haya quedado de un intento anterior antes de mostrar la
+ * pantalla de recuperación de nuevo. */
+function mostrarRecuperar() {
+  $("#recuperar-mensaje").textContent = "";
+  $("#recuperar-error").textContent = "";
+  $("#form-recuperar-confirmar").classList.add("oculta");
+  mostrarSoloVista("recuperar");
+}
+
 async function solicitarRecuperacion(evento) {
   evento.preventDefault();
   $("#recuperar-mensaje").textContent = "";
@@ -1001,7 +1012,7 @@ async function solicitarRecuperacion(evento) {
     $("#recuperar-mensaje").textContent = respuesta.mensaje;
     $("#form-recuperar-confirmar").classList.remove("oculta");
   } catch (error) {
-    $("#recuperar-mensaje").textContent = error.message;
+    $("#recuperar-error").textContent = error.message;
   }
 }
 
@@ -1018,10 +1029,8 @@ async function confirmarRecuperacion(evento) {
         clave_nueva: $("#recuperar-clave-nueva").value,
       }),
     });
+    alert("Contraseña cambiada. Iniciá sesión de nuevo.");
     mostrarSoloVista("login");
-    $("#login-error").textContent = "Contraseña cambiada. Iniciá sesión de nuevo.";
-    $("#form-recuperar-confirmar").classList.add("oculta");
-    $("#recuperar-mensaje").textContent = "";
   } catch (error) {
     $("#recuperar-error").textContent = error.message;
   }
@@ -1036,7 +1045,7 @@ function conectarEventosDeAuth() {
   $("#form-login").addEventListener("submit", enviarLogin);
   $("#cerrar-sesion-panel").addEventListener("click", cerrarSesionDePanel);
 
-  $("#ir-a-recuperar").addEventListener("click", () => mostrarSoloVista("recuperar"));
+  $("#ir-a-recuperar").addEventListener("click", mostrarRecuperar);
   $("#volver-a-login").addEventListener("click", () => mostrarSoloVista("login"));
   $("#form-recuperar-solicitar").addEventListener("submit", solicitarRecuperacion);
   $("#form-recuperar-confirmar").addEventListener("submit", confirmarRecuperacion);
