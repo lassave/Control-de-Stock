@@ -64,9 +64,9 @@ def vivo(tmp_path_factory):
         from tests.conftest import loguear
         loguear(c)
 
-        sesion = c.post("/api/sesiones", json={"nombre": "Contrato"}).json()
+        proyecto = c.post("/api/proyectos", json={"nombre": "Contrato"}).json()
         c.post(
-            f"/api/sesiones/{sesion['id']}/maestro",
+            f"/api/proyectos/{proyecto['id']}/maestro",
             files={"archivo": ("m.csv", CSV, "text/csv")},
             data={"mapeo": json.dumps({
                 "sku": "sku", "descripcion": "descripcion",
@@ -96,7 +96,7 @@ def vivo(tmp_path_factory):
         # capturar.py: sin asignación la respuesta viene con la lista vacía
         # y no fija ningún nombre de campo.
         c.put(
-            f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+            f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
             json={"ubicaciones": ["P-1"]},
         )
         respuestas["mis-ubicaciones"] = c.get(
@@ -147,12 +147,12 @@ def test_el_maestro_no_expone_stock_ni_costo(vivo):
         assert "costo_unitario" not in articulo
 
 
-def test_la_vinculacion_trae_operario_sesion_y_pasada():
+def test_la_vinculacion_trae_operario_proyecto_y_pasada():
     datos = leer("vinculacion")
 
-    assert set(datos) == {"operario", "sesion", "pasada"}
+    assert set(datos) == {"operario", "proyecto", "pasada"}
     assert set(datos["operario"]) == {"id", "nombre"}
-    assert set(datos["sesion"]) == {"id", "nombre"}
+    assert set(datos["proyecto"]) == {"id", "nombre"}
     assert "etiqueta" in datos["pasada"]
     assert "numero" in datos["pasada"]
 
@@ -160,7 +160,7 @@ def test_la_vinculacion_trae_operario_sesion_y_pasada():
 def test_el_maestro_trae_articulos_codigos_y_unidades():
     datos = leer("maestro")
 
-    assert set(datos) == {"sesion_id", "articulos", "codigos", "unidades"}
+    assert set(datos) == {"proyecto_id", "articulos", "codigos", "unidades"}
     assert set(datos["articulos"][0]) == {
         "id", "id_orden", "tipo", "material", "sku", "descripcion",
         "grupo", "ubicacion", "unidad",

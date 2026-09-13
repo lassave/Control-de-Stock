@@ -9,7 +9,7 @@ import csv
 import io
 
 from app import cantidades
-from app.repos import sesiones
+from app.repos import proyectos
 from app.servicios import tablero
 from app.servicios import reparto as reparto_servicio
 
@@ -51,9 +51,9 @@ def _escribir(columnas, filas):
     return salida.getvalue()
 
 
-def resumen_por_sku(con, sesion_id, filtros=None):
+def resumen_por_sku(con, proyecto_id, filtros=None):
     filas = []
-    for fila in tablero.filas(con, sesion_id, filtros):
+    for fila in tablero.filas(con, proyecto_id, filtros):
         filas.append({
             "id_orden": fila["id_orden"],
             "tipo": fila["tipo"] or "",
@@ -77,7 +77,7 @@ def resumen_por_sku(con, sesion_id, filtros=None):
     return _escribir(COLUMNAS_RESUMEN, filas)
 
 
-def detalle(con, sesion_id, filtros=None):
+def detalle(con, proyecto_id, filtros=None):
     """Una fila por escaneo. Acepta los mismos filtros que el resumen.
 
     Los dos archivos se leen juntos, y uno filtrado junto a otro completo
@@ -88,8 +88,8 @@ def detalle(con, sesion_id, filtros=None):
         fila["anula_uuid"]
         for fila in con.execute(
             "SELECT anula_uuid FROM conteo "
-            "WHERE sesion_id = ? AND anula_uuid IS NOT NULL",
-            (sesion_id,),
+            "WHERE proyecto_id = ? AND anula_uuid IS NOT NULL",
+            (proyecto_id,),
         )
     }
 
@@ -104,17 +104,17 @@ def detalle(con, sesion_id, filtros=None):
         JOIN articulo a ON a.id = c.articulo_id
         JOIN operario o ON o.id = c.operario_id
         JOIN pasada p ON p.id = c.pasada_id
-        WHERE c.sesion_id = ?
+        WHERE c.proyecto_id = ?
         ORDER BY c.rowid
         """,
-        (sesion_id,),
+        (proyecto_id,),
     ).fetchall()
 
     if filtros:
         # El filtro se aplica sobre el artículo, no sobre el escaneo: el
         # tablero ya sabe resolverlo y así los dos archivos describen
         # exactamente la misma población.
-        permitidos = {fila["id"] for fila in tablero.filas(con, sesion_id, filtros)}
+        permitidos = {fila["id"] for fila in tablero.filas(con, proyecto_id, filtros)}
         crudas = [fila for fila in crudas if fila["articulo_id"] in permitidos]
 
     filas = []
@@ -125,7 +125,7 @@ def detalle(con, sesion_id, filtros=None):
             # sincronizan en lote y una mañana entera compartiría instante.
             "fecha": fila["timestamp_dispositivo"],
             "fecha_sincronizacion": fila["timestamp_servidor"],
-            "pasada": sesiones.etiqueta_pasada(fila["pasada_numero"]),
+            "pasada": proyectos.etiqueta_pasada(fila["pasada_numero"]),
             "operario": fila["operario"],
             "sku": fila["sku"],
             "descripcion": fila["descripcion"],
@@ -140,7 +140,7 @@ def detalle(con, sesion_id, filtros=None):
     return _escribir(COLUMNAS_DETALLE, filas)
 
 
-def reparto(con, sesion_id, filtros=None):
+def reparto(con, proyecto_id, filtros=None):
     """A quién le toca cada ubicación y quién la contó, para llevarlo aparte.
 
     Varios nombres se unen con « | », no con «, »: un nombre de persona
@@ -148,7 +148,7 @@ def reparto(con, sesion_id, filtros=None):
     un nombre real puede tener cualquiera de los dos.
     """
     filas = []
-    for fila in reparto_servicio.filas(con, sesion_id, filtros):
+    for fila in reparto_servicio.filas(con, proyecto_id, filtros):
         filas.append({
             "ubicacion": fila["ubicacion"] or "",
             "sku": fila["sku"],

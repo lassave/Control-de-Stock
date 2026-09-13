@@ -1,13 +1,13 @@
 import pytest
 
-from app.repos import articulos, conteos, operarios, sesiones
+from app.repos import articulos, conteos, operarios, proyectos
 
 
 @pytest.fixture
 def escenario(con):
-    sesion_id = sesiones.crear(con, "Cliente X")
+    proyecto_id = proyectos.crear(con, "Cliente X")
     juan = operarios.crear(con, "Juan")
-    return {"sesion_id": sesion_id, "juan": juan}
+    return {"proyecto_id": proyecto_id, "juan": juan}
 
 
 def crear(con, escenario, **datos):
@@ -19,7 +19,7 @@ def crear(con, escenario, **datos):
     }
     completo.update(datos)
     return articulos.crear_alta_rapida(
-        con, escenario["sesion_id"], escenario["juan"]["id"], completo
+        con, escenario["proyecto_id"], escenario["juan"]["id"], completo
     )
 
 
@@ -47,7 +47,7 @@ def test_el_codigo_queda_asociado_y_el_escaneo_siguiente_lo_encuentra(con, escen
     crear(con, escenario, codigo="7790001001234")
 
     encontrado = conteos.buscar_por_codigo(
-        con, escenario["sesion_id"], "7790001001234"
+        con, escenario["proyecto_id"], "7790001001234"
     )
     assert encontrado["descripcion"] == "Caño de bronce"
 
@@ -70,7 +70,7 @@ def test_el_sku_generado_queda_asociado_como_codigo(con, escenario):
     """
     articulo = crear(con, escenario, codigo="")
 
-    encontrado = conteos.buscar_por_codigo(con, escenario["sesion_id"], articulo["sku"])
+    encontrado = conteos.buscar_por_codigo(con, escenario["proyecto_id"], articulo["sku"])
     assert encontrado is not None
     assert encontrado["id"] == articulo["id"]
 
@@ -82,10 +82,10 @@ def test_el_sku_generado_no_choca_con_uno_del_maestro(con, escenario):
     servidor y el operario se queda sin poder dar de alta.
     """
     con.execute(
-        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "INSERT INTO articulo (proyecto_id, id_orden, sku, descripcion, unidad, "
         "stock_sistema, creado_en) VALUES (?, 1, 'AR-3', 'Del maestro', 'UN', 0, "
         "'2026-08-11T00:00:00Z')",
-        (escenario["sesion_id"],),
+        (escenario["proyecto_id"],),
     )
     con.commit()
 
@@ -102,10 +102,10 @@ def test_el_sku_generado_sigue_al_mayor_existente(con, escenario):
     numeración que el operario ve en la planilla saltea y va para atrás.
     """
     con.execute(
-        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "INSERT INTO articulo (proyecto_id, id_orden, sku, descripcion, unidad, "
         "stock_sistema, creado_en) VALUES (?, 1, 'AR-3', 'Del maestro', 'UN', 0, "
         "'2026-08-11T00:00:00Z')",
-        (escenario["sesion_id"],),
+        (escenario["proyecto_id"],),
     )
     con.commit()
 
@@ -117,14 +117,14 @@ def test_el_sku_generado_sigue_al_mayor_existente(con, escenario):
 def test_un_codigo_que_ya_es_sku_devuelve_el_articulo_existente(con, escenario):
     """El maestro pudo traer un código de barras propio distinto del SKU.
 
-    Crear un duplicado violaría la unicidad de SKU por sesión y partiría el
+    Crear un duplicado violaría la unicidad de SKU por proyecto y partiría el
     conteo de un mismo producto en dos filas del tablero.
     """
     con.execute(
-        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "INSERT INTO articulo (proyecto_id, id_orden, sku, descripcion, unidad, "
         "stock_sistema, creado_en) VALUES (?, 1, 'A-100', 'Tornillo', 'UN', 0, "
         "'2026-08-11T00:00:00Z')",
-        (escenario["sesion_id"],),
+        (escenario["proyecto_id"],),
     )
     con.commit()
 
@@ -133,11 +133,11 @@ def test_un_codigo_que_ya_es_sku_devuelve_el_articulo_existente(con, escenario):
     assert articulo["sku"] == "A-100"
     assert articulo["descripcion"] == "Tornillo"  # no se pisa el maestro
     cuantos = con.execute(
-        "SELECT COUNT(*) AS n FROM articulo WHERE sesion_id = ?",
-        (escenario["sesion_id"],),
+        "SELECT COUNT(*) AS n FROM articulo WHERE proyecto_id = ?",
+        (escenario["proyecto_id"],),
     ).fetchone()["n"]
     assert cuantos == 1
-    assert conteos.buscar_por_codigo(con, escenario["sesion_id"], "A-100") is not None
+    assert conteos.buscar_por_codigo(con, escenario["proyecto_id"], "A-100") is not None
 
 
 def test_el_alta_nueva_avisa_que_creo_el_articulo(con, escenario):
@@ -162,10 +162,10 @@ def test_el_codigo_que_es_sku_del_maestro_avisa_que_ya_existia(con, escenario):
     decir «ese código ya estaba», y para eso hace falta saberlo sin adivinar.
     """
     con.execute(
-        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "INSERT INTO articulo (proyecto_id, id_orden, sku, descripcion, unidad, "
         "stock_sistema, creado_en) VALUES (?, 1, 'A-100', 'Tornillo', 'UN', 0, "
         "'2026-08-11T00:00:00Z')",
-        (escenario["sesion_id"],),
+        (escenario["proyecto_id"],),
     )
     con.commit()
 
@@ -178,10 +178,10 @@ def test_el_codigo_que_es_sku_del_maestro_avisa_que_ya_existia(con, escenario):
 def test_el_id_orden_queda_por_encima_del_mayor_existente(con, escenario):
     """Comparte criterio con la importación: el orden define el recorrido."""
     con.execute(
-        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "INSERT INTO articulo (proyecto_id, id_orden, sku, descripcion, unidad, "
         "stock_sistema, creado_en) VALUES (?, 57, 'A-100', 'Tornillo', 'UN', 0, "
         "'2026-08-11T00:00:00Z')",
-        (escenario["sesion_id"],),
+        (escenario["proyecto_id"],),
     )
     con.commit()
 
@@ -234,7 +234,7 @@ def test_rechaza_un_cuerpo_que_no_es_un_objeto(con, escenario):
     """
     with pytest.raises(ValueError, match="datos del artículo"):
         articulos.crear_alta_rapida(
-            con, escenario["sesion_id"], escenario["juan"]["id"], ["a", "b"]
+            con, escenario["proyecto_id"], escenario["juan"]["id"], ["a", "b"]
         )
 
 
@@ -270,10 +270,10 @@ def test_el_alta_que_pierde_la_carrera_devuelve_la_del_otro(con, escenario, monk
     def se_adelanta_otro_operario(conexion, operario_id):
         monkeypatch.setattr(articulos.operarios, "obtener", original)
         cursor = conexion.execute(
-            "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+            "INSERT INTO articulo (proyecto_id, id_orden, sku, descripcion, unidad, "
             "stock_sistema, creado_en) VALUES (?, 1, '999', 'Del otro operario', "
             "'UN', 0, '2026-08-11T00:00:00Z')",
-            (escenario["sesion_id"],),
+            (escenario["proyecto_id"],),
         )
         conexion.execute(
             "INSERT INTO codigo_barras (articulo_id, codigo) VALUES (?, '999')",
@@ -288,7 +288,7 @@ def test_el_alta_que_pierde_la_carrera_devuelve_la_del_otro(con, escenario, monk
 
     assert articulo["descripcion"] == "Del otro operario"
     cuantos = con.execute(
-        "SELECT COUNT(*) AS n FROM articulo WHERE sesion_id = ?",
-        (escenario["sesion_id"],),
+        "SELECT COUNT(*) AS n FROM articulo WHERE proyecto_id = ?",
+        (escenario["proyecto_id"],),
     ).fetchone()["n"]
     assert cuantos == 1

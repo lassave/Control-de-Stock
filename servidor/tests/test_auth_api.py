@@ -257,13 +257,13 @@ def test_confirmar_recuperacion_con_clave_nueva_debil_da_400(cliente_sin_loguear
 
 
 def test_endpoint_del_panel_sin_sesion_da_401(cliente_sin_loguear):
-    assert cliente_sin_loguear.get("/api/sesiones").status_code == 401
+    assert cliente_sin_loguear.get("/api/proyectos").status_code == 401
 
 
 def test_endpoint_del_panel_con_sesion_funciona(cliente_sin_loguear):
     _crear_superusuario_y_loguearse(cliente_sin_loguear)
 
-    assert cliente_sin_loguear.get("/api/sesiones").status_code == 200
+    assert cliente_sin_loguear.get("/api/proyectos").status_code == 200
 
 
 def test_dispositivos_sigue_sin_pedir_sesion_de_panel(cliente_sin_loguear):
@@ -272,12 +272,12 @@ def test_dispositivos_sigue_sin_pedir_sesion_de_panel(cliente_sin_loguear):
     Un token inventado ya da 401 por su cuenta —`_contexto` en
     `dispositivos.py` rechaza cualquier token de operario que no exista,
     sesión de panel aparte—, así que probarlo con eso no demostraría
-    nada. Acá se crea un operario y una sesión de inventario de verdad
+    nada. Acá se crea un operario y un proyecto de inventario de verdad
     estando logueado, se cierra la sesión de panel, y se comprueba que
     `/api/dispositivo/vincular` igual funciona con el token real.
     """
     _crear_superusuario_y_loguearse(cliente_sin_loguear)
-    cliente_sin_loguear.post("/api/sesiones", json={"nombre": "Cliente X"})
+    cliente_sin_loguear.post("/api/proyectos", json={"nombre": "Cliente X"})
     operario = cliente_sin_loguear.post(
         "/api/operarios", json={"nombre": "Juan"}
     ).json()

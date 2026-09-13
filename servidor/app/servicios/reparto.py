@@ -6,11 +6,11 @@ escribirlos de nuevo acá garantizaría que tarde o temprano esta pestaña y el
 tablero digan cosas distintas del mismo SKU.
 """
 
-from app.repos import asignaciones, operarios, pasada_item, sesiones
+from app.repos import asignaciones, operarios, pasada_item, proyectos
 from app.servicios.tablero import CTE_VIGENTES, filas as filas_del_tablero
 
 
-def _contadores_por_articulo(con, sesion_id):
+def _contadores_por_articulo(con, proyecto_id):
     """Operarios que contaron cada artículo, en su pasada vigente.
 
     La misma definición de «vigente» que usa el tablero: descarta las
@@ -26,11 +26,11 @@ def _contadores_por_articulo(con, sesion_id):
             ON u.articulo_id = v.articulo_id AND u.numero = v.pasada_numero
         JOIN operario o ON o.id = v.operario_id
         JOIN articulo a ON a.id = v.articulo_id
-        WHERE a.sesion_id = ?
+        WHERE a.proyecto_id = ?
         GROUP BY v.articulo_id, o.id
         ORDER BY v.articulo_id, o.nombre
         """,
-        (sesion_id,),
+        (proyecto_id,),
     ).fetchall()
 
     resultado = {}
@@ -39,16 +39,16 @@ def _contadores_por_articulo(con, sesion_id):
     return resultado
 
 
-def filas(con, sesion_id, filtros=None):
+def filas(con, proyecto_id, filtros=None):
     """Una fila por artículo: ubicación, a quién le toca, quién lo contó.
 
     No lleva `stock_sistema` ni `costo_unitario`: esta pestaña se exporta y
     el CSV de «quién hizo qué» circula, sin necesidad de que los costos
     viajen en el archivo.
     """
-    base = filas_del_tablero(con, sesion_id, filtros)
-    asignados = asignaciones.asignados_por_articulo(con, sesion_id)
-    contadores = _contadores_por_articulo(con, sesion_id)
+    base = filas_del_tablero(con, proyecto_id, filtros)
+    asignados = asignaciones.asignados_por_articulo(con, proyecto_id)
+    contadores = _contadores_por_articulo(con, proyecto_id)
 
     return [
         {
@@ -65,7 +65,7 @@ def filas(con, sesion_id, filtros=None):
     ]
 
 
-def avance_por_operario(con, sesion_id, filtros=None):
+def avance_por_operario(con, proyecto_id, filtros=None):
     """El resumen de cada operario: cuánto le tocó, cuánto contó él mismo.
 
     «Contado» es lo que el propio operario contó, no lo que contó cualquiera
@@ -75,7 +75,7 @@ def avance_por_operario(con, sesion_id, filtros=None):
     asignado no tiene ningún resumen que mostrar.
     """
     con_ubicaciones = asignaciones.operarios_con_ubicaciones(con)
-    todas = filas(con, sesion_id, filtros)
+    todas = filas(con, proyecto_id, filtros)
 
     resultado = []
     for operario in con_ubicaciones:
@@ -114,7 +114,7 @@ def avance_por_operario(con, sesion_id, filtros=None):
     return resultado
 
 
-def avance_de_pasada(con, sesion_id, pasada_id):
+def avance_de_pasada(con, proyecto_id, pasada_id):
     """El progreso de un recuento puntual, operario por operario.
 
     Distinto de `avance_por_operario`, que mira el valor vigente de hoy —la
@@ -123,9 +123,9 @@ def avance_de_pasada(con, sesion_id, pasada_id):
     contado en el Conteo 1 no hace avanzar un recuento que se abrió después
     sobre ese mismo SKU.
     """
-    pasada = sesiones.obtener_pasada(con, sesion_id, pasada_id)
+    pasada = proyectos.obtener_pasada(con, proyecto_id, pasada_id)
     if pasada is None:
-        raise ValueError(f"No existe la pasada {pasada_id} en esta sesión")
+        raise ValueError(f"No existe la pasada {pasada_id} en este proyecto")
 
     articulos_de_la_pasada = pasada_item.de_pasada(con, pasada_id)
     if not articulos_de_la_pasada:
@@ -134,8 +134,8 @@ def avance_de_pasada(con, sesion_id, pasada_id):
     ubicacion_de = {
         fila["id"]: fila["ubicacion"]
         for fila in con.execute(
-            "SELECT id, ubicacion FROM articulo WHERE sesion_id = ? AND fusionado_en IS NULL",
-            (sesion_id,),
+            "SELECT id, ubicacion FROM articulo WHERE proyecto_id = ? AND fusionado_en IS NULL",
+            (proyecto_id,),
         ).fetchall()
     }
 

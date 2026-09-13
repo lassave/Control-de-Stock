@@ -68,20 +68,20 @@ def _asociar_codigo(con, articulo_id, codigo):
         )
 
 
-def _siguiente_sku_generado(con, sesion_id):
+def _siguiente_sku_generado(con, proyecto_id):
     """AR-1, AR-2, … para los productos que no tienen etiqueta legible.
 
     Sigue al mayor que ya está, no a la cantidad: el maestro del cliente puede
     traer SKUs con esta misma forma, y repetir uno rompe la unicidad por
-    sesión —el alta fallaría con el operario esperando frente a la
+    proyecto —el alta fallaría con el operario esperando frente a la
     mercadería—. Contarlos, además, numeraba salteando y para atrás: con un
     AR-3 del maestro salían AR-2, AR-4, AR-5, que de correlativo no tiene
     nada para quien lee la planilla.
     """
     mayor = 0
     for fila in con.execute(
-        "SELECT sku FROM articulo WHERE sesion_id = ? AND sku LIKE 'AR-%'",
-        (sesion_id,),
+        "SELECT sku FROM articulo WHERE proyecto_id = ? AND sku LIKE 'AR-%'",
+        (proyecto_id,),
     ):
         try:
             numero = int(fila["sku"][len("AR-"):])
@@ -91,8 +91,8 @@ def _siguiente_sku_generado(con, sesion_id):
     return f"AR-{mayor + 1}"
 
 
-def _resolver_existente(con, sesion_id, codigo):
-    """El artículo de la sesión que ya identifica ese código, o None.
+def _resolver_existente(con, proyecto_id, codigo):
+    """El artículo del proyecto que ya identifica ese código, o None.
 
     Contempla las dos formas de «ya está»: que el código esté asociado a un
     artículo, o que coincida con el SKU de uno del maestro que traía otro
@@ -101,13 +101,13 @@ def _resolver_existente(con, sesion_id, codigo):
     if not codigo:
         return None
 
-    existente = conteos.buscar_por_codigo(con, sesion_id, codigo)
+    existente = conteos.buscar_por_codigo(con, proyecto_id, codigo)
     if existente:
         return existente
 
     por_sku = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = ?",
-        (sesion_id, codigo),
+        "SELECT id FROM articulo WHERE proyecto_id = ? AND sku = ?",
+        (proyecto_id, codigo),
     ).fetchone()
     if por_sku:
         with con:
@@ -123,25 +123,25 @@ def _resolver_existente(con, sesion_id, codigo):
 INTENTOS_DE_ALTA = 3
 
 
-def _insertar(con, sesion_id, codigo, campos, operario, ahora):
+def _insertar(con, proyecto_id, codigo, campos, operario, ahora):
     with con:
-        sku = codigo or _siguiente_sku_generado(con, sesion_id)
+        sku = codigo or _siguiente_sku_generado(con, proyecto_id)
 
         # El orden define el recorrido y la planilla del operario: el artículo
         # nuevo va al final, nunca en el medio de lo ya recorrido.
         mayor = con.execute(
-            "SELECT COALESCE(MAX(id_orden), 0) AS m FROM articulo WHERE sesion_id = ?",
-            (sesion_id,),
+            "SELECT COALESCE(MAX(id_orden), 0) AS m FROM articulo WHERE proyecto_id = ?",
+            (proyecto_id,),
         ).fetchone()["m"]
 
         cursor = con.execute(
             """
             INSERT INTO articulo (
-                sesion_id, id_orden, sku, descripcion, ubicacion, unidad,
+                proyecto_id, id_orden, sku, descripcion, ubicacion, unidad,
                 stock_sistema, origen, creado_por, creado_en
             ) VALUES (?, ?, ?, ?, ?, ?, 0, 'alta_rapida', ?, ?)
             """,
-            (sesion_id, mayor + 1, sku, campos["descripcion"], campos["ubicacion"],
+            (proyecto_id, mayor + 1, sku, campos["descripcion"], campos["ubicacion"],
              campos["unidad"], operario["nombre"] if operario else None, ahora),
         )
         articulo_id = cursor.lastrowid
@@ -155,10 +155,10 @@ def _insertar(con, sesion_id, codigo, campos, operario, ahora):
     return articulo_id
 
 
-def crear_alta_rapida(con, sesion_id, operario_id, datos):
+def crear_alta_rapida(con, proyecto_id, operario_id, datos):
     """Crea el artículo y le asocia el código escaneado.
 
-    Si el código ya identifica a un artículo de la sesión —porque otro
+    Si el código ya identifica a un artículo del proyecto —porque otro
     operario lo dio de alta hace un segundo, o porque coincide con el SKU de
     uno del maestro— devuelve ese, sin crear nada. Dos filas para el mismo
     producto partirían su conteo en dos.
@@ -185,7 +185,7 @@ def crear_alta_rapida(con, sesion_id, operario_id, datos):
     if unidad not in unidades:
         raise ValueError(f"La unidad «{unidad}» no está en el catálogo")
 
-    existente = _resolver_existente(con, sesion_id, codigo)
+    existente = _resolver_existente(con, proyecto_id, codigo)
     if existente:
         return {**existente, "creado": False}
 
@@ -195,13 +195,13 @@ def crear_alta_rapida(con, sesion_id, operario_id, datos):
 
     for intento in range(INTENTOS_DE_ALTA):
         try:
-            articulo_id = _insertar(con, sesion_id, codigo, campos, operario, ahora)
+            articulo_id = _insertar(con, proyecto_id, codigo, campos, operario, ahora)
         except sqlite3.IntegrityError:
             # Otro pedido dio de alta lo mismo entre la búsqueda y el INSERT.
             # El choque no es ValueError, así que sin esto sale como error del
             # servidor aunque el artículo ya esté creado y el alta sea, en los
             # hechos, exitosa.
-            existente = _resolver_existente(con, sesion_id, codigo)
+            existente = _resolver_existente(con, proyecto_id, codigo)
             if existente:
                 return {**existente, "creado": False}
             if codigo or intento == INTENTOS_DE_ALTA - 1:

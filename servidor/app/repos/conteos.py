@@ -8,7 +8,7 @@ otra fila que anula la anterior. Eso vuelve la sincronización idempotente
 import sqlite3
 
 from app import reloj
-from app.repos import asignaciones, pasada_item, sesiones
+from app.repos import asignaciones, pasada_item, proyectos
 
 CAMPOS_PUBLICOS = (
     "a.id, a.id_orden, a.tipo, a.material, a.sku, a.descripcion, "
@@ -41,7 +41,7 @@ class EventoInvalido(ValueError):
         self.reintentable = reintentable
 
 
-def buscar_por_codigo(con, sesion_id, codigo):
+def buscar_por_codigo(con, proyecto_id, codigo):
     """Busca el artículo por código de barras.
 
     Devuelve solo campos que pueden viajar a un dispositivo: sin
@@ -52,11 +52,11 @@ def buscar_por_codigo(con, sesion_id, codigo):
         SELECT {CAMPOS_PUBLICOS}
         FROM codigo_barras cb
         JOIN articulo a ON a.id = cb.articulo_id
-        WHERE cb.codigo = ? AND a.sesion_id = ? AND a.fusionado_en IS NULL
+        WHERE cb.codigo = ? AND a.proyecto_id = ? AND a.fusionado_en IS NULL
         ORDER BY a.id
         LIMIT 1
         """,
-        (codigo, sesion_id),
+        (codigo, proyecto_id),
     ).fetchone()
     return dict(fila) if fila else None
 
@@ -90,7 +90,7 @@ def _fuera_de_asignacion(con, pasada_id, operario_id, ubicacion_efectiva):
     return 0 if ubicacion_efectiva in asignadas else 1
 
 
-def registrar(con, sesion_id, operario_id, evento):
+def registrar(con, proyecto_id, operario_id, evento):
     """Registra un conteo. Devuelve 'registrado' o 'duplicado'.
 
     Reenviar un uuid ya recibido no es un error: es lo que hace el celular
@@ -135,7 +135,7 @@ def registrar(con, sesion_id, operario_id, evento):
         # ValueError ni sqlite3.Error, y volaría el lote entero.
         raise EventoInvalido("La cantidad es demasiado grande")
 
-    articulo = buscar_por_codigo(con, sesion_id, evento["codigo"])
+    articulo = buscar_por_codigo(con, proyecto_id, evento["codigo"])
     if articulo is None:
         raise EventoInvalido(f"Código desconocido: {evento['codigo']}")
 
@@ -150,7 +150,7 @@ def registrar(con, sesion_id, operario_id, evento):
         raise EventoInvalido("Un conteo no puede anularse a sí mismo")
     if anula:
         original = con.execute(
-            "SELECT sesion_id, articulo_id, anula_uuid FROM conteo WHERE uuid = ?",
+            "SELECT proyecto_id, articulo_id, anula_uuid FROM conteo WHERE uuid = ?",
             (anula,),
         ).fetchone()
 
@@ -162,7 +162,7 @@ def registrar(con, sesion_id, operario_id, evento):
                 f"Todavía no llegó el conteo que se intenta anular: {anula}",
                 reintentable=True,
             )
-        if original["sesion_id"] != sesion_id:
+        if original["proyecto_id"] != proyecto_id:
             # El uuid es único en toda la base, así que un conteo de otro
             # inventario nunca va a pasar a ser de este: reintentar no sirve.
             raise EventoInvalido(
@@ -177,10 +177,10 @@ def registrar(con, sesion_id, operario_id, evento):
             # anulación se carga el conteo de nuevo.
             raise EventoInvalido("Una anulación no se puede anular")
 
-    # No «la» pasada abierta de la sesión: con recuentos concurrentes puede
+    # No «la» pasada abierta del proyecto: con recuentos concurrentes puede
     # haber varias, y esta decide en cuál cae el conteo de este operario en
     # particular.
-    pasada = sesiones.pasada_activa_de_operario(con, sesion_id, operario_id)
+    pasada = proyectos.pasada_activa_de_operario(con, proyecto_id, operario_id)
 
     # El bloqueo de SKU fuera del recuento no aplica a una anulación: anular
     # no agrega cantidad a un SKU bloqueado, solo cancela algo que ya estaba
@@ -198,13 +198,13 @@ def registrar(con, sesion_id, operario_id, evento):
     con.execute(
         """
         INSERT INTO conteo (
-            uuid, sesion_id, pasada_id, articulo_id, cantidad, operario_id,
+            uuid, proyecto_id, pasada_id, articulo_id, cantidad, operario_id,
             ubicacion_real, observaciones, fuera_asignacion,
             timestamp_dispositivo, timestamp_servidor, anula_uuid
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            evento["uuid"], sesion_id, pasada["id"], articulo["id"],
+            evento["uuid"], proyecto_id, pasada["id"], articulo["id"],
             cantidad, operario_id,
             evento.get("ubicacion_real"), evento.get("observaciones"), fuera,
             evento["timestamp_dispositivo"], reloj.ahora(), anula,
@@ -214,7 +214,7 @@ def registrar(con, sesion_id, operario_id, evento):
     return "registrado"
 
 
-def registrar_lote(con, sesion_id, operario_id, eventos):
+def registrar_lote(con, proyecto_id, operario_id, eventos):
     """Registra varios conteos. Un evento con problema no frena a los demás."""
     registrados = 0
     duplicados = 0
@@ -222,7 +222,7 @@ def registrar_lote(con, sesion_id, operario_id, eventos):
 
     for evento in eventos:
         try:
-            resultado = registrar(con, sesion_id, operario_id, evento)
+            resultado = registrar(con, proyecto_id, operario_id, evento)
         except (ValueError, KeyError, TypeError, ArithmeticError, sqlite3.Error) as error:
             # La tupla es amplia a propósito: un evento con una forma
             # inesperada tiene que rechazarse solo, nunca frenar a los demás.
@@ -255,7 +255,7 @@ def registrar_lote(con, sesion_id, operario_id, eventos):
     }
 
 
-def de_operario(con, sesion_id, operario_id, limite=50):
+def de_operario(con, proyecto_id, operario_id, limite=50):
     """Los conteos propios del operario, del más reciente al más viejo."""
     filas = con.execute(
         """
@@ -264,10 +264,10 @@ def de_operario(con, sesion_id, operario_id, limite=50):
                a.sku, a.descripcion, a.unidad, a.ubicacion
         FROM conteo c
         JOIN articulo a ON a.id = c.articulo_id
-        WHERE c.sesion_id = ? AND c.operario_id = ?
+        WHERE c.proyecto_id = ? AND c.operario_id = ?
         ORDER BY c.rowid DESC
         LIMIT ?
         """,
-        (sesion_id, operario_id, limite),
+        (proyecto_id, operario_id, limite),
     ).fetchall()
     return [dict(fila) for fila in filas]

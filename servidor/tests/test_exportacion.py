@@ -3,30 +3,30 @@ import io
 
 import pytest
 
-from app.repos import asignaciones, conteos, operarios, sesiones
+from app.repos import asignaciones, conteos, operarios, proyectos
 from app.servicios import exportacion, importacion
 
 
 @pytest.fixture
 def escenario(con):
-    sesion_id = sesiones.crear(con, "Cliente X")
+    proyecto_id = proyectos.crear(con, "Cliente X")
     contenido = (
         "sku,detalle,grupo,ubic,um,stock,costo\n"
         "A,Tornillo,Buloneria,P-1,UN,100,25\n"
         "B,Cañería de bronce,Electricidad,P-2,MT,50,\n"
     ).encode("utf-8")
-    importacion.importar(con, sesion_id, contenido, {
+    importacion.importar(con, proyecto_id, contenido, {
         "sku": "sku", "descripcion": "detalle", "grupo": "grupo",
         "ubicacion": "ubic", "unidad": "um", "stock_sistema": "stock",
         "costo_unitario": "costo",
     })
     juan = operarios.crear(con, "Juan")
-    conteos.registrar(con, sesion_id, juan["id"], {
+    conteos.registrar(con, proyecto_id, juan["id"], {
         "uuid": "u-1", "codigo": "A", "cantidad": 98000,
         "timestamp_dispositivo": "2026-08-10T10:00:00Z",
         "ubicacion_real": "P-9", "observaciones": "Estaba en otro estante",
     })
-    return {"sesion_id": sesion_id, "juan": juan}
+    return {"proyecto_id": proyecto_id, "juan": juan}
 
 
 def leer_csv(texto):
@@ -34,7 +34,7 @@ def leer_csv(texto):
 
 
 def test_resumen_tiene_las_columnas_del_spec(con, escenario):
-    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["proyecto_id"]))
 
     assert list(filas[0].keys()) == [
         "id_orden", "tipo", "material", "sku", "codigos_de_barra", "descripcion",
@@ -45,7 +45,7 @@ def test_resumen_tiene_las_columnas_del_spec(con, escenario):
 
 
 def test_cantidades_salen_con_coma_decimal(con, escenario):
-    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["proyecto_id"]))
     fila_a = next(f for f in filas if f["sku"] == "A")
 
     assert fila_a["stock_sistema"] == "100"
@@ -54,7 +54,7 @@ def test_cantidades_salen_con_coma_decimal(con, escenario):
 
 
 def test_articulo_sin_contar_deja_columnas_vacias(con, escenario):
-    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["proyecto_id"]))
     fila_b = next(f for f in filas if f["sku"] == "B")
 
     assert fila_b["ultimo_conteo"] == ""
@@ -63,7 +63,7 @@ def test_articulo_sin_contar_deja_columnas_vacias(con, escenario):
 
 
 def test_valorizacion_vacia_si_no_hay_costo(con, escenario):
-    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["proyecto_id"]))
     fila_b = next(f for f in filas if f["sku"] == "B")
 
     assert fila_b["costo_unitario"] == ""
@@ -71,7 +71,7 @@ def test_valorizacion_vacia_si_no_hay_costo(con, escenario):
 
 
 def test_valorizacion_calculada(con, escenario):
-    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["proyecto_id"]))
     fila_a = next(f for f in filas if f["sku"] == "A")
 
     assert fila_a["costo_unitario"] == "25,00"
@@ -80,7 +80,7 @@ def test_valorizacion_calculada(con, escenario):
 
 def test_resumen_respeta_filtros(con, escenario):
     texto = exportacion.resumen_por_sku(
-        con, escenario["sesion_id"], {"grupo": "Bazar"}
+        con, escenario["proyecto_id"], {"grupo": "Bazar"}
     )
     filas = leer_csv(texto)
 
@@ -88,7 +88,7 @@ def test_resumen_respeta_filtros(con, escenario):
 
 
 def test_detalle_tiene_una_fila_por_escaneo(con, escenario):
-    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.detalle(con, escenario["proyecto_id"]))
 
     assert len(filas) == 1
     assert filas[0]["sku"] == "A"
@@ -100,7 +100,7 @@ def test_detalle_tiene_una_fila_por_escaneo(con, escenario):
 
 
 def test_detalle_tiene_las_columnas_del_spec(con, escenario):
-    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.detalle(con, escenario["proyecto_id"]))
 
     assert list(filas[0].keys()) == [
         "fecha", "fecha_sincronizacion", "pasada", "operario", "sku",
@@ -113,7 +113,7 @@ def test_la_fecha_del_detalle_es_la_del_conteo_no_la_de_la_sincronizacion(
     con, escenario
 ):
     """Los celulares sincronizan en lote: una mañana entera compartiría instante."""
-    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.detalle(con, escenario["proyecto_id"]))
 
     assert filas[0]["fecha"] == "2026-08-10T10:00:00Z"
     assert filas[0]["fecha_sincronizacion"] != filas[0]["fecha"]
@@ -121,18 +121,18 @@ def test_la_fecha_del_detalle_es_la_del_conteo_no_la_de_la_sincronizacion(
 
 def test_el_detalle_marca_las_dos_filas_de_una_anulacion(con, escenario):
     """La que anula y la anulada: si falta una, el total no cierra al leerlo."""
-    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+    conteos.registrar(con, escenario["proyecto_id"], escenario["juan"]["id"], {
         "uuid": "u-2", "codigo": "B", "cantidad": 50000,
         "timestamp_dispositivo": "2026-08-10T10:10:00Z",
     })
-    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+    conteos.registrar(con, escenario["proyecto_id"], escenario["juan"]["id"], {
         "uuid": "u-3", "codigo": "B", "cantidad": 0,
         "timestamp_dispositivo": "2026-08-10T10:20:00Z", "anula_uuid": "u-2",
     })
 
     marcas = {
         f["observaciones"] or f["cantidad"]: f["anulado"]
-        for f in leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+        for f in leer_csv(exportacion.detalle(con, escenario["proyecto_id"]))
     }
 
     assert marcas["50"] == "SI"   # la anulada
@@ -142,13 +142,13 @@ def test_el_detalle_marca_las_dos_filas_de_una_anulacion(con, escenario):
 
 def test_el_detalle_respeta_los_mismos_filtros_que_el_resumen(con, escenario):
     """Dos archivos que describen poblaciones distintas se leen mal juntos."""
-    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+    conteos.registrar(con, escenario["proyecto_id"], escenario["juan"]["id"], {
         "uuid": "u-2", "codigo": "B", "cantidad": 50000,
         "timestamp_dispositivo": "2026-08-10T10:10:00Z",
     })
 
     filas = leer_csv(
-        exportacion.detalle(con, escenario["sesion_id"], {"grupo": "Electricidad"})
+        exportacion.detalle(con, escenario["proyecto_id"], {"grupo": "Electricidad"})
     )
 
     assert [f["sku"] for f in filas] == ["B"]
@@ -156,7 +156,7 @@ def test_el_detalle_respeta_los_mismos_filtros_que_el_resumen(con, escenario):
 
 def test_el_resumen_filtrado_devuelve_lo_que_corresponde(con, escenario):
     filas = leer_csv(exportacion.resumen_por_sku(
-        con, escenario["sesion_id"], {"grupo": "Buloneria"}
+        con, escenario["proyecto_id"], {"grupo": "Buloneria"}
     ))
 
     assert [f["sku"] for f in filas] == ["A"]
@@ -164,33 +164,33 @@ def test_el_resumen_filtrado_devuelve_lo_que_corresponde(con, escenario):
 
 def test_los_acentos_sobreviven(con, escenario):
     """El BOM lo pone quien sirve el archivo, pero el texto tiene que llegar."""
-    texto = exportacion.resumen_por_sku(con, escenario["sesion_id"])
+    texto = exportacion.resumen_por_sku(con, escenario["proyecto_id"])
 
     assert "Cañería" in texto
 
 
 def test_detalle_sin_asignacion_no_marca(con, escenario):
-    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.detalle(con, escenario["proyecto_id"]))
 
     assert filas[0]["fuera_asignacion"] == ""
 
 
 def test_detalle_marca_fuera_de_asignacion(con, escenario):
-    pasada = sesiones.pasada_abierta(con, escenario["sesion_id"])
+    pasada = proyectos.pasada_abierta(con, escenario["proyecto_id"])
     asignaciones.reemplazar(con, pasada["id"], escenario["juan"]["id"], ["Otro deposito"])
-    conteos.registrar(con, escenario["sesion_id"], escenario["juan"]["id"], {
+    conteos.registrar(con, escenario["proyecto_id"], escenario["juan"]["id"], {
         "uuid": "u-2", "codigo": "B", "cantidad": 50000,
         "timestamp_dispositivo": "2026-08-10T10:10:00Z",
     })
 
-    filas = leer_csv(exportacion.detalle(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.detalle(con, escenario["proyecto_id"]))
     fila_b = next(f for f in filas if f["sku"] == "B")
 
     assert fila_b["fuera_asignacion"] == "SI"
 
 
 def test_resumen_trae_los_codigos_de_barra(con, escenario):
-    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.resumen_por_sku(con, escenario["proyecto_id"]))
     fila_a = next(f for f in filas if f["sku"] == "A")
 
     assert fila_a["codigos_de_barra"] == "A"
@@ -199,7 +199,7 @@ def test_resumen_trae_los_codigos_de_barra(con, escenario):
 # --- La exportación de la pestaña de reparto --------------------------------
 
 def test_reparto_tiene_las_columnas_del_spec(con, escenario):
-    filas = leer_csv(exportacion.reparto(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.reparto(con, escenario["proyecto_id"]))
 
     assert list(filas[0].keys()) == [
         "ubicacion", "sku", "descripcion",
@@ -209,16 +209,16 @@ def test_reparto_tiene_las_columnas_del_spec(con, escenario):
 
 def test_reparto_une_varios_nombres_con_una_barra(con, escenario):
     asignaciones.reemplazar(
-        con, sesiones.pasada_abierta(con, escenario["sesion_id"])["id"],
+        con, proyectos.pasada_abierta(con, escenario["proyecto_id"])["id"],
         escenario["juan"]["id"], ["P-1"],
     )
     maria = operarios.crear(con, "Maria")
     asignaciones.reemplazar(
-        con, sesiones.pasada_abierta(con, escenario["sesion_id"])["id"],
+        con, proyectos.pasada_abierta(con, escenario["proyecto_id"])["id"],
         maria["id"], ["P-1"],
     )
 
-    filas = leer_csv(exportacion.reparto(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.reparto(con, escenario["proyecto_id"]))
     fila_a = next(f for f in filas if f["sku"] == "A")
 
     assert fila_a["asignado_a"] == "Juan | Maria"
@@ -227,14 +227,14 @@ def test_reparto_une_varios_nombres_con_una_barra(con, escenario):
 
 def test_reparto_arrastra_los_filtros(con, escenario):
     filas = leer_csv(
-        exportacion.reparto(con, escenario["sesion_id"], {"ubicacion": "P-2"})
+        exportacion.reparto(con, escenario["proyecto_id"], {"ubicacion": "P-2"})
     )
 
     assert [f["sku"] for f in filas] == ["B"]
 
 
 def test_reparto_cantidad_con_coma_decimal(con, escenario):
-    filas = leer_csv(exportacion.reparto(con, escenario["sesion_id"]))
+    filas = leer_csv(exportacion.reparto(con, escenario["proyecto_id"]))
     fila_a = next(f for f in filas if f["sku"] == "A")
 
     assert fila_a["contado"] == "98"

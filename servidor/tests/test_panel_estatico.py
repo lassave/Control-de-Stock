@@ -36,7 +36,7 @@ def test_los_archivos_del_panel_se_sirven(cliente, archivo):
 
 def test_la_api_gana_sobre_los_archivos_estaticos(cliente):
     """El panel se monta en la raíz: no puede tapar las rutas de la API."""
-    assert cliente.get("/api/sesiones").status_code == 200
+    assert cliente.get("/api/proyectos").status_code == 200
 
 
 @pytest.mark.parametrize("ruta", ["/", "/app.js", "/estilos.css"])
@@ -75,11 +75,11 @@ def test_los_estados_usan_texto_ademas_de_color():
         assert estado in contenido
 
 
-DATOS_DEL_SERVIDOR = re.compile(r"\b(fila|sesion|operario|vista|resultado|estado|novedad|cuenta)\.")
+DATOS_DEL_SERVIDOR = re.compile(r"\b(fila|proyecto|operario|vista|resultado|estado|novedad|cuenta)\.")
 
 # Solo se auditan las plantillas que arman marcado. Lo que va por
 # `textContent` no interpreta HTML, y escaparlo ahí mostraría «&amp;» en
-# pantalla cada vez que una sesión se llame «Juan & Hnos».
+# pantalla cada vez que un proyecto se llame «Juan & Hnos».
 PLANTILLAS = re.compile(r"`([^`]*)`", re.DOTALL)
 INTERPOLACION = re.compile(r"\$\{([^{}]*)\}")
 

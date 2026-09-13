@@ -1,6 +1,6 @@
 PRAGMA foreign_keys = ON;
 
-CREATE TABLE IF NOT EXISTS sesion (
+CREATE TABLE IF NOT EXISTS proyecto (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     nombre              TEXT NOT NULL,
     fecha_creacion      TEXT NOT NULL,
@@ -11,22 +11,22 @@ CREATE TABLE IF NOT EXISTS sesion (
     CHECK (typeof(tolerancia_min_abs) = 'integer')
 );
 
--- Una sola sesión abierta a la vez: los dispositivos se vinculan a «la»
--- sesión abierta. El repositorio ya lo valida, pero dos hilos pueden pasar
+-- Un solo proyecto abierto a la vez: los dispositivos se vinculan a «el»
+-- proyecto abierto. El repositorio ya lo valida, pero dos hilos pueden pasar
 -- esa validación a la vez; este índice lo vuelve imposible.
-CREATE UNIQUE INDEX IF NOT EXISTS ix_sesion_abierta
-    ON sesion(estado) WHERE estado = 'abierta';
+CREATE UNIQUE INDEX IF NOT EXISTS ix_proyecto_abierta
+    ON proyecto(estado) WHERE estado = 'abierta';
 
 CREATE TABLE IF NOT EXISTS pasada (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    sesion_id       INTEGER NOT NULL REFERENCES sesion(id),
+    proyecto_id     INTEGER NOT NULL REFERENCES proyecto(id),
     numero          INTEGER NOT NULL,
     estado          TEXT NOT NULL DEFAULT 'abierta',
     fecha_apertura  TEXT NOT NULL,
     fecha_cierre    TEXT,
     abierta_por     TEXT,
     cerrada_por     TEXT,
-    UNIQUE (sesion_id, numero),
+    UNIQUE (proyecto_id, numero),
     CHECK (estado IN ('abierta', 'cerrada'))
 );
 
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS unidad (
 
 CREATE TABLE IF NOT EXISTS articulo (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    sesion_id       INTEGER NOT NULL REFERENCES sesion(id),
+    proyecto_id     INTEGER NOT NULL REFERENCES proyecto(id),
     id_orden        INTEGER NOT NULL,
     tipo            TEXT,
     material        TEXT,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS articulo (
     creado_por      TEXT,
     creado_en       TEXT NOT NULL,
     fusionado_en    INTEGER REFERENCES articulo(id),
-    UNIQUE (sesion_id, sku),
+    UNIQUE (proyecto_id, sku),
     CHECK (origen IN ('importado', 'alta_rapida')),
     -- La afinidad INTEGER de SQLite no es una restricción de tipo: acepta y
     -- guarda un 3.5 como REAL. Sin este CHECK, un solo decimal colado anula
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS operario (
 
 CREATE TABLE IF NOT EXISTS conteo (
     uuid                    TEXT PRIMARY KEY,
-    sesion_id               INTEGER NOT NULL REFERENCES sesion(id),
+    proyecto_id             INTEGER NOT NULL REFERENCES proyecto(id),
     pasada_id               INTEGER NOT NULL REFERENCES pasada(id),
     articulo_id             INTEGER NOT NULL REFERENCES articulo(id),
     cantidad                INTEGER NOT NULL,
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS conteo (
 
 CREATE INDEX IF NOT EXISTS ix_conteo_articulo ON conteo(articulo_id, pasada_id);
 CREATE INDEX IF NOT EXISTS ix_conteo_anula ON conteo(anula_uuid);
-CREATE INDEX IF NOT EXISTS ix_conteo_sesion ON conteo(sesion_id, operario_id);
+CREATE INDEX IF NOT EXISTS ix_conteo_proyecto ON conteo(proyecto_id, operario_id);
 
 CREATE TABLE IF NOT EXISTS pasada_item (
     pasada_id    INTEGER NOT NULL REFERENCES pasada(id),
@@ -120,17 +120,17 @@ CREATE TABLE IF NOT EXISTS mapeo_columnas (
 );
 
 CREATE TABLE IF NOT EXISTS codigo_aprendido (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    sku               TEXT NOT NULL,
-    codigo            TEXT NOT NULL,
-    fecha             TEXT NOT NULL,
-    sesion_origen_id  INTEGER REFERENCES sesion(id),
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    sku                 TEXT NOT NULL,
+    codigo              TEXT NOT NULL,
+    fecha               TEXT NOT NULL,
+    proyecto_origen_id  INTEGER REFERENCES proyecto(id),
     UNIQUE (sku, codigo)
 );
 
 CREATE TABLE IF NOT EXISTS evento_auditoria (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    sesion_id       INTEGER REFERENCES sesion(id),
+    proyecto_id     INTEGER REFERENCES proyecto(id),
     fecha           TEXT NOT NULL,
     autor           TEXT NOT NULL,
     accion          TEXT NOT NULL,

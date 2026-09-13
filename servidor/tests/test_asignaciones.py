@@ -1,23 +1,23 @@
 import pytest
 
-from app.repos import asignaciones, operarios, sesiones
+from app.repos import asignaciones, operarios, proyectos
 from app.servicios import importacion
 
 
 @pytest.fixture
 def escenario(con):
-    sesion_id = sesiones.crear(con, "Cliente X")
+    proyecto_id = proyectos.crear(con, "Cliente X")
     contenido = (
         "sku,detalle,ubic\n"
         "A,Tornillo,Deposito A\n"
         "B,Tuerca,Deposito B\n"
     ).encode("utf-8")
-    importacion.importar(con, sesion_id, contenido, {
+    importacion.importar(con, proyecto_id, contenido, {
         "sku": "sku", "descripcion": "detalle", "ubicacion": "ubic",
     })
     juan = operarios.crear(con, "Juan")
-    pasada = sesiones.pasada_abierta(con, sesion_id)
-    return {"sesion_id": sesion_id, "juan": juan, "pasada_id": pasada["id"]}
+    pasada = proyectos.pasada_abierta(con, proyecto_id)
+    return {"proyecto_id": proyecto_id, "juan": juan, "pasada_id": pasada["id"]}
 
 
 def test_reemplazar_guarda_las_ubicaciones(con, escenario):
@@ -68,8 +68,8 @@ def test_una_pasada_nueva_arranca_sin_asignaciones(con, escenario):
     )
 
     cursor = con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (escenario["sesion_id"], "2026-08-16T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["proyecto_id"], "2026-08-16T10:00:00Z"),
     )
     pasada_2_id = cursor.lastrowid
 
@@ -77,23 +77,23 @@ def test_una_pasada_nueva_arranca_sin_asignaciones(con, escenario):
 
 
 def test_ubicaciones_distintas_del_maestro(con, escenario):
-    assert asignaciones.ubicaciones_distintas(con, escenario["sesion_id"]) == [
+    assert asignaciones.ubicaciones_distintas(con, escenario["proyecto_id"]) == [
         "Deposito A", "Deposito B",
     ]
 
 
 def test_ubicaciones_distintas_ignora_articulos_sin_ubicacion(con):
-    sesion_id = sesiones.crear(con, "Cliente Y")
+    proyecto_id = proyectos.crear(con, "Cliente Y")
     contenido = "sku,detalle\nA,Tornillo\n".encode("utf-8")
-    importacion.importar(con, sesion_id, contenido, {
+    importacion.importar(con, proyecto_id, contenido, {
         "sku": "sku", "descripcion": "detalle",
     })
 
-    assert asignaciones.ubicaciones_distintas(con, sesion_id) == []
+    assert asignaciones.ubicaciones_distintas(con, proyecto_id) == []
 
 
-def test_operarios_con_ubicaciones_sin_sesion_abierta(con):
-    """Sin sesión abierta no hay pasada a la cual asignar nada."""
+def test_operarios_con_ubicaciones_sin_proyecto_abierta(con):
+    """Sin proyecto abierto no hay pasada a la cual asignar nada."""
     operarios.crear(con, "Juan")
 
     lista = asignaciones.operarios_con_ubicaciones(con)
@@ -113,15 +113,15 @@ def test_operarios_con_ubicaciones_de_la_pasada_abierta(con, escenario):
 
 
 def test_operarios_con_ubicaciones_sin_pasada_abierta_no_rompe(con, escenario):
-    """Una sesión abierta cuyo conteo se cerró: hoy esto sale como 500.
+    """Un proyecto abierto cuyo conteo se cerró: hoy esto sale como 500.
 
-    Es inalcanzable desde el panel —crear y cerrar mueven sesión y pasada
+    Es inalcanzable desde el panel —crear y cerrar mueven proyecto y pasada
     juntas—, pero el reconteo lo va a abrir, y el radio de la falla es un
     endpoint global. Sin asignaciones que mostrar, lista vacía.
     """
     con.execute(
-        "UPDATE pasada SET estado = 'cerrada' WHERE sesion_id = ?",
-        (escenario["sesion_id"],),
+        "UPDATE pasada SET estado = 'cerrada' WHERE proyecto_id = ?",
+        (escenario["proyecto_id"],),
     )
 
     lista = asignaciones.operarios_con_ubicaciones(con)
@@ -136,34 +136,34 @@ def test_asignados_por_articulo(con, escenario):
     )
 
     articulo_a = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
-        (escenario["sesion_id"],),
+        "SELECT id FROM articulo WHERE proyecto_id = ? AND sku = 'A'",
+        (escenario["proyecto_id"],),
     ).fetchone()["id"]
 
-    resultado = asignaciones.asignados_por_articulo(con, escenario["sesion_id"])
+    resultado = asignaciones.asignados_por_articulo(con, escenario["proyecto_id"])
 
     assert resultado == {articulo_a: ["Juan"]}
 
 
 def test_asignados_por_articulo_sin_pasada_devuelve_vacio(con):
     con.execute(
-        "INSERT INTO sesion (nombre, fecha_creacion) VALUES ('Suelta', ?)",
+        "INSERT INTO proyecto (nombre, fecha_creacion) VALUES ('Suelta', ?)",
         ("2026-08-17T10:00:00Z",),
     )
-    sesion_id = con.execute("SELECT id FROM sesion WHERE nombre = 'Suelta'").fetchone()["id"]
+    proyecto_id = con.execute("SELECT id FROM proyecto WHERE nombre = 'Suelta'").fetchone()["id"]
 
-    assert asignaciones.asignados_por_articulo(con, sesion_id) == {}
+    assert asignaciones.asignados_por_articulo(con, proyecto_id) == {}
 
 
-# --- de_operario_en_sesion trae la pasada activa, no siempre la general ----
+# --- de_operario_en_proyecto trae la pasada activa, no siempre la general ----
 
-def test_de_operario_en_sesion_devuelve_la_pasada_general_sin_recuento(con, escenario):
+def test_de_operario_en_proyecto_devuelve_la_pasada_general_sin_recuento(con, escenario):
     asignaciones.reemplazar(
         con, escenario["pasada_id"], escenario["juan"]["id"], ["Deposito A"]
     )
 
-    resultado = asignaciones.de_operario_en_sesion(
-        con, escenario["sesion_id"], escenario["juan"]["id"]
+    resultado = asignaciones.de_operario_en_proyecto(
+        con, escenario["proyecto_id"], escenario["juan"]["id"]
     )
 
     assert resultado["pasada_id"] == escenario["pasada_id"]
@@ -174,23 +174,23 @@ def test_de_operario_en_sesion_devuelve_la_pasada_general_sin_recuento(con, esce
     assert resultado["ubicaciones"] == ["Deposito A"]
 
 
-def test_de_operario_en_sesion_devuelve_el_recuento_cuando_esta_asignado(con, escenario):
+def test_de_operario_en_proyecto_devuelve_el_recuento_cuando_esta_asignado(con, escenario):
     from app.repos import pasada_item
 
     articulo_a = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
-        (escenario["sesion_id"],),
+        "SELECT id FROM articulo WHERE proyecto_id = ? AND sku = 'A'",
+        (escenario["proyecto_id"],),
     ).fetchone()["id"]
     cursor = con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["proyecto_id"], "2026-08-17T10:00:00Z"),
     )
     pasada_2 = cursor.lastrowid
     pasada_item.agregar(con, pasada_2, [articulo_a])
     asignaciones.reemplazar(con, pasada_2, escenario["juan"]["id"], ["Deposito A"])
 
-    resultado = asignaciones.de_operario_en_sesion(
-        con, escenario["sesion_id"], escenario["juan"]["id"]
+    resultado = asignaciones.de_operario_en_proyecto(
+        con, escenario["proyecto_id"], escenario["juan"]["id"]
     )
 
     assert resultado["pasada_id"] == pasada_2
@@ -211,18 +211,18 @@ def test_asignados_por_articulo_con_recuento_muestra_los_dos(con, escenario):
     asignaciones.reemplazar(con, escenario["pasada_id"], maria["id"], ["Deposito A"])
 
     articulo_a = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
-        (escenario["sesion_id"],),
+        "SELECT id FROM articulo WHERE proyecto_id = ? AND sku = 'A'",
+        (escenario["proyecto_id"],),
     ).fetchone()["id"]
     cursor = con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["proyecto_id"], "2026-08-17T10:00:00Z"),
     )
     pasada_2 = cursor.lastrowid
     pasada_item.agregar(con, pasada_2, [articulo_a])
     asignaciones.reemplazar(con, pasada_2, escenario["juan"]["id"], ["Deposito A"])
 
-    resultado = asignaciones.asignados_por_articulo(con, escenario["sesion_id"])
+    resultado = asignaciones.asignados_por_articulo(con, escenario["proyecto_id"])
 
     assert resultado[articulo_a] == ["Juan", "Maria"]
 
@@ -233,31 +233,31 @@ def test_asignados_por_articulo_fuera_del_recuento_solo_el_general(con, escenari
     from app.repos import pasada_item
 
     con.execute(
-        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "INSERT INTO articulo (proyecto_id, id_orden, sku, descripcion, unidad, "
         "ubicacion, creado_en) VALUES (?, 3, 'C', 'Tuerca', 'UN', 'Deposito A', ?)",
-        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+        (escenario["proyecto_id"], "2026-08-17T10:00:00Z"),
     )
     articulo_c = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'C'",
-        (escenario["sesion_id"],),
+        "SELECT id FROM articulo WHERE proyecto_id = ? AND sku = 'C'",
+        (escenario["proyecto_id"],),
     ).fetchone()["id"]
 
     maria = operarios.crear(con, "Maria")
     asignaciones.reemplazar(con, escenario["pasada_id"], maria["id"], ["Deposito A"])
 
     articulo_a = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
-        (escenario["sesion_id"],),
+        "SELECT id FROM articulo WHERE proyecto_id = ? AND sku = 'A'",
+        (escenario["proyecto_id"],),
     ).fetchone()["id"]
     cursor = con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["proyecto_id"], "2026-08-17T10:00:00Z"),
     )
     pasada_2 = cursor.lastrowid
     pasada_item.agregar(con, pasada_2, [articulo_a])
     asignaciones.reemplazar(con, pasada_2, escenario["juan"]["id"], ["Deposito A"])
 
-    resultado = asignaciones.asignados_por_articulo(con, escenario["sesion_id"])
+    resultado = asignaciones.asignados_por_articulo(con, escenario["proyecto_id"])
 
     assert resultado.get(articulo_c, []) == ["Maria"]
 
@@ -266,12 +266,12 @@ def test_operarios_con_ubicaciones_usa_la_pasada_activa_de_cada_uno(con, escenar
     from app.repos import pasada_item
 
     articulo_a = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
-        (escenario["sesion_id"],),
+        "SELECT id FROM articulo WHERE proyecto_id = ? AND sku = 'A'",
+        (escenario["proyecto_id"],),
     ).fetchone()["id"]
     cursor = con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["proyecto_id"], "2026-08-17T10:00:00Z"),
     )
     pasada_2 = cursor.lastrowid
     pasada_item.agregar(con, pasada_2, [articulo_a])
@@ -290,15 +290,15 @@ def test_operarios_con_ubicaciones_ajeno_al_recuento_muestra_lo_general(con, esc
     from app.repos import pasada_item
 
     articulo_a = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = 'A'",
-        (escenario["sesion_id"],),
+        "SELECT id FROM articulo WHERE proyecto_id = ? AND sku = 'A'",
+        (escenario["proyecto_id"],),
     ).fetchone()["id"]
     asignaciones.reemplazar(con, escenario["pasada_id"], escenario["juan"]["id"], ["Deposito A"])
 
     maria = operarios.crear(con, "Maria")
     cursor = con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (escenario["sesion_id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (escenario["proyecto_id"], "2026-08-17T10:00:00Z"),
     )
     pasada_2 = cursor.lastrowid
     pasada_item.agregar(con, pasada_2, [articulo_a])

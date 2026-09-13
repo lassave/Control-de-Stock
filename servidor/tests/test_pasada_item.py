@@ -4,30 +4,30 @@ import pytest
 
 from app.repos import pasada_item
 from app.servicios import importacion
-from app.repos import sesiones
+from app.repos import proyectos
 
 
 @pytest.fixture
 def escenario(con):
-    sesion_id = sesiones.crear(con, "Cliente X")
+    proyecto_id = proyectos.crear(con, "Cliente X")
     contenido = (
         "sku,detalle,stock\n"
         "A,Tornillo,100\n"
         "B,Tuerca,50\n"
         "C,Arandela,10\n"
     ).encode("utf-8")
-    importacion.importar(con, sesion_id, contenido, {
+    importacion.importar(con, proyecto_id, contenido, {
         "sku": "sku", "descripcion": "detalle", "stock_sistema": "stock",
     })
-    pasada = sesiones.pasada_abierta(con, sesion_id)
+    pasada = proyectos.pasada_abierta(con, proyecto_id)
 
     def id_de(sku):
         return con.execute(
-            "SELECT id FROM articulo WHERE sesion_id = ? AND sku = ?",
-            (sesion_id, sku),
+            "SELECT id FROM articulo WHERE proyecto_id = ? AND sku = ?",
+            (proyecto_id, sku),
         ).fetchone()["id"]
 
-    return {"sesion_id": sesion_id, "pasada_id": pasada["id"], "id_de": id_de}
+    return {"proyecto_id": proyecto_id, "pasada_id": pasada["id"], "id_de": id_de}
 
 
 def test_agregar_guarda_las_filas(con, escenario):

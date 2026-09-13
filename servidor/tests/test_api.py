@@ -15,8 +15,8 @@ def cliente(tmp_path):
 
 
 @pytest.fixture
-def sesion(cliente):
-    respuesta = cliente.post("/api/sesiones", json={"nombre": "Cliente X"})
+def proyecto(cliente):
+    respuesta = cliente.post("/api/proyectos", json={"nombre": "Cliente X"})
     return respuesta.json()
 
 
@@ -27,9 +27,9 @@ CSV_MAESTRO = (
 ).encode("utf-8")
 
 
-def importar(cliente, sesion_id):
+def importar(cliente, proyecto_id):
     return cliente.post(
-        f"/api/sesiones/{sesion_id}/maestro",
+        f"/api/proyectos/{proyecto_id}/maestro",
         files={"archivo": ("maestro.csv", CSV_MAESTRO, "text/csv")},
         data={"mapeo": '{"sku": "sku", "descripcion": "detalle", "stock_sistema": "stock"}'},
     )
@@ -42,16 +42,16 @@ CSV_CON_UBICACION = (
 ).encode("utf-8")
 
 
-def importar_con_ubicacion(cliente, sesion_id):
+def importar_con_ubicacion(cliente, proyecto_id):
     return cliente.post(
-        f"/api/sesiones/{sesion_id}/maestro",
+        f"/api/proyectos/{proyecto_id}/maestro",
         files={"archivo": ("maestro.csv", CSV_CON_UBICACION, "text/csv")},
         data={"mapeo": '{"sku": "sku", "descripcion": "detalle", "ubicacion": "ubic"}'},
     )
 
 
-def test_crear_sesion(cliente):
-    respuesta = cliente.post("/api/sesiones", json={"nombre": "Cliente X"})
+def test_crear_proyecto(cliente):
+    respuesta = cliente.post("/api/proyectos", json={"nombre": "Cliente X"})
 
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
@@ -59,11 +59,11 @@ def test_crear_sesion(cliente):
     assert cuerpo["pasada"]["etiqueta"] == "Conteo 1"
 
 
-def test_no_permite_dos_sesiones_abiertas(cliente, sesion):
-    respuesta = cliente.post("/api/sesiones", json={"nombre": "Otra"})
+def test_no_permite_dos_proyectos_abiertos(cliente, proyecto):
+    respuesta = cliente.post("/api/proyectos", json={"nombre": "Otra"})
 
     assert respuesta.status_code == 409
-    assert "sesión abierta" in respuesta.json()["detail"]
+    assert "proyecto abierto" in respuesta.json()["detail"]
 
 
 def test_previsualizar_maestro(cliente):
@@ -76,16 +76,16 @@ def test_previsualizar_maestro(cliente):
     assert respuesta.json()["encabezados"] == ["sku", "detalle", "stock"]
 
 
-def test_importar_maestro(cliente, sesion):
-    respuesta = importar(cliente, sesion["id"])
+def test_importar_maestro(cliente, proyecto):
+    respuesta = importar(cliente, proyecto["id"])
 
     assert respuesta.status_code == 200
     assert respuesta.json()["importados"] == 2
 
 
-def test_mapeo_invalido_devuelve_400(cliente, sesion):
+def test_mapeo_invalido_devuelve_400(cliente, proyecto):
     respuesta = cliente.post(
-        f"/api/sesiones/{sesion['id']}/maestro",
+        f"/api/proyectos/{proyecto['id']}/maestro",
         files={"archivo": ("maestro.csv", CSV_MAESTRO, "text/csv")},
         data={"mapeo": '{"sku": "sku"}'},
     )
@@ -93,10 +93,10 @@ def test_mapeo_invalido_devuelve_400(cliente, sesion):
     assert respuesta.status_code == 400
 
 
-def test_tablero_devuelve_filas_y_resumen(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_tablero_devuelve_filas_y_resumen(cliente, proyecto):
+    importar(cliente, proyecto["id"])
 
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/tablero")
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/tablero")
 
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
@@ -104,17 +104,17 @@ def test_tablero_devuelve_filas_y_resumen(cliente, sesion):
     assert cuerpo["resumen"]["articulos"] == 2
 
 
-def test_tablero_acepta_filtros(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_tablero_acepta_filtros(cliente, proyecto):
+    importar(cliente, proyecto["id"])
 
     respuesta = cliente.get(
-        f"/api/sesiones/{sesion['id']}/tablero", params={"texto": "torni"}
+        f"/api/proyectos/{proyecto['id']}/tablero", params={"texto": "torni"}
     )
 
     assert len(respuesta.json()["filas"]) == 1
 
 
-def test_vincular_dispositivo(cliente, sesion):
+def test_vincular_dispositivo(cliente, proyecto):
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.post(
@@ -124,10 +124,10 @@ def test_vincular_dispositivo(cliente, sesion):
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
     assert cuerpo["operario"]["nombre"] == "Juan"
-    assert cuerpo["sesion"]["id"] == sesion["id"]
+    assert cuerpo["proyecto"]["id"] == proyecto["id"]
 
 
-def test_vincular_con_token_invalido_devuelve_401(cliente, sesion):
+def test_vincular_con_token_invalido_devuelve_401(cliente, proyecto):
     respuesta = cliente.post(
         "/api/dispositivo/vincular", headers={"X-Token": "inventado"}
     )
@@ -135,8 +135,8 @@ def test_vincular_con_token_invalido_devuelve_401(cliente, sesion):
     assert respuesta.status_code == 401
 
 
-def test_maestro_para_dispositivo_no_expone_stock(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_maestro_para_dispositivo_no_expone_stock(cliente, proyecto):
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.get(
@@ -151,8 +151,8 @@ def test_maestro_para_dispositivo_no_expone_stock(cliente, sesion):
         assert "costo_unitario" not in articulo
 
 
-def test_enviar_conteos(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_enviar_conteos(cliente, proyecto):
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.post(
@@ -168,8 +168,8 @@ def test_enviar_conteos(cliente, sesion):
     assert respuesta.json()["registrados"] == 1
 
 
-def test_reenviar_conteos_no_duplica(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_reenviar_conteos_no_duplica(cliente, proyecto):
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     cuerpo = {"conteos": [
         {"uuid": "u-1", "codigo": "A", "cantidad": 98000,
@@ -182,15 +182,15 @@ def test_reenviar_conteos_no_duplica(cliente, sesion):
 
     assert respuesta.json()["duplicados"] == 1
 
-    tablero = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()
+    tablero = cliente.get(f"/api/proyectos/{proyecto['id']}/tablero").json()
     fila_a = next(f for f in tablero["filas"] if f["sku"] == "A")
     assert fila_a["ultimo_conteo"] == 98000
 
 
-def test_exportar_resumen(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_exportar_resumen(cliente, proyecto):
+    importar(cliente, proyecto["id"])
 
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/exportar/resumen")
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/exportar/resumen")
 
     assert respuesta.status_code == 200
     assert "text/csv" in respuesta.headers["content-type"]
@@ -200,61 +200,61 @@ def test_exportar_resumen(cliente, sesion):
     assert len(lineas) == 3  # encabezado + dos artículos
 
 
-def test_exportar_tipo_inexistente_devuelve_404(cliente, sesion):
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/exportar/inventado")
+def test_exportar_tipo_inexistente_devuelve_404(cliente, proyecto):
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/exportar/inventado")
 
     assert respuesta.status_code == 404
 
 
-def test_exportar_respeta_los_filtros_del_tablero(cliente, sesion):
+def test_exportar_respeta_los_filtros_del_tablero(cliente, proyecto):
     """Se exporta lo que está en pantalla: si no, el archivo dice otra cosa."""
-    importar(cliente, sesion["id"])
+    importar(cliente, proyecto["id"])
 
     respuesta = cliente.get(
-        f"/api/sesiones/{sesion['id']}/exportar/resumen", params={"texto": "torni"}
+        f"/api/proyectos/{proyecto['id']}/exportar/resumen", params={"texto": "torni"}
     )
 
     lineas = respuesta.text.lstrip("﻿").splitlines()
     assert len(lineas) == 2  # encabezado + solo el tornillo
 
 
-def test_exportar_lleva_bom_para_que_excel_lea_los_acentos(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_exportar_lleva_bom_para_que_excel_lea_los_acentos(cliente, proyecto):
+    importar(cliente, proyecto["id"])
 
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/exportar/resumen")
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/exportar/resumen")
 
     assert respuesta.content.startswith(b"\xef\xbb\xbf")
 
 
 @pytest.mark.parametrize("pedido", [
-    lambda cliente: cliente.get("/api/sesiones/999/tablero"),
-    lambda cliente: cliente.get("/api/sesiones/999/resumen"),
-    lambda cliente: cliente.get("/api/sesiones/999"),
-    lambda cliente: cliente.post("/api/sesiones/999/cerrar"),
-    lambda cliente: cliente.get("/api/sesiones/999/exportar/resumen"),
+    lambda cliente: cliente.get("/api/proyectos/999/tablero"),
+    lambda cliente: cliente.get("/api/proyectos/999/resumen"),
+    lambda cliente: cliente.get("/api/proyectos/999"),
+    lambda cliente: cliente.post("/api/proyectos/999/cerrar"),
+    lambda cliente: cliente.get("/api/proyectos/999/exportar/resumen"),
     lambda cliente: cliente.put(
-        "/api/sesiones/999/tolerancia", json={"pct": 2.0, "min_abs": 1000}
+        "/api/proyectos/999/tolerancia", json={"pct": 2.0, "min_abs": 1000}
     ),
 ])
-def test_una_sesion_inexistente_devuelve_404_y_no_un_error_del_servidor(
+def test_un_proyecto_inexistente_devuelve_404_y_no_un_error_del_servidor(
     cliente, pedido
 ):
     """Un 500 le dice al panel «se rompió»; lo único que pasa es que no está."""
     assert pedido(cliente).status_code == 404
 
 
-def test_tolerancia_mal_expresada_devuelve_400(cliente, sesion):
+def test_tolerancia_mal_expresada_devuelve_400(cliente, proyecto):
     respuesta = cliente.put(
-        f"/api/sesiones/{sesion['id']}/tolerancia",
+        f"/api/proyectos/{proyecto['id']}/tolerancia",
         json={"pct": 2.0, "min_abs": 1500.5},
     )
 
     assert respuesta.status_code == 400
 
 
-def test_fijar_tolerancia_devuelve_la_sesion_actualizada(cliente, sesion):
+def test_fijar_tolerancia_devuelve_el_proyecto_actualizado(cliente, proyecto):
     respuesta = cliente.put(
-        f"/api/sesiones/{sesion['id']}/tolerancia",
+        f"/api/proyectos/{proyecto['id']}/tolerancia",
         json={"pct": 5.0, "min_abs": 2000},
     )
 
@@ -262,9 +262,9 @@ def test_fijar_tolerancia_devuelve_la_sesion_actualizada(cliente, sesion):
     assert respuesta.json()["tolerancia_min_abs"] == 2000
 
 
-def test_mapeo_que_no_es_json_devuelve_400(cliente, sesion):
+def test_mapeo_que_no_es_json_devuelve_400(cliente, proyecto):
     respuesta = cliente.post(
-        f"/api/sesiones/{sesion['id']}/maestro",
+        f"/api/proyectos/{proyecto['id']}/maestro",
         files={"archivo": ("maestro.csv", CSV_MAESTRO, "text/csv")},
         data={"mapeo": "esto no es json"},
     )
@@ -280,7 +280,7 @@ def test_operario_repetido_devuelve_409(cliente):
     assert respuesta.status_code == 409
 
 
-def test_el_dispositivo_sin_sesion_abierta_recibe_409(cliente):
+def test_el_dispositivo_sin_proyecto_abierto_recibe_409(cliente):
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.post(
@@ -290,8 +290,8 @@ def test_el_dispositivo_sin_sesion_abierta_recibe_409(cliente):
     assert respuesta.status_code == 409
 
 
-def test_mis_conteos_devuelve_lo_que_mando_el_operario(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_mis_conteos_devuelve_lo_que_mando_el_operario(cliente, proyecto):
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     encabezados = {"X-Token": operario["token_dispositivo"]}
     cliente.post("/api/dispositivo/conteos", headers=encabezados, json={"conteos": [
@@ -305,9 +305,9 @@ def test_mis_conteos_devuelve_lo_que_mando_el_operario(cliente, sesion):
     assert [c["uuid"] for c in respuesta.json()] == ["u-1"]
 
 
-def test_el_maestro_del_dispositivo_trae_los_codigos_de_barras(cliente, sesion):
+def test_el_maestro_del_dispositivo_trae_los_codigos_de_barras(cliente, proyecto):
     """Sin códigos, el escáner del celular no encuentra ningún artículo."""
-    importar(cliente, sesion["id"])
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     cuerpo = cliente.get(
@@ -318,16 +318,16 @@ def test_el_maestro_del_dispositivo_trae_los_codigos_de_barras(cliente, sesion):
     assert len(cuerpo["unidades"]) == 8
 
 
-def test_listar_sesiones(cliente, sesion):
-    respuesta = cliente.get("/api/sesiones")
+def test_listar_proyectos(cliente, proyecto):
+    respuesta = cliente.get("/api/proyectos")
 
-    assert [s["id"] for s in respuesta.json()] == [sesion["id"]]
+    assert [s["id"] for s in respuesta.json()] == [proyecto["id"]]
 
 
-def test_cerrar_sesion_permite_abrir_otra(cliente, sesion):
-    cliente.post(f"/api/sesiones/{sesion['id']}/cerrar")
+def test_cerrar_proyecto_permite_abrir_otra(cliente, proyecto):
+    cliente.post(f"/api/proyectos/{proyecto['id']}/cerrar")
 
-    respuesta = cliente.post("/api/sesiones", json={"nombre": "Otra"})
+    respuesta = cliente.post("/api/proyectos", json={"nombre": "Otra"})
 
     assert respuesta.status_code == 200
 
@@ -366,8 +366,8 @@ def alta_rapida(cliente, token, **datos):
     )
 
 
-def test_alta_rapida_crea_el_articulo(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_alta_rapida_crea_el_articulo(cliente, proyecto):
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = alta_rapida(cliente, operario["token_dispositivo"])
@@ -376,9 +376,9 @@ def test_alta_rapida_crea_el_articulo(cliente, sesion):
     assert respuesta.json()["descripcion"] == "Caño de bronce"
 
 
-def test_lo_dado_de_alta_se_puede_contar_enseguida(cliente, sesion):
+def test_lo_dado_de_alta_se_puede_contar_enseguida(cliente, proyecto):
     """Es el punto del alta rápida: destrabar el conteo, no anotar para después."""
-    importar(cliente, sesion["id"])
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     encabezados = {"X-Token": operario["token_dispositivo"]}
     alta_rapida(cliente, operario["token_dispositivo"], codigo="7790001001234")
@@ -391,13 +391,13 @@ def test_lo_dado_de_alta_se_puede_contar_enseguida(cliente, sesion):
     assert respuesta.json()["registrados"] == 1
 
 
-def test_lo_dado_de_alta_sin_codigo_tambien_se_puede_contar(cliente, sesion):
+def test_lo_dado_de_alta_sin_codigo_tambien_se_puede_contar(cliente, proyecto):
     """El caso que motiva el SKU correlativo: producto sin etiqueta legible.
 
     Si el SKU generado no queda como código, el conteo vuelve rechazado y
     —peor— como no reintentable: la app lo descarta y el dato se pierde.
     """
-    importar(cliente, sesion["id"])
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     encabezados = {"X-Token": operario["token_dispositivo"]}
     alta = alta_rapida(cliente, operario["token_dispositivo"], codigo="").json()
@@ -410,8 +410,8 @@ def test_lo_dado_de_alta_sin_codigo_tambien_se_puede_contar(cliente, sesion):
     assert respuesta.json()["registrados"] == 1
 
 
-def test_el_alta_rapida_no_expone_stock_ni_costo(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_el_alta_rapida_no_expone_stock_ni_costo(cliente, proyecto):
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = alta_rapida(cliente, operario["token_dispositivo"])
@@ -424,13 +424,13 @@ def test_el_alta_rapida_no_expone_stock_ni_costo(cliente, sesion):
     assert "costo_unitario" not in cuerpo
 
 
-def test_el_alta_rapida_con_una_unidad_que_no_es_texto_devuelve_400(cliente, sesion):
+def test_el_alta_rapida_con_una_unidad_que_no_es_texto_devuelve_400(cliente, proyecto):
     """Un cliente que serializa la unidad como número no puede colar un alta.
 
     Tomarlo como ausente daría de alta con «UN» algo que se cuenta en metros:
     el operario ve la unidad que no es y cuenta con la que no es.
     """
-    importar(cliente, sesion["id"])
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = alta_rapida(cliente, operario["token_dispositivo"], unidad=5)
@@ -439,9 +439,9 @@ def test_el_alta_rapida_con_una_unidad_que_no_es_texto_devuelve_400(cliente, ses
     assert "unidad" in respuesta.json()["detail"]
 
 
-def test_el_alta_rapida_con_una_ubicacion_que_no_es_texto_devuelve_400(cliente, sesion):
+def test_el_alta_rapida_con_una_ubicacion_que_no_es_texto_devuelve_400(cliente, proyecto):
     """Un pasillo numérico llega como número y la ubicación se perdería."""
-    importar(cliente, sesion["id"])
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = alta_rapida(cliente, operario["token_dispositivo"], ubicacion=7)
@@ -450,12 +450,12 @@ def test_el_alta_rapida_con_una_ubicacion_que_no_es_texto_devuelve_400(cliente, 
     assert "ubicación" in respuesta.json()["detail"]
 
 
-def test_el_alta_rapida_sin_token_devuelve_401(cliente, sesion):
+def test_el_alta_rapida_sin_token_devuelve_401(cliente, proyecto):
     assert alta_rapida(cliente, "inventado").status_code == 401
 
 
-def test_el_alta_rapida_con_datos_invalidos_devuelve_400(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_el_alta_rapida_con_datos_invalidos_devuelve_400(cliente, proyecto):
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = alta_rapida(cliente, operario["token_dispositivo"], descripcion="")
@@ -464,9 +464,9 @@ def test_el_alta_rapida_con_datos_invalidos_devuelve_400(cliente, sesion):
     assert "descripción" in respuesta.json()["detail"]
 
 
-def test_el_alta_rapida_con_un_cuerpo_que_no_es_objeto_devuelve_400(cliente, sesion):
+def test_el_alta_rapida_con_un_cuerpo_que_no_es_objeto_devuelve_400(cliente, proyecto):
     """Un cliente a medio escribir manda una lista; eso es culpa del pedido."""
-    importar(cliente, sesion["id"])
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.post(
@@ -497,7 +497,7 @@ def cortes(texto_con_acento, texto_sin_acento):
 @pytest.mark.parametrize(
     "cuerpo", cortes('{"descripcion": "Cañ', '{"descripcion": "Cano'),
 )
-def test_el_alta_rapida_con_el_cuerpo_cortado_devuelve_422(cliente, sesion, cuerpo):
+def test_el_alta_rapida_con_el_cuerpo_cortado_devuelve_422(cliente, proyecto, cuerpo):
     """Una conexión cortada a mitad de envío deja el cuerpo truncado.
 
     No es 400 a propósito, y la diferencia no es cosmética: el 400 del alta
@@ -507,7 +507,7 @@ def test_el_alta_rapida_con_el_cuerpo_cortado_devuelve_422(cliente, sesion, cuer
     mismo código, un corte de WiFi le destruiría al operario conteos que se
     habrían subido solos.
     """
-    importar(cliente, sesion["id"])
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.post(
@@ -528,9 +528,9 @@ def test_el_alta_rapida_con_el_cuerpo_cortado_devuelve_422(cliente, sesion, cuer
         '{"conteos": [{"ubicacion_real": "Pasillo A',
     ),
 )
-def test_los_conteos_con_el_cuerpo_cortado_devuelven_422(cliente, sesion, cuerpo):
+def test_los_conteos_con_el_cuerpo_cortado_devuelven_422(cliente, proyecto, cuerpo):
     """El mismo corte de red, en el endpoint por el que sube todo el trabajo."""
-    importar(cliente, sesion["id"])
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.post(
@@ -544,12 +544,12 @@ def test_los_conteos_con_el_cuerpo_cortado_devuelven_422(cliente, sesion, cuerpo
     assert "incompleto" in respuesta.json()["detail"]
 
 
-def test_el_alta_rapida_aparece_en_el_tablero(cliente, sesion):
-    importar(cliente, sesion["id"])
+def test_el_alta_rapida_aparece_en_el_tablero(cliente, proyecto):
+    importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     alta_rapida(cliente, operario["token_dispositivo"])
 
-    filas = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"]
+    filas = cliente.get(f"/api/proyectos/{proyecto['id']}/tablero").json()["filas"]
 
     nuevo = next(f for f in filas if f["descripcion"] == "Caño de bronce")
     assert nuevo["origen"] == "alta_rapida"
@@ -766,20 +766,20 @@ def test_version_muy_larga_se_trunca_a_largo_sensato(cliente, con_apk):
     assert version.startswith("2026-08-13 (build 42)")
 
 
-def test_ubicaciones_de_la_sesion_abierta(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_ubicaciones_del_proyecto_abierto(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
 
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/ubicaciones")
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/ubicaciones")
 
     assert respuesta.status_code == 200
     assert respuesta.json() == ["Deposito A", "Deposito B"]
 
 
-def test_ubicaciones_de_sesion_inexistente_da_404(cliente):
-    assert cliente.get("/api/sesiones/9999/ubicaciones").status_code == 404
+def test_ubicaciones_de_proyecto_inexistente_da_404(cliente):
+    assert cliente.get("/api/proyectos/9999/ubicaciones").status_code == 404
 
 
-def test_operarios_traen_ubicaciones_asignadas_vacias_por_defecto(cliente, sesion):
+def test_operarios_traen_ubicaciones_asignadas_vacias_por_defecto(cliente, proyecto):
     cliente.post("/api/operarios", json={"nombre": "Juan"})
 
     respuesta = cliente.get("/api/operarios")
@@ -787,13 +787,13 @@ def test_operarios_traen_ubicaciones_asignadas_vacias_por_defecto(cliente, sesio
     assert respuesta.json()[0]["ubicaciones_asignadas"] == []
 
 
-def test_asignar_ubicaciones_a_un_operario(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_asignar_ubicaciones_a_un_operario(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
-        json={"ubicaciones": ["Deposito A"], "pasada_id": sesion["pasada"]["id"]},
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito A"], "pasada_id": proyecto["pasada"]["id"]},
     )
 
     assert respuesta.status_code == 200
@@ -804,17 +804,17 @@ def test_asignar_ubicaciones_a_un_operario(cliente, sesion):
     assert juan["ubicaciones_asignadas"] == ["Deposito A"]
 
 
-def test_asignar_reemplaza_lo_anterior(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_asignar_reemplaza_lo_anterior(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
-        json={"ubicaciones": ["Deposito A"], "pasada_id": sesion["pasada"]["id"]},
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito A"], "pasada_id": proyecto["pasada"]["id"]},
     )
 
     cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
-        json={"ubicaciones": ["Deposito B"], "pasada_id": sesion["pasada"]["id"]},
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": ["Deposito B"], "pasada_id": proyecto["pasada"]["id"]},
     )
 
     lista = cliente.get("/api/operarios").json()
@@ -822,31 +822,31 @@ def test_asignar_reemplaza_lo_anterior(cliente, sesion):
     assert juan["ubicaciones_asignadas"] == ["Deposito B"]
 
 
-def test_asignar_a_un_operario_inexistente_da_404(cliente, sesion):
+def test_asignar_a_un_operario_inexistente_da_404(cliente, proyecto):
     respuesta = cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/9999/asignacion",
-        json={"ubicaciones": [], "pasada_id": sesion["pasada"]["id"]},
+        f"/api/proyectos/{proyecto['id']}/operarios/9999/asignacion",
+        json={"ubicaciones": [], "pasada_id": proyecto["pasada"]["id"]},
     )
     assert respuesta.status_code == 404
 
 
-def test_asignar_con_la_sesion_cerrada_da_409(cliente, sesion):
+def test_asignar_con_el_proyecto_cerrado_da_409(cliente, proyecto):
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
-    cliente.post(f"/api/sesiones/{sesion['id']}/cerrar")
+    cliente.post(f"/api/proyectos/{proyecto['id']}/cerrar")
 
     respuesta = cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
-        json={"ubicaciones": [], "pasada_id": sesion["pasada"]["id"]},
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
+        json={"ubicaciones": [], "pasada_id": proyecto["pasada"]["id"]},
     )
 
     assert respuesta.status_code == 409
 
 
-def test_asignar_sin_lista_de_ubicaciones_da_400(cliente, sesion):
+def test_asignar_sin_lista_de_ubicaciones_da_400(cliente, proyecto):
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
         json={},
     )
 
@@ -855,19 +855,19 @@ def test_asignar_sin_lista_de_ubicaciones_da_400(cliente, sesion):
 
 # --- La lista de ubicaciones asignadas que baja el celular -------------------
 
-def asignar(cliente, sesion_id, operario_id, ubicaciones, pasada_id=None):
+def asignar(cliente, proyecto_id, operario_id, ubicaciones, pasada_id=None):
     if pasada_id is None:
-        pasada_id = cliente.get(f"/api/sesiones/{sesion_id}").json()["pasada"]["id"]
+        pasada_id = cliente.get(f"/api/proyectos/{proyecto_id}").json()["pasada"]["id"]
     return cliente.put(
-        f"/api/sesiones/{sesion_id}/operarios/{operario_id}/asignacion",
+        f"/api/proyectos/{proyecto_id}/operarios/{operario_id}/asignacion",
         json={"ubicaciones": ubicaciones, "pasada_id": pasada_id},
     )
 
 
-def test_mis_ubicaciones_devuelve_lo_asignado(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_mis_ubicaciones_devuelve_lo_asignado(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
-    asignar(cliente, sesion["id"], operario["id"], ["Deposito B", "Deposito A"])
+    asignar(cliente, proyecto["id"], operario["id"], ["Deposito B", "Deposito A"])
 
     respuesta = cliente.get(
         "/api/dispositivo/mis-ubicaciones",
@@ -876,12 +876,12 @@ def test_mis_ubicaciones_devuelve_lo_asignado(cliente, sesion):
 
     assert respuesta.status_code == 200
     assert respuesta.json()["ubicaciones"] == ["Deposito A", "Deposito B"]
-    assert respuesta.json()["pasada_id"] == sesion["pasada"]["id"]
+    assert respuesta.json()["pasada_id"] == proyecto["pasada"]["id"]
 
 
-def test_mis_ubicaciones_sin_asignar_devuelve_lista_vacia(cliente, sesion):
+def test_mis_ubicaciones_sin_asignar_devuelve_lista_vacia(cliente, proyecto):
     """Que no le hayan repartido nada es una respuesta, no un error."""
-    importar_con_ubicacion(cliente, sesion["id"])
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.get(
@@ -893,9 +893,9 @@ def test_mis_ubicaciones_sin_asignar_devuelve_lista_vacia(cliente, sesion):
     assert respuesta.json()["ubicaciones"] == []
 
 
-def test_mis_ubicaciones_no_trae_nada_mas(cliente, sesion):
+def test_mis_ubicaciones_no_trae_nada_mas(cliente, proyecto):
     """Un endpoint de dispositivo no puede engordar sin que alguien lo note."""
-    importar_con_ubicacion(cliente, sesion["id"])
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     cuerpo = cliente.get(
@@ -909,7 +909,7 @@ def test_mis_ubicaciones_no_trae_nada_mas(cliente, sesion):
     }
 
 
-def test_mis_ubicaciones_con_token_inventado(cliente, sesion):
+def test_mis_ubicaciones_con_token_inventado(cliente, proyecto):
     respuesta = cliente.get(
         "/api/dispositivo/mis-ubicaciones", headers={"X-Token": "inventado"}
     )
@@ -917,9 +917,9 @@ def test_mis_ubicaciones_con_token_inventado(cliente, sesion):
     assert respuesta.status_code == 401
 
 
-def test_mis_ubicaciones_sin_sesion_abierta(cliente, sesion):
+def test_mis_ubicaciones_sin_proyecto_abierto(cliente, proyecto):
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
-    cliente.post(f"/api/sesiones/{sesion['id']}/cerrar")
+    cliente.post(f"/api/proyectos/{proyecto['id']}/cerrar")
 
     respuesta = cliente.get(
         "/api/dispositivo/mis-ubicaciones",
@@ -929,14 +929,14 @@ def test_mis_ubicaciones_sin_sesion_abierta(cliente, sesion):
     assert respuesta.status_code == 409
 
 
-def test_mis_ubicaciones_sin_conteo_abierto_avisa_en_vez_de_romper(cliente, sesion):
+def test_mis_ubicaciones_sin_conteo_abierto_avisa_en_vez_de_romper(cliente, proyecto):
     """Una lista vacia seria mentira: el celular la escribiria encima de la
     que tenia y le borraria el reparto al operario. Mejor decirle que ahora
     no se puede contestar, y que conserve lo suyo."""
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     con = cliente.app.state.con
     con.execute(
-        "UPDATE pasada SET estado = 'cerrada' WHERE sesion_id = ?", (sesion["id"],)
+        "UPDATE pasada SET estado = 'cerrada' WHERE proyecto_id = ?", (proyecto["id"],)
     )
     con.commit()
 
@@ -951,12 +951,12 @@ def test_mis_ubicaciones_sin_conteo_abierto_avisa_en_vez_de_romper(cliente, sesi
 
 # --- La pestaña de reparto ---------------------------------------------------
 
-def test_ver_reparto(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_ver_reparto(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
-    asignar(cliente, sesion["id"], operario["id"], ["Deposito A"])
+    asignar(cliente, proyecto["id"], operario["id"], ["Deposito A"])
 
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/reparto")
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/reparto")
 
     assert respuesta.status_code == 200
     filas = respuesta.json()["filas"]
@@ -964,37 +964,37 @@ def test_ver_reparto(cliente, sesion):
     assert fila_a["asignado_a"] == ["Juan"]
 
 
-def test_ver_reparto_sesion_inexistente(cliente):
-    respuesta = cliente.get("/api/sesiones/999/reparto")
+def test_ver_reparto_proyecto_inexistente(cliente):
+    respuesta = cliente.get("/api/proyectos/999/reparto")
 
     assert respuesta.status_code == 404
 
 
-def test_ver_reparto_respeta_los_filtros(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_ver_reparto_respeta_los_filtros(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
 
     respuesta = cliente.get(
-        f"/api/sesiones/{sesion['id']}/reparto", params={"ubicacion": "Deposito B"}
+        f"/api/proyectos/{proyecto['id']}/reparto", params={"ubicacion": "Deposito B"}
     )
 
     assert [f["sku"] for f in respuesta.json()["filas"]] == ["B"]
 
 
-def test_exportar_reparto(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_exportar_reparto(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
 
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/exportar/reparto")
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/exportar/reparto")
 
     assert respuesta.status_code == 200
     assert "ubicacion;sku;descripcion" in respuesta.text
 
 
-def test_ver_avance_por_operario(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_ver_avance_por_operario(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
-    asignar(cliente, sesion["id"], operario["id"], ["Deposito A"])
+    asignar(cliente, proyecto["id"], operario["id"], ["Deposito A"])
 
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/reparto/operarios")
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/reparto/operarios")
 
     assert respuesta.status_code == 200
     operarios = respuesta.json()["operarios"]
@@ -1002,18 +1002,18 @@ def test_ver_avance_por_operario(cliente, sesion):
     assert operarios[0]["total"] == 1
 
 
-def test_ver_avance_por_operario_sesion_inexistente(cliente):
-    respuesta = cliente.get("/api/sesiones/999/reparto/operarios")
+def test_ver_avance_por_operario_proyecto_inexistente(cliente):
+    respuesta = cliente.get("/api/proyectos/999/reparto/operarios")
 
     assert respuesta.status_code == 404
 
 
 # --- Vincular resuelve la pasada activa del operario -------------------------
 
-def test_vincular_devuelve_la_pasada_activa_del_operario(cliente, sesion):
+def test_vincular_devuelve_la_pasada_activa_del_operario(cliente, proyecto):
     """Con un recuento abierto y el operario asignado ahí, /vincular tiene
     que devolver ESA pasada, no la de numero mas alto por default."""
-    importar_con_ubicacion(cliente, sesion["id"])
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     con = cliente.app.state.con
@@ -1021,11 +1021,11 @@ def test_vincular_devuelve_la_pasada_activa_del_operario(cliente, sesion):
     from app.repos import pasada_item as pasada_item_repo
 
     articulo_id = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? LIMIT 1", (sesion["id"],)
+        "SELECT id FROM articulo WHERE proyecto_id = ? LIMIT 1", (proyecto["id"],)
     ).fetchone()["id"]
     cursor = con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (sesion["id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (proyecto["id"], "2026-08-17T10:00:00Z"),
     )
     pasada_2_id = cursor.lastrowid
     pasada_item_repo.agregar(con, pasada_2_id, [articulo_id])
@@ -1042,11 +1042,11 @@ def test_vincular_devuelve_la_pasada_activa_del_operario(cliente, sesion):
     assert respuesta.json()["pasada"]["numero"] == 2
 
 
-def test_vincular_sin_pasada_activa_devuelve_409(cliente, sesion):
+def test_vincular_sin_pasada_activa_devuelve_409(cliente, proyecto):
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     con = cliente.app.state.con
     con.execute(
-        "UPDATE pasada SET estado = 'cerrada' WHERE sesion_id = ?", (sesion["id"],)
+        "UPDATE pasada SET estado = 'cerrada' WHERE proyecto_id = ?", (proyecto["id"],)
     )
     con.commit()
 
@@ -1058,16 +1058,16 @@ def test_vincular_sin_pasada_activa_devuelve_409(cliente, sesion):
     assert respuesta.status_code == 409
 
 
-def test_vincular_operario_ajeno_al_recuento_sigue_en_la_general(cliente, sesion):
+def test_vincular_operario_ajeno_al_recuento_sigue_en_la_general(cliente, proyecto):
     """El numero de pasada mas alto no puede ganar solo porque es el mas
     alto: si el operario no esta asignado ahi, le toca la general."""
-    importar_con_ubicacion(cliente, sesion["id"])
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     con = cliente.app.state.con
     con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (sesion["id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (proyecto["id"], "2026-08-17T10:00:00Z"),
     )
     con.commit()
     # Juan no está asignado a la pasada 2.
@@ -1080,41 +1080,41 @@ def test_vincular_operario_ajeno_al_recuento_sigue_en_la_general(cliente, sesion
     assert respuesta.json()["pasada"]["numero"] == 1
 
 
-# --- La sesión expone la pasada general, no la de numero mas alto ----------
+# --- El proyecto expone la pasada general, no la de numero mas alto -------
 
-def test_ver_sesion_expone_la_pasada_general_con_un_recuento_abierto(cliente, sesion):
+def test_ver_proyecto_expone_la_pasada_general_con_un_recuento_abierto(cliente, proyecto):
     con = cliente.app.state.con
     con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (sesion["id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (proyecto["id"], "2026-08-17T10:00:00Z"),
     )
     con.commit()
 
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}")
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}")
 
     assert respuesta.json()["pasada"]["numero"] == 1
 
 
 # --- Asignar exige pasada_id y valida exclusividad de recuento -------------
 
-def test_asignar_sin_pasada_id_devuelve_400(cliente, sesion):
+def test_asignar_sin_pasada_id_devuelve_400(cliente, proyecto):
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     respuesta = cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
         json={"ubicaciones": ["Deposito A"]},
     )
 
     assert respuesta.status_code == 400
 
 
-def test_asignar_a_la_general_funciona_con_pasada_id_explicito(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_asignar_a_la_general_funciona_con_pasada_id_explicito(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
-    pasada_general_id = sesion["pasada"]["id"]
+    pasada_general_id = proyecto["pasada"]["id"]
 
     respuesta = cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
         json={"ubicaciones": ["Deposito A"], "pasada_id": pasada_general_id},
     )
 
@@ -1122,72 +1122,72 @@ def test_asignar_a_la_general_funciona_con_pasada_id_explicito(cliente, sesion):
     assert respuesta.json()["ubicaciones"] == ["Deposito A"]
 
 
-def test_asignar_a_un_segundo_recuento_abierto_se_rechaza(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_asignar_a_un_segundo_recuento_abierto_se_rechaza(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     con = cliente.app.state.con
 
     articulo_id = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? LIMIT 1", (sesion["id"],)
+        "SELECT id FROM articulo WHERE proyecto_id = ? LIMIT 1", (proyecto["id"],)
     ).fetchone()["id"]
 
     from app.repos import pasada_item as pasada_item_repo
 
     cursor_1 = con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (sesion["id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (proyecto["id"], "2026-08-17T10:00:00Z"),
     )
     recuento_1 = cursor_1.lastrowid
     pasada_item_repo.agregar(con, recuento_1, [articulo_id])
 
     cursor_2 = con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 3, ?)",
-        (sesion["id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 3, ?)",
+        (proyecto["id"], "2026-08-17T10:00:00Z"),
     )
     recuento_2 = cursor_2.lastrowid
     pasada_item_repo.agregar(con, recuento_2, [articulo_id])
     con.commit()
 
     primera = cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
         json={"ubicaciones": ["Deposito A"], "pasada_id": recuento_1},
     )
     assert primera.status_code == 200
 
     segunda = cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
         json={"ubicaciones": ["Deposito B"], "pasada_id": recuento_2},
     )
 
     assert segunda.status_code == 409
 
 
-def test_reasignar_dentro_del_mismo_recuento_no_se_bloquea(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
+def test_reasignar_dentro_del_mismo_recuento_no_se_bloquea(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     con = cliente.app.state.con
 
     articulo_id = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? LIMIT 1", (sesion["id"],)
+        "SELECT id FROM articulo WHERE proyecto_id = ? LIMIT 1", (proyecto["id"],)
     ).fetchone()["id"]
 
     from app.repos import pasada_item as pasada_item_repo
 
     cursor = con.execute(
-        "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 2, ?)",
-        (sesion["id"], "2026-08-17T10:00:00Z"),
+        "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 2, ?)",
+        (proyecto["id"], "2026-08-17T10:00:00Z"),
     )
     recuento = cursor.lastrowid
     pasada_item_repo.agregar(con, recuento, [articulo_id])
     con.commit()
 
     cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
         json={"ubicaciones": ["Deposito A"], "pasada_id": recuento},
     )
 
     respuesta = cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
         json={"ubicaciones": ["Deposito A", "Deposito B"], "pasada_id": recuento},
     )
 
@@ -1195,8 +1195,8 @@ def test_reasignar_dentro_del_mismo_recuento_no_se_bloquea(cliente, sesion):
     assert respuesta.json()["ubicaciones"] == ["Deposito A", "Deposito B"]
 
 
-def test_listar_pasadas_devuelve_conteo_1(cliente, sesion):
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas")
+def test_listar_pasadas_devuelve_conteo_1(cliente, proyecto):
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/pasadas")
 
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
@@ -1205,12 +1205,12 @@ def test_listar_pasadas_devuelve_conteo_1(cliente, sesion):
     assert cuerpo[0]["es_parcial"] is False
 
 
-def test_abrir_pasada_crea_un_recuento(cliente, sesion):
-    importar(cliente, sesion["id"])
-    articulo_id = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"][0]["id"]
+def test_abrir_pasada_crea_un_recuento(cliente, proyecto):
+    importar(cliente, proyecto["id"])
+    articulo_id = cliente.get(f"/api/proyectos/{proyecto['id']}/tablero").json()["filas"][0]["id"]
 
     respuesta = cliente.post(
-        f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": [articulo_id]}
+        f"/api/proyectos/{proyecto['id']}/pasadas", json={"articulo_ids": [articulo_id]}
     )
 
     assert respuesta.status_code == 200
@@ -1218,45 +1218,45 @@ def test_abrir_pasada_crea_un_recuento(cliente, sesion):
     assert cuerpo["etiqueta"] == "Conteo 2"
     assert cuerpo["es_parcial"] is True
 
-    pasadas = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas").json()
+    pasadas = cliente.get(f"/api/proyectos/{proyecto['id']}/pasadas").json()
     assert len(pasadas) == 2
 
 
-def test_abrir_pasada_sin_articulos_devuelve_400(cliente, sesion):
-    respuesta = cliente.post(f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": []})
+def test_abrir_pasada_sin_articulos_devuelve_400(cliente, proyecto):
+    respuesta = cliente.post(f"/api/proyectos/{proyecto['id']}/pasadas", json={"articulo_ids": []})
 
     assert respuesta.status_code == 400
 
 
-def test_abrir_pasada_en_sesion_inexistente_devuelve_404(cliente):
-    respuesta = cliente.post("/api/sesiones/999/pasadas", json={"articulo_ids": [1]})
+def test_abrir_pasada_en_proyecto_inexistente_devuelve_404(cliente):
+    respuesta = cliente.post("/api/proyectos/999/pasadas", json={"articulo_ids": [1]})
 
     assert respuesta.status_code == 404
 
 
-def test_abrir_pasada_con_sesion_cerrada_devuelve_409(cliente, sesion):
-    importar(cliente, sesion["id"])
-    articulo_id = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"][0]["id"]
-    cliente.post(f"/api/sesiones/{sesion['id']}/cerrar")
+def test_abrir_pasada_con_proyecto_cerrado_devuelve_409(cliente, proyecto):
+    importar(cliente, proyecto["id"])
+    articulo_id = cliente.get(f"/api/proyectos/{proyecto['id']}/tablero").json()["filas"][0]["id"]
+    cliente.post(f"/api/proyectos/{proyecto['id']}/cerrar")
 
     respuesta = cliente.post(
-        f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": [articulo_id]}
+        f"/api/proyectos/{proyecto['id']}/pasadas", json={"articulo_ids": [articulo_id]}
     )
 
     assert respuesta.status_code == 409
 
 
-def test_avance_de_pasada(cliente, sesion):
-    importar_con_ubicacion(cliente, sesion["id"])
-    articulo_a = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"][0]["id"]
+def test_avance_de_pasada(cliente, proyecto):
+    importar_con_ubicacion(cliente, proyecto["id"])
+    articulo_a = cliente.get(f"/api/proyectos/{proyecto['id']}/tablero").json()["filas"][0]["id"]
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 
     recuento = cliente.post(
-        f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": [articulo_a]}
+        f"/api/proyectos/{proyecto['id']}/pasadas", json={"articulo_ids": [articulo_a]}
     ).json()
-    asignar(cliente, sesion["id"], operario["id"], ["Deposito A"], pasada_id=recuento["id"])
+    asignar(cliente, proyecto["id"], operario["id"], ["Deposito A"], pasada_id=recuento["id"])
 
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas/{recuento['id']}/avance")
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/pasadas/{recuento['id']}/avance")
 
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
@@ -1264,38 +1264,38 @@ def test_avance_de_pasada(cliente, sesion):
     assert cuerpo[0]["total"] == 1
 
 
-def test_avance_de_pasada_inexistente_devuelve_404(cliente, sesion):
-    respuesta = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas/999/avance")
+def test_avance_de_pasada_inexistente_devuelve_404(cliente, proyecto):
+    respuesta = cliente.get(f"/api/proyectos/{proyecto['id']}/pasadas/999/avance")
 
     assert respuesta.status_code == 404
 
 
-def test_borrar_pasada_sin_conteos(cliente, sesion):
-    importar(cliente, sesion["id"])
-    articulo_id = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"][0]["id"]
+def test_borrar_pasada_sin_conteos(cliente, proyecto):
+    importar(cliente, proyecto["id"])
+    articulo_id = cliente.get(f"/api/proyectos/{proyecto['id']}/tablero").json()["filas"][0]["id"]
     recuento = cliente.post(
-        f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": [articulo_id]}
+        f"/api/proyectos/{proyecto['id']}/pasadas", json={"articulo_ids": [articulo_id]}
     ).json()
 
-    respuesta = cliente.delete(f"/api/sesiones/{sesion['id']}/pasadas/{recuento['id']}")
+    respuesta = cliente.delete(f"/api/proyectos/{proyecto['id']}/pasadas/{recuento['id']}")
 
     assert respuesta.status_code == 200
-    pasadas = cliente.get(f"/api/sesiones/{sesion['id']}/pasadas").json()
-    assert [p["id"] for p in pasadas] == [sesion["pasada"]["id"]]
+    pasadas = cliente.get(f"/api/proyectos/{proyecto['id']}/pasadas").json()
+    assert [p["id"] for p in pasadas] == [proyecto["pasada"]["id"]]
 
 
-def test_borrar_pasada_con_conteos_devuelve_409(cliente, sesion):
-    importar(cliente, sesion["id"])
-    articulo_id = cliente.get(f"/api/sesiones/{sesion['id']}/tablero").json()["filas"][0]["id"]
+def test_borrar_pasada_con_conteos_devuelve_409(cliente, proyecto):
+    importar(cliente, proyecto["id"])
+    articulo_id = cliente.get(f"/api/proyectos/{proyecto['id']}/tablero").json()["filas"][0]["id"]
     recuento = cliente.post(
-        f"/api/sesiones/{sesion['id']}/pasadas", json={"articulo_ids": [articulo_id]}
+        f"/api/proyectos/{proyecto['id']}/pasadas", json={"articulo_ids": [articulo_id]}
     ).json()
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
     cliente.post(
         "/api/dispositivo/vincular", headers={"X-Token": operario["token_dispositivo"]}
     )
     cliente.put(
-        f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+        f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
         json={"ubicaciones": ["Deposito A"], "pasada_id": recuento["id"]},
     )
     cliente.post(
@@ -1307,19 +1307,19 @@ def test_borrar_pasada_con_conteos_devuelve_409(cliente, sesion):
         }]},
     )
 
-    respuesta = cliente.delete(f"/api/sesiones/{sesion['id']}/pasadas/{recuento['id']}")
+    respuesta = cliente.delete(f"/api/proyectos/{proyecto['id']}/pasadas/{recuento['id']}")
 
     assert respuesta.status_code == 409
 
 
-def test_borrar_pasada_general_devuelve_400(cliente, sesion):
-    respuesta = cliente.delete(f"/api/sesiones/{sesion['id']}/pasadas/{sesion['pasada']['id']}")
+def test_borrar_pasada_general_devuelve_400(cliente, proyecto):
+    respuesta = cliente.delete(f"/api/proyectos/{proyecto['id']}/pasadas/{proyecto['pasada']['id']}")
 
     assert respuesta.status_code == 400
 
 
-def test_borrar_pasada_inexistente_devuelve_404(cliente, sesion):
-    respuesta = cliente.delete(f"/api/sesiones/{sesion['id']}/pasadas/999")
+def test_borrar_pasada_inexistente_devuelve_404(cliente, proyecto):
+    respuesta = cliente.delete(f"/api/proyectos/{proyecto['id']}/pasadas/999")
 
     assert respuesta.status_code == 404
 

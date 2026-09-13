@@ -38,8 +38,8 @@ def _validar_mapeo(mapeo, encabezados):
             )
 
 
-def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
-    """Carga el maestro en la sesión. Devuelve el resumen de lo importado."""
+def importar(con, proyecto_id, contenido, mapeo, unidad_por_defecto="UN"):
+    """Carga el maestro en el proyecto. Devuelve el resumen de lo importado."""
     encabezados, filas = lectura_csv.leer(contenido)
     _validar_mapeo(mapeo, encabezados)
 
@@ -79,7 +79,7 @@ def importar(con, sesion_id, contenido, mapeo, unidad_por_defecto="UN"):
     # completo y los artículos que faltan aparecen como no contados.
     with con:
         for numero_fila, fila in enumerate(filas, start=2):
-            _cargar_fila(con, sesion_id, fila, numero_fila, config, estado)
+            _cargar_fila(con, proyecto_id, fila, numero_fila, config, estado)
 
     return estado["resultado"]
 
@@ -99,7 +99,7 @@ def _mayor_orden_del_archivo(filas, indice):
     return mayor
 
 
-def _cargar_fila(con, sesion_id, fila, numero_fila, config, estado):
+def _cargar_fila(con, proyecto_id, fila, numero_fila, config, estado):
     """Carga una fila del maestro, acumulando los avisos en `estado`."""
     indice = config["indice"]
     encabezados = config["encabezados"]
@@ -206,10 +206,10 @@ def _cargar_fila(con, sesion_id, fila, numero_fila, config, estado):
     con.execute(
         """
         INSERT INTO articulo (
-            sesion_id, id_orden, tipo, material, sku, descripcion, grupo,
+            proyecto_id, id_orden, tipo, material, sku, descripcion, grupo,
             ubicacion, unidad, stock_sistema, costo_unitario, origen, creado_en
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'importado', ?)
-        ON CONFLICT (sesion_id, sku) DO UPDATE SET
+        ON CONFLICT (proyecto_id, sku) DO UPDATE SET
             id_orden = excluded.id_orden,
             tipo = excluded.tipo,
             material = excluded.material,
@@ -221,7 +221,7 @@ def _cargar_fila(con, sesion_id, fila, numero_fila, config, estado):
             costo_unitario = excluded.costo_unitario
         """,
         (
-            sesion_id, id_orden, valor("tipo") or None, valor("material") or None,
+            proyecto_id, id_orden, valor("tipo") or None, valor("material") or None,
             sku, descripcion, valor("grupo") or None, valor("ubicacion") or None,
             unidad, stock, costo, ahora,
         ),
@@ -229,10 +229,10 @@ def _cargar_fila(con, sesion_id, fila, numero_fila, config, estado):
 
     # No se usa lastrowid: en un upsert que actualiza en vez de insertar,
     # SQLite deja el rowid del último INSERT exitoso, que puede ser de
-    # otra fila. El SELECT por (sesion_id, sku) siempre da el correcto.
+    # otra fila. El SELECT por (proyecto_id, sku) siempre da el correcto.
     articulo_id = con.execute(
-        "SELECT id FROM articulo WHERE sesion_id = ? AND sku = ?",
-        (sesion_id, sku),
+        "SELECT id FROM articulo WHERE proyecto_id = ? AND sku = ?",
+        (proyecto_id, sku),
     ).fetchone()["id"]
 
     codigo = valor("codigo_barras") or sku

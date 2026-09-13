@@ -1,4 +1,4 @@
-"""Sesiones de inventario y sus pasadas de conteo."""
+"""Proyectos de inventario y sus pasadas de conteo."""
 
 from app import reloj
 from app.repos import pasada_item as pasada_item_repo
@@ -9,78 +9,78 @@ def etiqueta_pasada(numero):
     return f"Conteo {numero}"
 
 
-def sesion_abierta(con):
+def proyecto_abierto(con):
     fila = con.execute(
-        "SELECT * FROM sesion WHERE estado = 'abierta' LIMIT 1"
+        "SELECT * FROM proyecto WHERE estado = 'abierta' LIMIT 1"
     ).fetchone()
     return dict(fila) if fila else None
 
 
 def crear(con, nombre):
-    """Crea la sesión y abre su Conteo 1.
+    """Crea el proyecto y abre su Conteo 1.
 
-    Solo puede haber una sesión abierta a la vez: los dispositivos se
-    vinculan a la sesión abierta y con dos no habría forma de saber a
+    Solo puede haber un proyecto abierto a la vez: los dispositivos se
+    vinculan al proyecto abierto y con dos no habría forma de saber a
     cuál pertenece un conteo.
     """
-    if sesion_abierta(con) is not None:
-        raise ValueError("Ya hay una sesión abierta. Cerrala antes de crear otra.")
+    if proyecto_abierto(con) is not None:
+        raise ValueError("Ya hay un proyecto abierto. Cerralo antes de crear otro.")
 
     ahora = reloj.ahora()
 
-    # Las dos escrituras van juntas o no va ninguna: una sesión sin pasada
+    # Las dos escrituras van juntas o no va ninguna: un proyecto sin pasada
     # no se puede usar para contar ni se puede cerrar.
     with con:
         cursor = con.execute(
-            "INSERT INTO sesion (nombre, fecha_creacion) VALUES (?, ?)",
+            "INSERT INTO proyecto (nombre, fecha_creacion) VALUES (?, ?)",
             (nombre, ahora),
         )
-        sesion_id = cursor.lastrowid
+        proyecto_id = cursor.lastrowid
 
         con.execute(
-            "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, 1, ?)",
-            (sesion_id, ahora),
+            "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, 1, ?)",
+            (proyecto_id, ahora),
         )
 
-    return sesion_id
+    return proyecto_id
 
 
-def obtener(con, sesion_id):
-    fila = con.execute("SELECT * FROM sesion WHERE id = ?", (sesion_id,)).fetchone()
+def obtener(con, proyecto_id):
+    fila = con.execute("SELECT * FROM proyecto WHERE id = ?", (proyecto_id,)).fetchone()
     if fila is None:
-        raise ValueError(f"No existe la sesión {sesion_id}")
+        raise ValueError(f"No existe el proyecto {proyecto_id}")
     return dict(fila)
 
 
 def listar(con):
-    filas = con.execute("SELECT * FROM sesion ORDER BY id DESC").fetchall()
+    filas = con.execute("SELECT * FROM proyecto ORDER BY id DESC").fetchall()
     return [dict(fila) for fila in filas]
 
 
-def pasada_abierta(con, sesion_id):
+def pasada_abierta(con, proyecto_id):
     fila = con.execute(
-        "SELECT * FROM pasada WHERE sesion_id = ? AND estado = 'abierta' "
+        "SELECT * FROM pasada WHERE proyecto_id = ? AND estado = 'abierta' "
         "ORDER BY numero DESC LIMIT 1",
-        (sesion_id,),
+        (proyecto_id,),
     ).fetchone()
     if fila is None:
-        raise ValueError(f"La sesión {sesion_id} no tiene ninguna pasada abierta")
+        raise ValueError(f"El proyecto {proyecto_id} no tiene ninguna pasada abierta")
 
     pasada = dict(fila)
     pasada["etiqueta"] = etiqueta_pasada(pasada["numero"])
     return pasada
 
 
-def ultima_pasada(con, sesion_id):
+def ultima_pasada(con, proyecto_id):
     """La pasada de mayor número, esté abierta o cerrada. `None` si no hay.
 
     `pasada_abierta` no sirve para mirar hacia atrás: tira `ValueError` en
-    cuanto la sesión se cierra, que es justo cuando alguien revisa quién
-    contó qué. Acá una sesión cerrada es un caso normal, no un error.
+    cuanto el proyecto se cierra, que es justo cuando alguien revisa quién
+    contó qué. Acá un proyecto cerrado es un caso normal, no un error.
     """
     fila = con.execute(
-        "SELECT * FROM pasada WHERE sesion_id = ? ORDER BY numero DESC LIMIT 1",
-        (sesion_id,),
+        "SELECT * FROM pasada WHERE proyecto_id = ? ORDER BY numero DESC LIMIT 1",
+        (proyecto_id,),
     ).fetchone()
     if fila is None:
         return None
@@ -90,11 +90,11 @@ def ultima_pasada(con, sesion_id):
     return pasada
 
 
-def obtener_pasada(con, sesion_id, pasada_id):
-    """Una pasada puntual de la sesión, o `None` si no existe o es de otra."""
+def obtener_pasada(con, proyecto_id, pasada_id):
+    """Una pasada puntual del proyecto, o `None` si no existe o es de otro."""
     fila = con.execute(
-        "SELECT * FROM pasada WHERE id = ? AND sesion_id = ?",
-        (pasada_id, sesion_id),
+        "SELECT * FROM pasada WHERE id = ? AND proyecto_id = ?",
+        (pasada_id, proyecto_id),
     ).fetchone()
     if fila is None:
         return None
@@ -103,16 +103,16 @@ def obtener_pasada(con, sesion_id, pasada_id):
     return pasada
 
 
-def pasadas_abiertas(con, sesion_id):
-    """Todas las pasadas abiertas de la sesión, ordenadas por número.
+def pasadas_abiertas(con, proyecto_id):
+    """Todas las pasadas abiertas del proyecto, ordenadas por número.
 
     Con una sola pasada nunca importó si había una o varias; con recuentos
     concurrentes, puede haber más de una a la vez.
     """
     filas = con.execute(
-        "SELECT * FROM pasada WHERE sesion_id = ? AND estado = 'abierta' "
+        "SELECT * FROM pasada WHERE proyecto_id = ? AND estado = 'abierta' "
         "ORDER BY numero",
-        (sesion_id,),
+        (proyecto_id,),
     ).fetchall()
     pasadas = [dict(fila) for fila in filas]
     for pasada in pasadas:
@@ -120,20 +120,20 @@ def pasadas_abiertas(con, sesion_id):
     return pasadas
 
 
-def pasada_general_abierta(con, sesion_id):
+def pasada_general_abierta(con, proyecto_id):
     """La pasada abierta de menor número que no es un recuento.
 
     Un recuento tiene filas en `pasada_item`; la general nunca las tiene.
     Devuelve `None` si no queda ninguna pasada general abierta —puede pasar
     si se cerró y solo quedan recuentos parciales abiertos—.
     """
-    for pasada in pasadas_abiertas(con, sesion_id):
+    for pasada in pasadas_abiertas(con, proyecto_id):
         if not pasada_item_repo.es_parcial(con, pasada["id"]):
             return pasada
     return None
 
 
-def pasada_activa_de_operario(con, sesion_id, operario_id):
+def pasada_activa_de_operario(con, proyecto_id, operario_id):
     """En qué pasada está trabajando este operario ahora mismo.
 
     1. Si tiene una asignación en un recuento abierto, esa es su pasada
@@ -147,26 +147,26 @@ def pasada_activa_de_operario(con, sesion_id, operario_id):
     """
     from app.repos import asignaciones as asignaciones_repo
 
-    for pasada in pasadas_abiertas(con, sesion_id):
+    for pasada in pasadas_abiertas(con, proyecto_id):
         if not pasada_item_repo.es_parcial(con, pasada["id"]):
             continue
         if asignaciones_repo.de_operario(con, pasada["id"], operario_id):
             return pasada
 
-    general = pasada_general_abierta(con, sesion_id)
+    general = pasada_general_abierta(con, proyecto_id)
     if general is not None:
         return general
 
     raise ValueError(
-        f"El operario {operario_id} no tiene ninguna pasada activa en la "
-        f"sesión {sesion_id}"
+        f"El operario {operario_id} no tiene ninguna pasada activa en el "
+        f"proyecto {proyecto_id}"
     )
 
 
-def listar_pasadas(con, sesion_id):
-    """Todas las pasadas de la sesión, marcando cuáles son recuentos."""
+def listar_pasadas(con, proyecto_id):
+    """Todas las pasadas del proyecto, marcando cuáles son recuentos."""
     filas = con.execute(
-        "SELECT * FROM pasada WHERE sesion_id = ? ORDER BY numero", (sesion_id,)
+        "SELECT * FROM pasada WHERE proyecto_id = ? ORDER BY numero", (proyecto_id,)
     ).fetchall()
     pasadas = [dict(fila) for fila in filas]
     for pasada in pasadas:
@@ -177,27 +177,27 @@ def listar_pasadas(con, sesion_id):
     return pasadas
 
 
-def abrir_pasada(con, sesion_id, articulo_ids):
+def abrir_pasada(con, proyecto_id, articulo_ids):
     """Abre un recuento nuevo con esos SKU marcados en `pasada_item`.
 
     Transaccional: la pasada y sus filas de `pasada_item` se graban juntas
     o no se graba nada.
     """
-    sesion = obtener(con, sesion_id)
-    if sesion["estado"] != "abierta":
-        raise ValueError(f"La sesión {sesion_id} está cerrada")
+    proyecto = obtener(con, proyecto_id)
+    if proyecto["estado"] != "abierta":
+        raise ValueError(f"El proyecto {proyecto_id} está cerrado")
     if not articulo_ids:
         raise ValueError("Hay que marcar al menos un SKU para el recuento")
 
     ahora = reloj.ahora()
     with con:
         siguiente_numero = con.execute(
-            "SELECT COALESCE(MAX(numero), 0) + 1 FROM pasada WHERE sesion_id = ?",
-            (sesion_id,),
+            "SELECT COALESCE(MAX(numero), 0) + 1 FROM pasada WHERE proyecto_id = ?",
+            (proyecto_id,),
         ).fetchone()[0]
         cursor = con.execute(
-            "INSERT INTO pasada (sesion_id, numero, fecha_apertura) VALUES (?, ?, ?)",
-            (sesion_id, siguiente_numero, ahora),
+            "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) VALUES (?, ?, ?)",
+            (proyecto_id, siguiente_numero, ahora),
         )
         pasada_id = cursor.lastrowid
         for articulo_id in articulo_ids:
@@ -206,13 +206,13 @@ def abrir_pasada(con, sesion_id, articulo_ids):
                 (pasada_id, articulo_id),
             )
 
-    pasada = obtener_pasada(con, sesion_id, pasada_id)
+    pasada = obtener_pasada(con, proyecto_id, pasada_id)
     pasada["es_parcial"] = True
     pasada["cantidad_sku"] = len(pasada_item_repo.de_pasada(con, pasada_id))
     return pasada
 
 
-def borrar_pasada(con, sesion_id, pasada_id):
+def borrar_pasada(con, proyecto_id, pasada_id):
     """Borra un recuento abierto por error, antes de que nadie cuente ahí.
 
     Solo mientras no tiene ningún conteo: en cuanto hay uno, es historial —
@@ -220,12 +220,12 @@ def borrar_pasada(con, sesion_id, pasada_id):
     cualquier otro conteo. La pasada general (Conteo 1) tampoco se puede
     borrar: siempre tiene que quedar una pasada donde contar.
     """
-    pasada = obtener_pasada(con, sesion_id, pasada_id)
+    pasada = obtener_pasada(con, proyecto_id, pasada_id)
     if pasada is None:
-        raise ValueError(f"No existe la pasada {pasada_id} en esta sesión")
+        raise ValueError(f"No existe la pasada {pasada_id} en este proyecto")
 
     if not pasada_item_repo.es_parcial(con, pasada_id):
-        raise ValueError("No se puede borrar la pasada general de la sesión")
+        raise ValueError("No se puede borrar la pasada general del proyecto")
 
     tiene_conteos = con.execute(
         "SELECT 1 FROM conteo WHERE pasada_id = ? LIMIT 1", (pasada_id,)
@@ -241,21 +241,21 @@ def borrar_pasada(con, sesion_id, pasada_id):
         con.execute("DELETE FROM pasada WHERE id = ?", (pasada_id,))
 
 
-def cerrar(con, sesion_id):
-    obtener(con, sesion_id)  # falla con un mensaje claro si no existe
+def cerrar(con, proyecto_id):
+    obtener(con, proyecto_id)  # falla con un mensaje claro si no existe
     ahora = reloj.ahora()
 
     with con:
         con.execute(
             "UPDATE pasada SET estado = 'cerrada', fecha_cierre = ? "
-            "WHERE sesion_id = ? AND estado = 'abierta'",
-            (ahora, sesion_id),
+            "WHERE proyecto_id = ? AND estado = 'abierta'",
+            (ahora, proyecto_id),
         )
-        con.execute("UPDATE sesion SET estado = 'cerrada' WHERE id = ?", (sesion_id,))
+        con.execute("UPDATE proyecto SET estado = 'cerrada' WHERE id = ?", (proyecto_id,))
 
 
-def fijar_tolerancia(con, sesion_id, pct, min_abs_milesimas):
-    obtener(con, sesion_id)
+def fijar_tolerancia(con, proyecto_id, pct, min_abs_milesimas):
+    obtener(con, proyecto_id)
 
     # La base lo rechazaría igual, pero con un mensaje de SQLite que no le
     # dice nada a quien está corriendo el inventario.
@@ -266,6 +266,6 @@ def fijar_tolerancia(con, sesion_id, pct, min_abs_milesimas):
 
     with con:
         con.execute(
-            "UPDATE sesion SET tolerancia_pct = ?, tolerancia_min_abs = ? WHERE id = ?",
-            (pct, min_abs_milesimas, sesion_id),
+            "UPDATE proyecto SET tolerancia_pct = ?, tolerancia_min_abs = ? WHERE id = ?",
+            (pct, min_abs_milesimas, proyecto_id),
         )

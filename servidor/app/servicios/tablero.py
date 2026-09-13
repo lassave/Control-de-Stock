@@ -1,6 +1,6 @@
 """Cálculo del tablero: valor vigente, diferencia y estado de cada artículo."""
 
-from app.repos import asignaciones, sesiones
+from app.repos import asignaciones, proyectos
 
 SIN_CONTAR = "SIN CONTAR"
 CONSOLIDADO = "CONSOLIDADO"
@@ -8,7 +8,7 @@ A_RECONTAR = "A RECONTAR"
 
 
 def estado_de(dif, stock, pct, min_abs, hubo_conteo):
-    """Estado de un artículo según la tolerancia de la sesión.
+    """Estado de un artículo según la tolerancia del proyecto.
 
     Entra en tolerancia si la diferencia cae dentro del porcentaje o dentro
     del mínimo absoluto, el que resulte mayor. El porcentaje solo no sirve:
@@ -151,13 +151,13 @@ def _consulta_base():
         LEFT JOIN ultima_pasada u ON u.articulo_id = a.id
         LEFT JOIN vigentes v
             ON v.articulo_id = a.id AND v.pasada_numero = u.numero
-        WHERE a.sesion_id = ? AND a.fusionado_en IS NULL
+        WHERE a.proyecto_id = ? AND a.fusionado_en IS NULL
         GROUP BY a.id
         ORDER BY a.id_orden
     """
 
 
-def _armar_fila(fila, sesion, asignados):
+def _armar_fila(fila, proyecto, asignados):
     hubo_conteo = fila["cantidad_conteos"] > 0
     total = fila["total"] if hubo_conteo else None
     dif = total - fila["stock_sistema"] if hubo_conteo else None
@@ -171,7 +171,7 @@ def _armar_fila(fila, sesion, asignados):
 
     estado = estado_de(
         dif or 0, fila["stock_sistema"],
-        sesion["tolerancia_pct"], sesion["tolerancia_min_abs"],
+        proyecto["tolerancia_pct"], proyecto["tolerancia_min_abs"],
         hubo_conteo,
     )
 
@@ -231,12 +231,12 @@ def _pasa_filtros(fila, filtros):
     return True
 
 
-def filas(con, sesion_id, filtros=None):
+def filas(con, proyecto_id, filtros=None):
     """Las filas del tablero, ya calculadas y filtradas."""
-    sesion = sesiones.obtener(con, sesion_id)
-    crudas = con.execute(_consulta_base(), (sesion_id,)).fetchall()
-    asignados = asignaciones.asignados_por_articulo(con, sesion_id)
-    resultado = [_armar_fila(fila, sesion, asignados) for fila in crudas]
+    proyecto = proyectos.obtener(con, proyecto_id)
+    crudas = con.execute(_consulta_base(), (proyecto_id,)).fetchall()
+    asignados = asignaciones.asignados_por_articulo(con, proyecto_id)
+    resultado = [_armar_fila(fila, proyecto, asignados) for fila in crudas]
 
     if filtros:
         resultado = [fila for fila in resultado if _pasa_filtros(fila, filtros)]
@@ -244,9 +244,9 @@ def filas(con, sesion_id, filtros=None):
     return resultado
 
 
-def resumen(con, sesion_id):
+def resumen(con, proyecto_id):
     """Las métricas de cabecera del tablero."""
-    todas = filas(con, sesion_id)
+    todas = filas(con, proyecto_id)
     total = len(todas)
     contados = sum(1 for fila in todas if fila["estado"] != SIN_CONTAR)
 

@@ -13,7 +13,7 @@ def test_crear_esquema_crea_todas_las_tablas(con):
     tablas = {fila["name"] for fila in filas}
 
     esperadas = {
-        "sesion", "pasada", "unidad", "articulo", "codigo_barras",
+        "proyecto", "pasada", "unidad", "articulo", "codigo_barras",
         "operario", "conteo", "pasada_item", "asignacion",
         "mapeo_columnas", "codigo_aprendido", "evento_auditoria",
     }
@@ -42,60 +42,60 @@ def test_claves_foraneas_activas(con):
     assert activo == 1
 
 
-def crear_sesion(con):
+def crear_proyecto(con):
     con.execute(
-        "INSERT INTO sesion (id, nombre, fecha_creacion) VALUES (1, 'X', '2026-08-10T00:00:00Z')"
+        "INSERT INTO proyecto (id, nombre, fecha_creacion) VALUES (1, 'X', '2026-08-10T00:00:00Z')"
     )
     return 1
 
 
-def crear_articulo(con, sesion_id, sku="A", unidad="UN", stock=0):
+def crear_articulo(con, proyecto_id, sku="A", unidad="UN", stock=0):
     con.execute(
-        "INSERT INTO articulo (sesion_id, id_orden, sku, descripcion, unidad, "
+        "INSERT INTO articulo (proyecto_id, id_orden, sku, descripcion, unidad, "
         "stock_sistema, creado_en) VALUES (?, 1, ?, 'Descripción', ?, ?, '2026-08-10T00:00:00Z')",
-        (sesion_id, sku, unidad, stock),
+        (proyecto_id, sku, unidad, stock),
     )
 
 
-def test_rechaza_sku_repetido_en_la_misma_sesion(con):
-    sesion_id = crear_sesion(con)
-    crear_articulo(con, sesion_id, sku="A")
+def test_rechaza_sku_repetido_en_el_mismo_proyecto(con):
+    proyecto_id = crear_proyecto(con)
+    crear_articulo(con, proyecto_id, sku="A")
 
     with pytest.raises(sqlite3.IntegrityError):
-        crear_articulo(con, sesion_id, sku="A")
+        crear_articulo(con, proyecto_id, sku="A")
 
 
-def test_rechaza_pasada_de_una_sesion_inexistente(con):
+def test_rechaza_pasada_de_un_proyecto_inexistente(con):
     with pytest.raises(sqlite3.IntegrityError):
         con.execute(
-            "INSERT INTO pasada (sesion_id, numero, fecha_apertura) "
+            "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) "
             "VALUES (999, 1, '2026-08-10T00:00:00Z')"
         )
 
 
 def test_rechaza_unidad_que_no_existe(con):
     """Un CSV que trae «CAJA» en vez de «CJ» no puede entrar sin que nadie lo note."""
-    sesion_id = crear_sesion(con)
+    proyecto_id = crear_proyecto(con)
 
     with pytest.raises(sqlite3.IntegrityError):
-        crear_articulo(con, sesion_id, unidad="CAJA")
+        crear_articulo(con, proyecto_id, unidad="CAJA")
 
 
 def test_rechaza_stock_decimal(con):
     """Las milésimas solo son exactas si la columna guarda enteros de verdad."""
-    sesion_id = crear_sesion(con)
+    proyecto_id = crear_proyecto(con)
 
     with pytest.raises(sqlite3.IntegrityError):
-        crear_articulo(con, sesion_id, stock=3.5)
+        crear_articulo(con, proyecto_id, stock=3.5)
 
 
-def test_solo_admite_una_sesion_abierta(con):
-    """Los dispositivos se vinculan a «la» sesión abierta: no puede haber dos."""
-    crear_sesion(con)
+def test_solo_admite_un_proyecto_abierto(con):
+    """Los dispositivos se vinculan a «el» proyecto abierto: no puede haber dos."""
+    crear_proyecto(con)
 
     with pytest.raises(sqlite3.IntegrityError):
         con.execute(
-            "INSERT INTO sesion (nombre, fecha_creacion) "
+            "INSERT INTO proyecto (nombre, fecha_creacion) "
             "VALUES ('Otra', '2026-08-10T00:00:00Z')"
         )
 
@@ -104,22 +104,22 @@ def test_el_contexto_descarta_lo_escrito_si_algo_falla(con):
     """Dos escrituras van juntas o no va ninguna."""
     with pytest.raises(sqlite3.IntegrityError):
         with con:
-            crear_sesion(con)
+            crear_proyecto(con)
             con.execute(
-                "INSERT INTO pasada (sesion_id, numero, fecha_apertura) "
+                "INSERT INTO pasada (proyecto_id, numero, fecha_apertura) "
                 "VALUES (999, 1, '2026-08-10T00:00:00Z')"
             )
 
-    quedaron = con.execute("SELECT COUNT(*) AS n FROM sesion").fetchone()["n"]
+    quedaron = con.execute("SELECT COUNT(*) AS n FROM proyecto").fetchone()["n"]
     assert quedaron == 0
 
 
 def test_el_contexto_confirma_al_salir_sin_error(con):
     with con:
-        crear_sesion(con)
+        crear_proyecto(con)
 
     con.rollback()
-    quedaron = con.execute("SELECT COUNT(*) AS n FROM sesion").fetchone()["n"]
+    quedaron = con.execute("SELECT COUNT(*) AS n FROM proyecto").fetchone()["n"]
     assert quedaron == 1
 
 
