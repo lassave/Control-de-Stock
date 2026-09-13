@@ -11,7 +11,7 @@ import com.controldestock.red.ClienteServidor
 import com.controldestock.red.ErrorDeServidor
 
 sealed class ResultadoDeVinculacion {
-    data class Vinculado(val operario: String, val sesion: String) : ResultadoDeVinculacion()
+    data class Vinculado(val operario: String, val proyecto: String) : ResultadoDeVinculacion()
     data class Fallo(val mensaje: String) : ResultadoDeVinculacion()
 }
 
@@ -42,7 +42,7 @@ class Vinculador(
                     token = datos.token,
                     operarioId = quien.operario.id,
                     operarioNombre = quien.operario.nombre,
-                    sesionId = quien.sesion.id,
+                    proyectoId = quien.proyecto.id,
                     pasadaId = quien.pasada.id,
                     pasadaNumero = quien.pasada.numero,
                     pasadaEtiqueta = quien.pasada.etiqueta,
@@ -57,7 +57,7 @@ class Vinculador(
                         descripcion = it.descripcion, grupo = it.grupo,
                         ubicacion = it.ubicacion, unidad = it.unidad,
                         pasadaNumero = quien.pasada.numero,
-                        sesionId = quien.sesion.id,
+                        proyectoId = quien.proyecto.id,
                         busqueda = textoDeBusqueda(it.descripcion, it.sku, it.ubicacion),
                     )
                 },
@@ -67,7 +67,7 @@ class Vinculador(
                 },
             )
 
-            ResultadoDeVinculacion.Vinculado(quien.operario.nombre, quien.sesion.nombre)
+            ResultadoDeVinculacion.Vinculado(quien.operario.nombre, quien.proyecto.nombre)
         } catch (error: ErrorDeServidor) {
             ResultadoDeVinculacion.Fallo(error.message.orEmpty())
         }

@@ -30,7 +30,7 @@ val jsonDelContrato = Json { ignoreUnknownKeys = true }
 data class OperarioRemoto(val id: Int, val nombre: String)
 
 @Serializable
-data class SesionRemota(val id: Int, val nombre: String)
+data class ProyectoRemoto(val id: Int, val nombre: String)
 
 @Serializable
 data class PasadaRemota(
@@ -42,7 +42,7 @@ data class PasadaRemota(
 @Serializable
 data class RespuestaVinculacion(
     val operario: OperarioRemoto,
-    val sesion: SesionRemota,
+    val proyecto: ProyectoRemoto,
     val pasada: PasadaRemota,
 )
 
@@ -74,7 +74,7 @@ data class UnidadRemota(
 
 @Serializable
 data class RespuestaMaestro(
-    @SerialName("sesion_id") val sesionId: Int,
+    @SerialName("proyecto_id") val proyectoId: Int,
     val articulos: List<ArticuloRemoto>,
     val codigos: List<CodigoRemoto>,
     val unidades: List<UnidadRemota>,

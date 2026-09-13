@@ -34,7 +34,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * `reintentable`: el token revocado, el inventario cerrado y el portal
  * cautivo de una WiFi ajena tampoco son reintentables, y sin embargo el
  * pedido nunca llegó a evaluarse — el operario revincula, o le pide al panel
- * que reabra la sesión, y andaba. Confundirlos borra trabajo del operario por
+ * que reabra el proyecto, y andaba. Confundirlos borra trabajo del operario por
  * haberse enganchado a la red equivocada.
  */
 class ErrorDeServidor(

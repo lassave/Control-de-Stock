@@ -55,7 +55,7 @@ class VinculadorTest {
     private fun datos() = DatosDelQr(servidor.url("/").toString().trimEnd('/'), "token")
 
     @Test
-    fun `vincular guarda la sesion y descarga el maestro`() = runTest {
+    fun `vincular guarda el proyecto y descarga el maestro`() = runTest {
         responder(contrato("vinculacion"))
         responder(contrato("maestro"))
 
@@ -133,7 +133,7 @@ class VinculadorTest {
     }
 
     @Test
-    fun `el maestro queda atado a la sesion y a la pasada que dijo el servidor`() = runTest {
+    fun `el maestro queda atado al proyecto y a la pasada que dijo el servidor`() = runTest {
         responder(contrato("vinculacion"))
         responder(contrato("maestro"))
 
@@ -141,7 +141,7 @@ class VinculadorTest {
 
         val articulo = base.maestroDao().articulos().first()
         val vinculacion = base.vinculacionDao().actual()!!
-        assertEquals(vinculacion.sesionId, articulo.sesionId)
+        assertEquals(vinculacion.proyectoId, articulo.proyectoId)
         assertEquals(vinculacion.pasadaNumero, articulo.pasadaNumero)
     }
 }

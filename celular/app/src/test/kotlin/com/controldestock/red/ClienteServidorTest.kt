@@ -150,8 +150,8 @@ class ClienteServidorTest {
     }
 
     @Test
-    fun `una sesion cerrada se explica y no se reintenta`() = runTest {
-        responder("""{"detail":"No hay ninguna sesión abierta"}""", HttpURLConnection.HTTP_CONFLICT)
+    fun `un proyecto cerrado se explica y no se reintenta`() = runTest {
+        responder("""{"detail":"No hay ningún proyecto abierto"}""", HttpURLConnection.HTTP_CONFLICT)
 
         val error = try {
             cliente.maestro(); null

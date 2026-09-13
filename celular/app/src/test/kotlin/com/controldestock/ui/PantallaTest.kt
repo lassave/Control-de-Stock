@@ -14,12 +14,12 @@ class PantallaTest {
     private val vinculacion = VinculacionEntidad(
         url = "http://172.16.11.12:8000", token = "abc",
         operarioId = 1, operarioNombre = "Juan",
-        sesionId = 1, pasadaId = 1, pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
+        proyectoId = 1, pasadaId = 1, pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
     )
 
     private val tornillos = ArticuloEntidad(
         id = 1, idOrden = 1, sku = "A-1", descripcion = "Tornillos",
-        unidad = "UN", ubicacion = "P-1", pasadaNumero = 1, sesionId = 1,
+        unidad = "UN", ubicacion = "P-1", pasadaNumero = 1, proyectoId = 1,
         busqueda = textoDeBusqueda("Tornillos", "A-1", "P-1"),
     )
 

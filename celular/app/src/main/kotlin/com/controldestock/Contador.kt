@@ -81,7 +81,7 @@ class Contador(
         )
 
         base.conteoDao().guardar(
-            ConteoEntidad.de(evento, articulo.id, articulo.sesionId, vinculacion?.pasadaId ?: 0),
+            ConteoEntidad.de(evento, articulo.id, articulo.proyectoId, vinculacion?.pasadaId ?: 0),
         )
     }
 
@@ -126,7 +126,7 @@ class Contador(
             ubicacion = ubicacion,
             unidad = unidad,
             pasadaNumero = vinculacion?.pasadaNumero ?: 1,
-            sesionId = vinculacion?.sesionId ?: 0,
+            proyectoId = vinculacion?.proyectoId ?: 0,
             busqueda = textoDeBusqueda(descripcion, codigo, ubicacion),
             estadoAlta = EstadoSync.PENDIENTE.name,
         )

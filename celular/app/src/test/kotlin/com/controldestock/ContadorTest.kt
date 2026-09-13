@@ -40,12 +40,12 @@ class ContadorTest {
             articulos = listOf(
                 ArticuloEntidad(
                     id = 1, idOrden = 1, sku = "A-1", descripcion = "Fideos",
-                    unidad = "UN", ubicacion = "P-1", pasadaNumero = 1, sesionId = 1,
+                    unidad = "UN", ubicacion = "P-1", pasadaNumero = 1, proyectoId = 1,
                     busqueda = textoDeBusqueda("Fideos", "A-1", "P-1"),
                 ),
                 ArticuloEntidad(
                     id = 2, idOrden = 2, sku = "A-2", descripcion = "Harina",
-                    unidad = "KG", ubicacion = "P-2", pasadaNumero = 1, sesionId = 1,
+                    unidad = "KG", ubicacion = "P-2", pasadaNumero = 1, proyectoId = 1,
                     busqueda = textoDeBusqueda("Harina", "A-2", "P-2"),
                 ),
             ),
@@ -96,7 +96,7 @@ class ContadorTest {
             listOf(
                 ArticuloEntidad(
                     id = 3, idOrden = 3, sku = "A-3", descripcion = "Raro",
-                    unidad = "XX", ubicacion = null, pasadaNumero = 1, sesionId = 1,
+                    unidad = "XX", ubicacion = null, pasadaNumero = 1, proyectoId = 1,
                     busqueda = textoDeBusqueda("Raro", "A-3", null),
                 ),
             ),
@@ -144,12 +144,12 @@ class ContadorTest {
     }
 
     @Test
-    fun `el conteo queda atado a la sesion del maestro`() = runTest {
+    fun `el conteo queda atado al proyecto del maestro`() = runTest {
         val articulo = (contador().buscar("7790001") as Hallazgo.Encontrado).articulo
 
         contador().registrar(articulo, 1000, null, null)
 
-        assertEquals(1, base.conteoDao().todos().single().sesionId)
+        assertEquals(1, base.conteoDao().todos().single().proyectoId)
     }
 
     @Test
@@ -224,20 +224,20 @@ class ContadorTest {
     }
 
     @Test
-    fun `el alta queda atada a la sesion y a la pasada del celular`() = runTest {
+    fun `el alta queda atada al proyecto y a la pasada del celular`() = runTest {
         base.vinculacionDao().guardar(
             VinculacionEntidad(
                 url = "http://172.16.11.12:8000", token = "abc",
-                operarioId = 1, operarioNombre = "Juan", sesionId = 7,
+                operarioId = 1, operarioNombre = "Juan", proyectoId = 7,
                 pasadaId = 3, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
             ),
         )
 
         val articulo = contador().darDeAlta("7790999", "Pack por 6", "UN", null, 6000, null)
 
-        assertEquals(7, articulo.sesionId)
+        assertEquals(7, articulo.proyectoId)
         assertEquals(2, articulo.pasadaNumero)
-        assertEquals(7, base.conteoDao().todos().single().sesionId)
+        assertEquals(7, base.conteoDao().todos().single().proyectoId)
     }
 
     @Test
@@ -252,7 +252,7 @@ class ContadorTest {
         base.vinculacionDao().guardar(
             VinculacionEntidad(
                 url = "http://172.16.11.12:8000", token = "abc",
-                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                operarioId = 1, operarioNombre = "Juan", proyectoId = 1,
                 pasadaId = 2, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
                 esParcial = true,
             ),
@@ -269,7 +269,7 @@ class ContadorTest {
         base.vinculacionDao().guardar(
             VinculacionEntidad(
                 url = "http://172.16.11.12:8000", token = "abc",
-                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                operarioId = 1, operarioNombre = "Juan", proyectoId = 1,
                 pasadaId = 2, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
                 esParcial = true,
             ),
@@ -286,7 +286,7 @@ class ContadorTest {
         base.vinculacionDao().guardar(
             VinculacionEntidad(
                 url = "http://172.16.11.12:8000", token = "abc",
-                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                operarioId = 1, operarioNombre = "Juan", proyectoId = 1,
                 pasadaId = 5, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
             ),
         )

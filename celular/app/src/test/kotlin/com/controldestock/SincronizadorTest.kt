@@ -47,7 +47,7 @@ class SincronizadorTest {
         base.vinculacionDao().guardar(
             VinculacionEntidad(
                 url = servidor.url("/").toString().trimEnd('/'), token = "token",
-                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                operarioId = 1, operarioNombre = "Juan", proyectoId = 1,
                 pasadaId = 1, pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
             ),
         )
@@ -55,7 +55,7 @@ class SincronizadorTest {
             listOf(
                 ArticuloEntidad(
                     id = 1, idOrden = 1, sku = "A-1", descripcion = "Fideos",
-                    unidad = "UN", ubicacion = "P-1", pasadaNumero = 1, sesionId = 1,
+                    unidad = "UN", ubicacion = "P-1", pasadaNumero = 1, proyectoId = 1,
                     busqueda = textoDeBusqueda("Fideos", "A-1", "P-1"),
                 ),
             ),
@@ -96,7 +96,7 @@ class SincronizadorTest {
             listOf(
                 ArticuloEntidad(
                     id = id, idOrden = 99, sku = codigo, descripcion = descripcion,
-                    unidad = unidad, pasadaNumero = 1, sesionId = 1,
+                    unidad = unidad, pasadaNumero = 1, proyectoId = 1,
                     busqueda = textoDeBusqueda(descripcion, codigo, null),
                     estadoAlta = EstadoSync.PENDIENTE.name,
                 ),
@@ -312,11 +312,11 @@ class SincronizadorTest {
 
     @Test
     fun `el inventario cerrado no pierde el alta ni su conteo`() = runTest {
-        // El 409 lo arregla quien maneja el panel, reabriendo la sesión. El
+        // El 409 lo arregla quien maneja el panel, reabriendo el proyecto. El
         // celular no tiene por qué tirar nada mientras tanto.
         guardarAlta()
         val uuid = conteoDelAlta()
-        responder("""{"detail":"No hay ninguna sesión abierta"}""", codigo = 409)
+        responder("""{"detail":"No hay ningún proyecto abierto"}""", codigo = 409)
 
         sincronizador().sincronizar()
 

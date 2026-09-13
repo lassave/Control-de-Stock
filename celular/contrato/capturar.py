@@ -35,23 +35,23 @@ def guardar(nombre, datos):
 
 def main():
     with httpx.Client(base_url=BASE, timeout=10) as c:
-        # Este script crea sesiones y artículos de mentira. Correrlo contra el
+        # Este script crea proyectos y artículos de mentira. Correrlo contra el
         # servidor de un cliente le mete basura al inventario en curso, y la
         # dirección por defecto es justamente la que levanta «Iniciar
         # servidor.bat». Si hay algo cargado, no se toca nada.
-        existentes = c.get("/api/sesiones").json()
+        existentes = c.get("/api/proyectos").json()
         if existentes:
             print(
-                "Este servidor ya tiene sesiones cargadas. Capturá el contrato "
+                "Este servidor ya tiene proyectos cargados. Capturá el contrato "
                 "contra un servidor vacío: el script crea datos de prueba y no "
                 "es para la PC de un cliente.",
                 file=sys.stderr,
             )
             return 1
 
-        sesion = c.post("/api/sesiones", json={"nombre": "Contrato"}).json()
+        proyecto = c.post("/api/proyectos", json={"nombre": "Contrato"}).json()
         c.post(
-            f"/api/sesiones/{sesion['id']}/maestro",
+            f"/api/proyectos/{proyecto['id']}/maestro",
             files={"archivo": ("m.csv", CSV, "text/csv")},
             data={"mapeo": json.dumps({
                 "sku": "sku", "descripcion": "descripcion",
@@ -85,14 +85,14 @@ def main():
         # Hay que repartirle algo antes de preguntar: sin esto el archivo
         # quedaría con la lista vacía y no documentaría ningún nombre.
         c.put(
-            f"/api/sesiones/{sesion['id']}/operarios/{operario['id']}/asignacion",
+            f"/api/proyectos/{proyecto['id']}/operarios/{operario['id']}/asignacion",
             json={"ubicaciones": ["P-1"]},
         )
         guardar("mis-ubicaciones", c.get(
             "/api/dispositivo/mis-ubicaciones", headers=cab
         ).json())
 
-        c.post(f"/api/sesiones/{sesion['id']}/cerrar")
+        c.post(f"/api/proyectos/{proyecto['id']}/cerrar")
 
 
 if __name__ == "__main__":

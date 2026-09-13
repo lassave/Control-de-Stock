@@ -57,7 +57,7 @@ class FichaDelArticuloTest {
 
     private val tornillos = ArticuloEntidad(
         id = 1, idOrden = 1, sku = "A-1", descripcion = "Tornillos",
-        unidad = "UN", ubicacion = "P-1", pasadaNumero = 1, sesionId = 1,
+        unidad = "UN", ubicacion = "P-1", pasadaNumero = 1, proyectoId = 1,
         busqueda = textoDeBusqueda("Tornillos", "A-1", "P-1"),
     )
 

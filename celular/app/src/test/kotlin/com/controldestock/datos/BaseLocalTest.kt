@@ -37,14 +37,14 @@ class BaseLocalTest {
 
     private fun articulo(id: Int, sku: String, unidad: String = "UN") = ArticuloEntidad(
         id = id, idOrden = id, sku = sku, descripcion = "Artículo $sku",
-        unidad = unidad, ubicacion = "P-1", pasadaNumero = 1, sesionId = 1,
+        unidad = unidad, ubicacion = "P-1", pasadaNumero = 1, proyectoId = 1,
         busqueda = textoDeBusqueda("Artículo $sku", sku, "P-1"),
     )
 
-    private fun vinculacionDe(sesionId: Int, operario: String = "Juan") = VinculacionEntidad(
-        url = "http://172.16.11.12:8000", token = "t-$sesionId",
+    private fun vinculacionDe(proyectoId: Int, operario: String = "Juan") = VinculacionEntidad(
+        url = "http://172.16.11.12:8000", token = "t-$proyectoId",
         operarioId = 1, operarioNombre = operario,
-        sesionId = sesionId, pasadaId = sesionId,
+        proyectoId = proyectoId, pasadaId = proyectoId,
         pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
     )
 
@@ -93,7 +93,7 @@ class BaseLocalTest {
     private fun paraBuscar(id: Int, sku: String, descripcion: String, ubicacion: String) =
         ArticuloEntidad(
             id = id, idOrden = id, sku = sku, descripcion = descripcion,
-            unidad = "UN", ubicacion = ubicacion, pasadaNumero = 1, sesionId = 1,
+            unidad = "UN", ubicacion = ubicacion, pasadaNumero = 1, proyectoId = 1,
             busqueda = textoDeBusqueda(descripcion, sku, ubicacion),
         )
 
@@ -245,7 +245,7 @@ class BaseLocalTest {
             VinculacionEntidad(
                 url = "http://172.16.11.12:8000", token = "abc",
                 operarioId = 1, operarioNombre = "Juan",
-                sesionId = 1, pasadaId = 1, pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
+                proyectoId = 1, pasadaId = 1, pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
             ),
         )
 
@@ -259,7 +259,7 @@ class BaseLocalTest {
     fun `vincular de nuevo reemplaza la vinculacion anterior`() = runTest {
         // Un celular que se revincula con otro operario no puede quedar con
         // los dos: los conteos se atribuirían a quien no contó.
-        val primera = vinculacionDe(sesionId = 1)
+        val primera = vinculacionDe(proyectoId = 1)
         base.vinculacionDao().guardar(primera)
 
         base.vinculacionDao().guardar(primera.copy(token = "t2", operarioNombre = "Ana"))
@@ -269,31 +269,31 @@ class BaseLocalTest {
     }
 
     @Test
-    fun `vincular a otra sesion borra el maestro y los conteos anteriores`() = runTest {
+    fun `vincular a otro proyecto borra el maestro y los conteos anteriores`() = runTest {
         // Un pendiente que quedó de un inventario cerrado se sincronizaría
-        // contra la sesión abierta hoy: el servidor resuelve por «la» sesión
-        // abierta, así que el conteo de ayer entraría al inventario de hoy sin
-        // que nada lo señale.
-        base.vincularA(vinculacionDe(sesionId = 1))
+        // contra el proyecto abierto hoy: el servidor resuelve por «el»
+        // proyecto abierto, así que el conteo de ayer entraría al inventario
+        // de hoy sin que nada lo señale.
+        base.vincularA(vinculacionDe(proyectoId = 1))
         base.maestroDao().reemplazarMaestro(listOf(articulo(1, "VIEJO")), emptyList(), emptyList())
         base.conteoDao().guardar(ConteoEntidad.de(EventoConteo.nuevo("A", 1000, reloj), 1, 1))
 
-        base.vincularA(vinculacionDe(sesionId = 2, operario = "Ana"))
+        base.vincularA(vinculacionDe(proyectoId = 2, operario = "Ana"))
 
         assertEquals(emptyList<ConteoEntidad>(), base.conteoDao().todos())
         assertEquals(emptyList<ArticuloEntidad>(), base.maestroDao().articulos())
-        assertEquals(2, base.vinculacionDao().actual()?.sesionId)
+        assertEquals(2, base.vinculacionDao().actual()?.proyectoId)
     }
 
     @Test
-    fun `vincular a la misma sesion conserva los conteos pendientes`() = runTest {
+    fun `vincular al mismo proyecto conserva los conteos pendientes`() = runTest {
         // Cambio de operario o token renovado dentro del mismo inventario: lo
         // que todavía no subió sigue siendo válido y no se puede tirar.
-        base.vincularA(vinculacionDe(sesionId = 1))
+        base.vincularA(vinculacionDe(proyectoId = 1))
         base.maestroDao().reemplazarMaestro(listOf(articulo(1, "A")), emptyList(), emptyList())
         base.conteoDao().guardar(ConteoEntidad.de(EventoConteo.nuevo("A", 1000, reloj), 1, 1))
 
-        base.vincularA(vinculacionDe(sesionId = 1, operario = "Ana"))
+        base.vincularA(vinculacionDe(proyectoId = 1, operario = "Ana"))
 
         assertEquals(1, base.conteoDao().todos().size)
         assertEquals(1, base.maestroDao().articulos().size)
@@ -313,7 +313,7 @@ class BaseLocalTest {
             listOf(
                 ArticuloEntidad(
                     id = -1, idOrden = 99, sku = "7790999", descripcion = "Pack por 6",
-                    unidad = "UN", pasadaNumero = 1, sesionId = 1,
+                    unidad = "UN", pasadaNumero = 1, proyectoId = 1,
                     busqueda = textoDeBusqueda("Pack por 6", "7790999", null),
                     estadoAlta = EstadoSync.PENDIENTE.name,
                 ),
@@ -325,7 +325,7 @@ class BaseLocalTest {
             articulos = listOf(
                 ArticuloEntidad(
                     id = 1, idOrden = 1, sku = "A-1", descripcion = "Fideos",
-                    unidad = "UN", pasadaNumero = 1, sesionId = 1,
+                    unidad = "UN", pasadaNumero = 1, proyectoId = 1,
                     busqueda = textoDeBusqueda("Fideos", "A-1", null),
                 ),
             ),
@@ -346,7 +346,7 @@ class BaseLocalTest {
             listOf(
                 ArticuloEntidad(
                     id = -1, idOrden = 99, sku = "7790999", descripcion = "Pack por 6",
-                    unidad = "UN", pasadaNumero = 1, sesionId = 1,
+                    unidad = "UN", pasadaNumero = 1, proyectoId = 1,
                     busqueda = textoDeBusqueda("Pack por 6", "7790999", null),
                     estadoAlta = EstadoSync.ENVIADO.name,
                 ),
@@ -360,19 +360,19 @@ class BaseLocalTest {
 
     @Test
     fun `vincularse a otro inventario no deja ni las altas pendientes`() = runTest {
-        base.vinculacionDao().guardar(vinculacionDe(sesionId = 1))
+        base.vinculacionDao().guardar(vinculacionDe(proyectoId = 1))
         base.maestroDao().insertarArticulos(
             listOf(
                 ArticuloEntidad(
                     id = -1, idOrden = 99, sku = "7790999", descripcion = "Pack por 6",
-                    unidad = "UN", pasadaNumero = 1, sesionId = 1,
+                    unidad = "UN", pasadaNumero = 1, proyectoId = 1,
                     busqueda = textoDeBusqueda("Pack por 6", "7790999", null),
                     estadoAlta = EstadoSync.PENDIENTE.name,
                 ),
             ),
         )
 
-        base.vincularA(vinculacionDe(sesionId = 2))
+        base.vincularA(vinculacionDe(proyectoId = 2))
 
         assertEquals(emptyList<ArticuloEntidad>(), base.maestroDao().altasPendientes())
     }
@@ -383,7 +383,7 @@ class BaseLocalTest {
             listOf(
                 ArticuloEntidad(
                     id = 1, idOrden = 1, sku = "A-1", descripcion = "Fideos",
-                    unidad = "UN", pasadaNumero = 1, sesionId = 1,
+                    unidad = "UN", pasadaNumero = 1, proyectoId = 1,
                     busqueda = textoDeBusqueda("Fideos", "A-1", null),
                 ),
             ),
@@ -395,7 +395,7 @@ class BaseLocalTest {
 
     private fun altaLocal(id: Int, sku: String, estadoAlta: String) = ArticuloEntidad(
         id = id, idOrden = 99, sku = sku, descripcion = "Alta $sku",
-        unidad = "UN", pasadaNumero = 1, sesionId = 1,
+        unidad = "UN", pasadaNumero = 1, proyectoId = 1,
         busqueda = textoDeBusqueda("Alta $sku", sku, null),
         estadoAlta = estadoAlta,
     )
@@ -412,34 +412,34 @@ class BaseLocalTest {
     }
 
     @Test
-    fun `vincular a otra sesion borra el reparto anterior`() = runTest {
-        base.vincularA(vinculacionDe(sesionId = 1))
+    fun `vincular a otro proyecto borra el reparto anterior`() = runTest {
+        base.vincularA(vinculacionDe(proyectoId = 1))
         base.asignacionDao().reemplazar(listOf("P-1"))
 
-        base.vincularA(vinculacionDe(sesionId = 2, operario = "Ana"))
+        base.vincularA(vinculacionDe(proyectoId = 2, operario = "Ana"))
 
         assertEquals(emptyList<String>(), base.asignacionDao().todas())
     }
 
     @Test
-    fun `vincular con otro operario en la misma sesion borra el reparto`() = runTest {
-        // Es del operario, no de la sesión: dejarlo puesto le mostraría a
+    fun `vincular con otro operario en el mismo proyecto borra el reparto`() = runTest {
+        // Es del operario, no del proyecto: dejarlo puesto le mostraría a
         // quien se vincula ahora el reparto de quien tenía el celular antes.
-        base.vincularA(vinculacionDe(sesionId = 1).copy(operarioId = 1))
+        base.vincularA(vinculacionDe(proyectoId = 1).copy(operarioId = 1))
         base.asignacionDao().reemplazar(listOf("P-1"))
 
-        base.vincularA(vinculacionDe(sesionId = 1, operario = "Ana").copy(operarioId = 2))
+        base.vincularA(vinculacionDe(proyectoId = 1, operario = "Ana").copy(operarioId = 2))
 
         assertEquals(emptyList<String>(), base.asignacionDao().todas())
     }
 
     @Test
     fun `revincular al mismo operario conserva el reparto`() = runTest {
-        base.vincularA(vinculacionDe(sesionId = 1).copy(operarioId = 1))
+        base.vincularA(vinculacionDe(proyectoId = 1).copy(operarioId = 1))
         base.asignacionDao().reemplazar(listOf("P-1"))
 
         // Mismo operario, token renovado: no tiene por qué perder el reparto.
-        base.vincularA(vinculacionDe(sesionId = 1).copy(operarioId = 1, token = "nuevo"))
+        base.vincularA(vinculacionDe(proyectoId = 1).copy(operarioId = 1, token = "nuevo"))
 
         assertEquals(listOf("P-1"), base.asignacionDao().todas())
     }

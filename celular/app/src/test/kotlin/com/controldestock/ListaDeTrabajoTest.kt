@@ -44,7 +44,7 @@ class ListaDeTrabajoTest {
 
     private fun articulo(id: Int, sku: String, ubicacion: String?) = ArticuloEntidad(
         id = id, idOrden = id, sku = sku, descripcion = "Producto $sku",
-        unidad = "UN", ubicacion = ubicacion, pasadaNumero = 1, sesionId = 1,
+        unidad = "UN", ubicacion = ubicacion, pasadaNumero = 1, proyectoId = 1,
         busqueda = textoDeBusqueda("Producto $sku", sku, ubicacion),
     )
 
@@ -111,7 +111,7 @@ class ListaDeTrabajoTest {
         base.vinculacionDao().guardar(
             VinculacionEntidad(
                 url = "http://172.16.11.12:8000", token = "abc",
-                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                operarioId = 1, operarioNombre = "Juan", proyectoId = 1,
                 pasadaId = 1, pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
             ),
         )
@@ -132,7 +132,7 @@ class ListaDeTrabajoTest {
         base.vinculacionDao().guardar(
             VinculacionEntidad(
                 url = "http://172.16.11.12:8000", token = "abc",
-                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                operarioId = 1, operarioNombre = "Juan", proyectoId = 1,
                 pasadaId = 2, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
             ),
         )
@@ -152,7 +152,7 @@ class ListaDeTrabajoTest {
         base.vinculacionDao().guardar(
             VinculacionEntidad(
                 url = "http://172.16.11.12:8000", token = "abc",
-                operarioId = 1, operarioNombre = "Juan", sesionId = 1,
+                operarioId = 1, operarioNombre = "Juan", proyectoId = 1,
                 pasadaId = 2, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
                 esParcial = true,
             ),

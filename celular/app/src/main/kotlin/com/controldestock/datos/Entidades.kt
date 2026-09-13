@@ -29,7 +29,7 @@ data class VinculacionEntidad(
     val token: String,
     val operarioId: Int,
     val operarioNombre: String,
-    val sesionId: Int,
+    val proyectoId: Int,
     val pasadaId: Int,
     val pasadaNumero: Int,
     val pasadaEtiqueta: String,
@@ -54,9 +54,9 @@ data class ArticuloEntidad(
     // sucesivas, agregar la columna obligaría a migrar la base de cada
     // dispositivo en medio de un inventario.
     val pasadaNumero: Int,
-    // De qué sesión es. Un celular que se revincula a otro inventario no
+    // De qué proyecto es. Un celular que se revincula a otro inventario no
     // puede seguir mostrando el maestro del anterior.
-    val sesionId: Int = 0,
+    val proyectoId: Int = 0,
     // Descripción, SKU y ubicación juntos, en minúscula y sin acentos.
     // El LIKE de SQLite solo pliega mayúsculas en ASCII, así que buscar
     // «caño» no encontraría «CAÑO galvanizado» — y los maestros de ERP
@@ -104,11 +104,11 @@ data class UnidadEntidad(
 data class ConteoEntidad(
     @PrimaryKey val uuid: String,
     val articuloId: Int,
-    // De qué sesión es este conteo. Sin esto, un pendiente que quedó de un
-    // inventario cerrado se sincroniza contra la sesión abierta hoy: el
-    // servidor resuelve por «la» sesión abierta, así que el conteo de ayer
+    // De qué proyecto es este conteo. Sin esto, un pendiente que quedó de un
+    // inventario cerrado se sincroniza contra el proyecto abierto hoy: el
+    // servidor resuelve por «el» proyecto abierto, así que el conteo de ayer
     // entra al inventario de hoy sin que nada lo señale.
-    val sesionId: Int = 0,
+    val proyectoId: Int = 0,
     val codigo: String,
     val cantidad: Int,
     val ubicacionReal: String? = null,
@@ -139,11 +139,11 @@ data class ConteoEntidad(
 
     companion object {
         fun de(
-            evento: EventoConteo, articuloId: Int, sesionId: Int = 0, pasadaId: Int = 0,
+            evento: EventoConteo, articuloId: Int, proyectoId: Int = 0, pasadaId: Int = 0,
         ) = ConteoEntidad(
             uuid = evento.uuid,
             articuloId = articuloId,
-            sesionId = sesionId,
+            proyectoId = proyectoId,
             pasadaId = pasadaId,
             codigo = evento.codigo,
             cantidad = evento.cantidad,
