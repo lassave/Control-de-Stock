@@ -13,7 +13,7 @@
       <button id="cambiar-tema" class="secundario" type="button" aria-label="Cambiar entre tema claro y oscuro">
         🌓 Tema
       </button>
-      <div id="sesion-actual" class="sesion-actual"></div>
+      <div id="proyecto-actual" class="proyecto-actual"></div>
       <span id="usuario-logueado" class="usuario-logueado"></span>
       <button id="cerrar-sesion-panel" class="secundario" type="button">Cerrar sesión</button>
     </div>
@@ -25,7 +25,7 @@
     <button data-vista="operarios">Operarios</button>
     <button data-vista="reparto">Avance por ubicación</button>
     <button data-vista="recuento">Recuento</button>
-    <button data-vista="sesiones">Sesiones</button>
+    <button data-vista="proyecto">Proyecto</button>
     <button data-vista="usuarios">Usuarios</button>
     <button data-vista="novedades">Novedades</button>
   </nav>
@@ -227,13 +227,13 @@
       <div id="recuentos-abiertos"></div>
     </section>
 
-    <section id="vista-sesiones" class="vista oculta">
-      <h2>Sesiones</h2>
-      <form id="form-sesion">
-        <input id="nombre-sesion" placeholder="Cliente y fecha" required>
-        <button>Crear sesión</button>
+    <section id="vista-proyecto" class="vista oculta">
+      <h2>Proyecto</h2>
+      <form id="form-proyecto">
+        <input id="nombre-proyecto" placeholder="Cliente y fecha" required>
+        <button>Crear proyecto</button>
       </form>
-      <ul id="lista-sesiones" class="lista"></ul>
+      <ul id="lista-proyectos" class="lista"></ul>
     </section>
 
     <section id="vista-novedades" class="vista oculta">

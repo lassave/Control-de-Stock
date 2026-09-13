@@ -82,7 +82,7 @@ body {
   letter-spacing: 0.01em;
   margin: 0;
 }
-.sesion-actual { color: var(--tenue); }
+.proyecto-actual { color: var(--tenue); }
 
 .pestanas {
   display: flex;
@@ -130,7 +130,12 @@ main { padding: 1.25rem; }
 }
 
 .metrica.acento { border-left-color: var(--acento); }
+.metrica.verde { border-left-color: var(--verde); }
 .metrica.alerta { border-left-color: var(--rojo); }
+
+.metrica.acento .valor { color: var(--acento); }
+.metrica.verde .valor { color: var(--verde); }
+.metrica.alerta .valor { color: var(--rojo); }
 
 .metrica .valor {
   font-family: "Bahnschrift", "Arial Narrow", system-ui, sans-serif;

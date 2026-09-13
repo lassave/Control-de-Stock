@@ -4,7 +4,7 @@
 // los pierda ni mueva el scroll: un tablero que salta mientras se lee es
 // inservible.
 const estado = {
-  sesion: null,
+  proyecto: null,
   filtros: {
     texto: "", estado: "", grupo: "", ubicacion: "", solo_errores_carga: false,
   },
@@ -75,7 +75,7 @@ function dibujarMetricas(resumen) {
   const tarjetas = [
     ["Avance", `${resumen.avance_pct}%`, "acento"],
     ["Contados", `${resumen.contados} / ${resumen.articulos}`, ""],
-    ["Consolidados", resumen.consolidados, ""],
+    ["Consolidados", resumen.consolidados, "verde"],
     ["A recontar", resumen.a_recontar, "alerta"],
     ["Posible error de carga", resumen.posibles_errores_carga, ""],
     ["Altas rápidas", resumen.altas_rapidas, ""],
@@ -153,27 +153,27 @@ function parametrosDeFiltros() {
 }
 
 function actualizarEnlacesDeExportacion() {
-  if (!estado.sesion) return;
+  if (!estado.proyecto) return;
   // Los enlaces arrastran los filtros vigentes: se exporta lo que está en
   // pantalla. Recibir el depósito entero después de acotar el tablero se
   // lee como si fuera el recorte, que es peor que no exportar nada.
-  const sesionId = estado.sesion.id;
+  const proyectoId = estado.proyecto.id;
   const parametros = parametrosDeFiltros();
   $("#exportar-resumen").href =
-    `/api/sesiones/${sesionId}/exportar/resumen?${parametros}`;
+    `/api/proyectos/${proyectoId}/exportar/resumen?${parametros}`;
   $("#exportar-detalle").href =
-    `/api/sesiones/${sesionId}/exportar/detalle?${parametros}`;
+    `/api/proyectos/${proyectoId}/exportar/detalle?${parametros}`;
 }
 
 async function refrescarTablero() {
-  if (!estado.sesion) return;
+  if (!estado.proyecto) return;
 
   const envoltorio = $("#envoltorio-tabla");
   const scroll = envoltorio.scrollTop;
-  const sesionId = estado.sesion.id;
+  const proyectoId = estado.proyecto.id;
 
   const datos = await pedir(
-    `/api/sesiones/${sesionId}/tablero?${parametrosDeFiltros()}`);
+    `/api/proyectos/${proyectoId}/tablero?${parametrosDeFiltros()}`);
 
   dibujarMetricas(datos.resumen);
   dibujarFilas(datos.filas);
@@ -197,10 +197,10 @@ async function refrescarSinRomper() {
     await refrescarTablero();
     await refrescarReparto();
     await refrescarRecuentosAbiertos();
-    $("#sesion-actual").classList.remove("error");
+    $("#proyecto-actual").classList.remove("error");
   } catch (error) {
-    $("#sesion-actual").classList.add("error");
-    $("#sesion-actual").textContent = `Sin conexión con el servidor (${error.message})`;
+    $("#proyecto-actual").classList.add("error");
+    $("#proyecto-actual").textContent = `Sin conexión con el servidor (${error.message})`;
   }
 }
 
@@ -283,15 +283,15 @@ function parametrosDeFiltrosReparto() {
 }
 
 function actualizarEnlaceExportacionReparto() {
-  if (!estado.sesion) return;
+  if (!estado.proyecto) return;
   const parametros = parametrosDeFiltrosReparto();
   $("#exportar-reparto").href =
-    `/api/sesiones/${estado.sesion.id}/exportar/reparto?${parametros}`;
+    `/api/proyectos/${estado.proyecto.id}/exportar/reparto?${parametros}`;
 }
 
 async function refrescarReparto() {
-  if (!estado.sesion) return;
-  // Sin sesión no hay reparto que mostrar, y consultarlo con la pestaña
+  if (!estado.proyecto) return;
+  // Sin proyecto no hay reparto que mostrar, y consultarlo con la pestaña
   // escondida sería un pedido de más cada cuatro segundos para nadie.
   if ($("#vista-reparto").classList.contains("oculta")) return;
 
@@ -299,7 +299,7 @@ async function refrescarReparto() {
   const scroll = envoltorio.scrollTop;
 
   const datos = await pedir(
-    `/api/sesiones/${estado.sesion.id}/reparto/operarios?${parametrosDeFiltrosReparto()}`);
+    `/api/proyectos/${estado.proyecto.id}/reparto/operarios?${parametrosDeFiltrosReparto()}`);
 
   // Por nombre, no por posición: el operario es único (la base lo exige) y
   // el orden puede cambiar de un pedido a otro.
@@ -396,16 +396,16 @@ function dibujarFilaUbicacionRecuento(ubicacion, filas, abiertas) {
  * al entrar a la pestaña, al guardar la tolerancia y al abrir un recuento.
  */
 async function refrescarRecuentoChecklist() {
-  if (!estado.sesion) return;
+  if (!estado.proyecto) return;
   if ($("#vista-recuento").classList.contains("oculta")) return;
 
-  $("#tolerancia-pct").value = estado.sesion.tolerancia_pct;
-  $("#tolerancia-min-abs").value = estado.sesion.tolerancia_min_abs / 1000;
+  $("#tolerancia-pct").value = estado.proyecto.tolerancia_pct;
+  $("#tolerancia-min-abs").value = estado.proyecto.tolerancia_min_abs / 1000;
 
   const parametros = new URLSearchParams({
     estado: "A RECONTAR", texto: estado.recuento.filtroTexto,
   }).toString();
-  const datos = await pedir(`/api/sesiones/${estado.sesion.id}/tablero?${parametros}`);
+  const datos = await pedir(`/api/proyectos/${estado.proyecto.id}/tablero?${parametros}`);
   estado.recuento.filas = datos.filas;
 
   const porUbicacion = agruparRecuentoPorUbicacion(datos.filas);
@@ -433,7 +433,7 @@ async function refrescarRecuentoChecklist() {
  * juntas — dos pedidos separados harían que el segundo borre al primero.
  */
 async function abrirRecuento() {
-  if (!estado.sesion) return;
+  if (!estado.proyecto) return;
   const ubicaciones = [...estado.recuento.seleccionadas];
   if (!ubicaciones.length) {
     alert("Marcá al menos una ubicación para recontar.");
@@ -445,7 +445,7 @@ async function abrirRecuento() {
     .map((fila) => fila.id);
 
   try {
-    const recuento = await pedir(`/api/sesiones/${estado.sesion.id}/pasadas`, {
+    const recuento = await pedir(`/api/proyectos/${estado.proyecto.id}/pasadas`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ articulo_ids }),
@@ -462,7 +462,7 @@ async function abrirRecuento() {
     for (const [operarioId, ubicacionesDeEse] of Object.entries(porOperario)) {
       try {
         await pedir(
-          `/api/sesiones/${estado.sesion.id}/operarios/${operarioId}/asignacion`,
+          `/api/proyectos/${estado.proyecto.id}/operarios/${operarioId}/asignacion`,
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -543,17 +543,17 @@ function dibujarTarjetaRecuento(pasada, avance) {
  * el redibujado pueda perder.
  */
 async function refrescarRecuentosAbiertos() {
-  if (!estado.sesion) return;
+  if (!estado.proyecto) return;
   if ($("#vista-recuento").classList.contains("oculta")) return;
 
-  const pasadas = await pedir(`/api/sesiones/${estado.sesion.id}/pasadas`);
+  const pasadas = await pedir(`/api/proyectos/${estado.proyecto.id}/pasadas`);
   const recuentos = pasadas.filter((p) => p.es_parcial && p.estado === "abierta");
 
   estado.recuento.avancePorPasada = {};
   const tarjetas = [];
   for (const pasada of recuentos) {
     const avance = await pedir(
-      `/api/sesiones/${estado.sesion.id}/pasadas/${pasada.id}/avance`);
+      `/api/proyectos/${estado.proyecto.id}/pasadas/${pasada.id}/avance`);
     estado.recuento.avancePorPasada[pasada.id] = avance;
     tarjetas.push(dibujarTarjetaRecuento(pasada, avance));
   }
@@ -568,11 +568,11 @@ async function refrescarRecuentosAbiertos() {
  * muestra al responsable — no hay que adivinarlo acá con lo que ya bajó.
  */
 async function borrarRecuento(pasadaId) {
-  if (!estado.sesion) return;
+  if (!estado.proyecto) return;
   if (!confirm("¿Borrar este recuento? No se puede deshacer.")) return;
 
   try {
-    await pedir(`/api/sesiones/${estado.sesion.id}/pasadas/${pasadaId}`, {
+    await pedir(`/api/proyectos/${estado.proyecto.id}/pasadas/${pasadaId}`, {
       method: "DELETE",
     });
     await refrescarRecuentosAbiertos();
@@ -581,31 +581,31 @@ async function borrarRecuento(pasadaId) {
   }
 }
 
-// --- Sesiones --------------------------------------------------------------
+// --- Proyectos --------------------------------------------------------------
 
-function dibujarSesion(sesion) {
-  const boton = sesion.estado === "abierta"
-    ? `<button class="secundario" data-cerrar="${esc(sesion.id)}">Cerrar</button>`
+function dibujarProyecto(proyecto) {
+  const boton = proyecto.estado === "abierta"
+    ? `<button class="secundario" data-cerrar="${esc(proyecto.id)}">Cerrar</button>`
     : "";
-  return `<li><strong>${esc(sesion.nombre)}</strong> — ${esc(sesion.estado)} ${boton}</li>`;
+  return `<li><strong>${esc(proyecto.nombre)}</strong> — ${esc(proyecto.estado)} ${boton}</li>`;
 }
 
-async function cargarSesiones() {
-  const sesiones = await pedir("/api/sesiones");
-  const abierta = sesiones.find((s) => s.estado === "abierta") || null;
+async function cargarProyectos() {
+  const proyectos = await pedir("/api/proyectos");
+  const abierta = proyectos.find((s) => s.estado === "abierta") || null;
   // El listado no trae la pasada: hace falta el detalle para saber cuál es
   // la general, la que usa el diálogo "Sectores" de Operarios.
-  estado.sesion = abierta ? await pedir(`/api/sesiones/${abierta.id}`) : null;
+  estado.proyecto = abierta ? await pedir(`/api/proyectos/${abierta.id}`) : null;
 
-  $("#sesion-actual").classList.remove("error");
-  $("#sesion-actual").textContent = estado.sesion
-    ? `Sesión: ${estado.sesion.nombre}`
-    : "Sin sesión abierta";
+  $("#proyecto-actual").classList.remove("error");
+  $("#proyecto-actual").textContent = estado.proyecto
+    ? `Proyecto: ${estado.proyecto.nombre}`
+    : "Sin proyecto abierto";
 
-  $("#lista-sesiones").innerHTML = sesiones.map(dibujarSesion).join("")
-    || "<li>Todavía no hay sesiones.</li>";
+  $("#lista-proyectos").innerHTML = proyectos.map(dibujarProyecto).join("")
+    || "<li>Todavía no hay proyectos.</li>";
 
-  if (estado.sesion) {
+  if (estado.proyecto) {
     actualizarEnlacesDeExportacion();
     await refrescarTablero();
     actualizarEnlaceExportacionReparto();
@@ -700,9 +700,9 @@ function dibujarResultadoImportacion(resultado) {
 }
 
 async function confirmarImportacion() {
-  if (!estado.sesion) {
+  if (!estado.proyecto) {
     $("#resultado-importacion").innerHTML =
-      '<p class="error">Primero creá una sesión.</p>';
+      '<p class="error">Primero creá un proyecto.</p>';
     return;
   }
 
@@ -716,10 +716,10 @@ async function confirmarImportacion() {
   cuerpo.append("mapeo", JSON.stringify(mapeo));
   cuerpo.append("unidad_por_defecto", $("#unidad-defecto").value);
 
-  const sesionId = estado.sesion.id;
+  const proyectoId = estado.proyecto.id;
   try {
     const resultado = await pedir(
-      `/api/sesiones/${sesionId}/maestro`,
+      `/api/proyectos/${proyectoId}/maestro`,
       { method: "POST", body: cuerpo });
 
     $("#resultado-importacion").innerHTML = dibujarResultadoImportacion(resultado);
@@ -732,10 +732,10 @@ async function confirmarImportacion() {
 
 // --- Operarios -------------------------------------------------------------
 
-function dibujarOperario(operario, haySesion) {
-  // Sin sesión abierta no hay pasada a la cual asignar nada: el enlace no
+function dibujarOperario(operario, hayProyecto) {
+  // Sin proyecto abierto no hay pasada a la cual asignar nada: el enlace no
   // aparece.
-  const sectores = haySesion
+  const sectores = hayProyecto
     ? `<button class="secundario" data-sectores="${esc(operario.id)}">Sectores</button>`
     : "";
   // Sin ubicaciones asignadas no se muestra el renglón: un «Sectores: »
@@ -786,17 +786,17 @@ function dibujarCasillaUbicacion(ubicacion, asignadas) {
  */
 async function abrirSectores(operarioId, pasadaId = null, asignadasEnEsaPasada = null) {
   const operario = estado.operarios.find((o) => String(o.id) === String(operarioId));
-  const idPasada = pasadaId || (estado.sesion && estado.sesion.pasada && estado.sesion.pasada.id);
+  const idPasada = pasadaId || (estado.proyecto && estado.proyecto.pasada && estado.proyecto.pasada.id);
   // Sin pasada general abierta (solo quedan recuentos en curso) y sin una
   // pasada puntual indicada, no hay nada que repartir desde acá.
-  if (!operario || !estado.sesion || !idPasada) return;
+  if (!operario || !estado.proyecto || !idPasada) return;
 
   const asignadas = asignadasEnEsaPasada !== null
     ? asignadasEnEsaPasada
     : operario.ubicaciones_asignadas;
 
   try {
-    const ubicaciones = await pedir(`/api/sesiones/${estado.sesion.id}/ubicaciones`);
+    const ubicaciones = await pedir(`/api/proyectos/${estado.proyecto.id}/ubicaciones`);
 
     // Por textContent: es el nombre de una persona, dato como cualquier otro.
     $("#sectores-titulo").textContent = `Sectores de ${operario.nombre}`;
@@ -821,7 +821,7 @@ async function guardarSectores() {
 
   try {
     await pedir(
-      `/api/sesiones/${estado.sesion.id}/operarios/${operarioId}/asignacion`,
+      `/api/proyectos/${estado.proyecto.id}/operarios/${operarioId}/asignacion`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -878,7 +878,7 @@ async function cargarOperarios() {
   // el click solo trae el id, no todo el operario.
   estado.operarios = lista;
   $("#lista-operarios").innerHTML =
-    lista.map((o) => dibujarOperario(o, !!(estado.sesion && estado.sesion.pasada))).join("")
+    lista.map((o) => dibujarOperario(o, !!(estado.proyecto && estado.proyecto.pasada))).join("")
     || "<li>Todavía no hay operarios.</li>";
   await cargarInstalacion();
 }
@@ -959,11 +959,11 @@ let refrescoIniciado = false;
 async function arrancarPanel() {
   mostrarPanel();
   try {
-    await cargarSesiones();
+    await cargarProyectos();
     await cargarOperarios();
   } catch (error) {
-    $("#sesion-actual").classList.add("error");
-    $("#sesion-actual").textContent = `No se pudo conectar: ${error.message}`;
+    $("#proyecto-actual").classList.add("error");
+    $("#proyecto-actual").textContent = `No se pudo conectar: ${error.message}`;
   }
   if (!refrescoIniciado) {
     refrescoIniciado = true;
@@ -1199,17 +1199,17 @@ function conectarEventos() {
 
   $("#form-tolerancia").addEventListener("submit", async (evento) => {
     evento.preventDefault();
-    if (!estado.sesion) return;
+    if (!estado.proyecto) return;
     const pct = Number($("#tolerancia-pct").value);
     const minAbs = Math.round(Number($("#tolerancia-min-abs").value) * 1000);
     try {
-      const sesion = await pedir(`/api/sesiones/${estado.sesion.id}/tolerancia`, {
+      const proyecto = await pedir(`/api/proyectos/${estado.proyecto.id}/tolerancia`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pct, min_abs: minAbs }),
       });
-      estado.sesion.tolerancia_pct = sesion.tolerancia_pct;
-      estado.sesion.tolerancia_min_abs = sesion.tolerancia_min_abs;
+      estado.proyecto.tolerancia_pct = proyecto.tolerancia_pct;
+      estado.proyecto.tolerancia_min_abs = proyecto.tolerancia_min_abs;
       await refrescarRecuentoChecklist();
       await refrescarTablero();
     } catch (error) {
@@ -1297,28 +1297,28 @@ function conectarEventos() {
     }
   });
 
-  $("#form-sesion").addEventListener("submit", async (evento) => {
+  $("#form-proyecto").addEventListener("submit", async (evento) => {
     evento.preventDefault();
     try {
-      await pedir("/api/sesiones", {
+      await pedir("/api/proyectos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre: $("#nombre-sesion").value }),
+        body: JSON.stringify({ nombre: $("#nombre-proyecto").value }),
       });
-      $("#nombre-sesion").value = "";
-      await cargarSesiones();
+      $("#nombre-proyecto").value = "";
+      await cargarProyectos();
     } catch (error) {
       alert(error.message);
     }
   });
 
-  $("#lista-sesiones").addEventListener("click", async (evento) => {
+  $("#lista-proyectos").addEventListener("click", async (evento) => {
     const id = evento.target.dataset.cerrar;
     if (!id) return;
-    if (!confirm("¿Cerrar la sesión? No se van a poder cargar más conteos.")) return;
+    if (!confirm("¿Cerrar el proyecto? No se van a poder cargar más conteos.")) return;
     try {
-      await pedir(`/api/sesiones/${id}/cerrar`, { method: "POST" });
-      await cargarSesiones();
+      await pedir(`/api/proyectos/${id}/cerrar`, { method: "POST" });
+      await cargarProyectos();
     } catch (error) {
       alert(error.message);
     }
