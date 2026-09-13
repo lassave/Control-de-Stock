@@ -11,19 +11,19 @@ una PC y los celulares se conectan por la red WiFi del lugar.
    privadas**. Sin eso los celulares no llegan al servidor.
 3. Se abre una ventana negra con dos direcciones. La de `127.0.0.1` es
    para esta PC; la otra es la que usan los celulares.
-4. Abrir el panel en el navegador, crear una sesión e importar el maestro.
+4. Abrir el panel en el navegador, crear un proyecto e importar el maestro.
 
 Dejá la ventana negra abierta mientras dure el conteo.
 
 ## El circuito
 
-- **Sesiones**: se crea una sesión por inventario. Solo puede haber una
-  abierta a la vez, porque los celulares se vinculan a «la» sesión abierta.
+- **Proyecto**: se crea un proyecto por inventario. Solo puede haber uno
+  abierto a la vez, porque los celulares se vinculan a «el» proyecto abierto.
 - **Importar maestro**: se elige el CSV que exporta el sistema de gestión y
   se indica en pantalla qué columna es cada campo. El separador y la
   codificación se detectan solos.
 - **Operarios**: cada uno recibe un token, que es con lo que se vincula su
-  dispositivo. Con una sesión abierta, el botón «Sectores» de cada persona
+  dispositivo. Con un proyecto abierto, el botón «Sectores» de cada persona
   abre un cuadro para elegir qué ubicaciones le tocan en el conteo en
   curso. No es obligatorio ni bloquea nada: es para repartir el trabajo y
   saber después si alguien contó algo que no le tocaba.

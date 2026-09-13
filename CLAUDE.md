@@ -134,6 +134,48 @@ esquema viejo (sin roles, todavía vacías). Antes de correr este script
 ahí, hay que borrar esas dos tablas a mano para que se recreen con el
 esquema nuevo —el resto de la base (inventario real) no se toca—.
 
+## Migrar una base ya creada de «sesión» a «proyecto»
+
+La entidad que antes se llamaba `sesion` (tabla, columnas `sesion_id` /
+`sesion_origen_id`, índices) pasó a llamarse `proyecto` en todo el código.
+`servidor/app/esquema.sql` usa `CREATE TABLE IF NOT EXISTS`, así que una
+base ya creada con el esquema viejo no se actualiza sola. Antes de poner
+en marcha esta versión sobre una `servidor/inventario.db` que ya existe
+—la de este cliente incluida—, hay que correr una sola vez, con el
+servidor apagado:
+
+```powershell
+.\servidor\.venv\Scripts\python.exe -c "
+import sqlite3
+con = sqlite3.connect('servidor/inventario.db')
+con.executescript('''
+    ALTER TABLE sesion RENAME TO proyecto;
+    ALTER TABLE articulo RENAME COLUMN sesion_id TO proyecto_id;
+    ALTER TABLE pasada RENAME COLUMN sesion_id TO proyecto_id;
+    ALTER TABLE conteo RENAME COLUMN sesion_id TO proyecto_id;
+    ALTER TABLE evento_auditoria RENAME COLUMN sesion_id TO proyecto_id;
+    ALTER TABLE codigo_aprendido RENAME COLUMN sesion_origen_id TO proyecto_origen_id;
+    DROP INDEX IF EXISTS ix_sesion_abierta;
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_proyecto_abierta ON proyecto(estado) WHERE estado = 'abierta';
+    DROP INDEX IF EXISTS ix_conteo_sesion;
+    CREATE INDEX IF NOT EXISTS ix_conteo_proyecto ON conteo(proyecto_id, operario_id);
+''')
+con.commit()
+"
+```
+
+`ALTER TABLE ... RENAME TO` y `RENAME COLUMN` actualizan solos las
+cláusulas `REFERENCES` de las demás tablas: no hace falta tocarlas a
+mano. No toca `sesion_panel` —esa tabla es del login, no de esta
+entidad—. La tabla `cuenta_panel`/`sesion_panel` de la nota de arriba y
+esta migración son independientes, pero si las dos aplican en la misma
+instalación conviene hacerlas en la misma visita.
+
+No confundir con la vinculación del celular: la app Android guarda su
+propia copia local de `sesionId` (ahora `proyectoId`) en su base Room,
+y se migra sola al abrirse con la versión nueva del APK, sin que haya
+que tocar nada a mano en el teléfono.
+
 ## Configurar la recuperación de contraseña por mail
 
 Las cuentas de rol menor recuperan la contraseña por un código que

@@ -155,11 +155,11 @@ de punta a punta.
 
 ## Asignación de sectores
 
-**`GET /api/operarios` puede devolver 500 si una sesión abierta se queda sin
+**`GET /api/operarios` puede devolver 500 si un proyecto abierto se queda sin
 pasada abierta.** `asignaciones.operarios_con_ubicaciones` llama a
-`sesiones.pasada_abierta` sin atajar el `ValueError` que tira si no hay
-ninguna. Hoy es inalcanzable: `sesiones.crear` y `cerrar` abren y cierran
-sesión y pasada juntas, atómicamente, y no hay otro código que toque
+`proyectos.pasada_abierta` sin atajar el `ValueError` que tira si no hay
+ninguna. Hoy es inalcanzable: `proyectos.crear` y `cerrar` abren y cierran
+proyecto y pasada juntas, atómicamente, y no hay otro código que toque
 `pasada`. El reconteo (pasada 2, 3...) que el propio diseño de este plan
 menciona como futuro es exactamente lo que abriría una ventana entre cerrar
 una pasada y abrir la siguiente — y el radio de la falla es un endpoint
