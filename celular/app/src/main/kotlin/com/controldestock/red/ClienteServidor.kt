@@ -4,8 +4,10 @@ import com.controldestock.nucleo.EventoConteo
 import com.controldestock.nucleo.LoteDeConteos
 import com.controldestock.nucleo.RespuestaAlta
 import com.controldestock.nucleo.RespuestaConteos
+import com.controldestock.nucleo.RespuestaIdentificacion
 import com.controldestock.nucleo.RespuestaMaestro
 import com.controldestock.nucleo.RespuestaMisUbicaciones
+import com.controldestock.nucleo.RespuestaOperarios
 import com.controldestock.nucleo.RespuestaVinculacion
 import com.controldestock.nucleo.jsonDelContrato
 import com.controldestock.nucleo.paraEnviar
@@ -54,6 +56,9 @@ private data class PedidoDeAlta(
 )
 
 @Serializable
+private data class PedidoDeIdentificacion(val nombre: String, val pin: String?)
+
+@Serializable
 private data class DetalleDeError(val detail: String? = null)
 
 /**
@@ -79,6 +84,14 @@ class ClienteServidor(
 
     suspend fun vincular(): RespuestaVinculacion =
         interpretar(traer("/api/dispositivo/vincular", cuerpo = "{}"))
+
+    suspend fun operarios(): RespuestaOperarios =
+        interpretar(traer("/api/dispositivo/operarios"))
+
+    suspend fun identificar(nombre: String, pin: String? = null): RespuestaIdentificacion {
+        val pedido = json.encodeToString(PedidoDeIdentificacion(nombre, pin))
+        return interpretar(traer("/api/dispositivo/identificar", cuerpo = pedido))
+    }
 
     suspend fun maestro(): RespuestaMaestro =
         interpretar(traer("/api/dispositivo/maestro"))

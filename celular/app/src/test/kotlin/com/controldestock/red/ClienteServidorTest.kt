@@ -281,4 +281,48 @@ class ClienteServidorTest {
         // HTML, así que el pedido «salió bien» y lo que falla es leerlo.
         assertFalse(error.contenidoRechazado)
     }
+
+    @Test
+    fun `pide la lista de operarios para identificarse`() = runTest {
+        responder(contrato("operarios"))
+
+        val respuesta = cliente.operarios()
+
+        assertEquals("/api/dispositivo/operarios", servidor.takeRequest().path)
+        assertEquals("Contrato", respuesta.operarios[0].nombre)
+    }
+
+    @Test
+    fun `identificarse manda el nombre y el pin`() = runTest {
+        responder(contrato("identificacion"))
+
+        val respuesta = cliente.identificar("Contrato", "1234")
+
+        val pedido = servidor.takeRequest()
+        assertEquals("/api/dispositivo/identificar", pedido.path)
+        assertEquals("token-de-prueba", pedido.getHeader("X-Token"))
+        assertTrue(pedido.body.readUtf8().contains("\"pin\":\"1234\""))
+        assertTrue(respuesta.token.isNotBlank())
+    }
+
+    @Test
+    fun `identificarse sin pin no lo manda`() = runTest {
+        responder(contrato("identificacion"))
+
+        cliente.identificar("Contrato")
+
+        assertTrue(servidor.takeRequest().body.readUtf8().contains("\"pin\":null"))
+    }
+
+    @Test
+    fun `un operario que no existe se explica en castellano`() = runTest {
+        responder("""{"detail":"Ese operario no existe"}""", HttpURLConnection.HTTP_BAD_REQUEST)
+
+        val error = try {
+            cliente.identificar("Nadie"); null
+        } catch (e: ErrorDeServidor) { e }
+
+        assertTrue(error!!.message!!.contains("no existe"))
+        assertTrue(error.contenidoRechazado)
+    }
 }
