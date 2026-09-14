@@ -3,6 +3,7 @@ package com.controldestock
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.controldestock.datos.BaseLocal
+import com.controldestock.datos.VinculacionEntidad
 import com.controldestock.nucleo.DatosDelQr
 import com.controldestock.red.ClienteServidor
 import java.io.File
@@ -143,5 +144,58 @@ class VinculadorTest {
         val vinculacion = base.vinculacionDao().actual()!!
         assertEquals(vinculacion.proyectoId, articulo.proyectoId)
         assertEquals(vinculacion.pasadaNumero, articulo.pasadaNumero)
+    }
+
+    @Test
+    fun `el maestro descargado guarda el origen de cada articulo`() = runTest {
+        responder(contrato("vinculacion"))
+        responder(contrato("maestro"))
+
+        vinculador().vincular(datos())
+
+        assertEquals("importado", base.maestroDao().articulos().first().origen)
+    }
+
+    @Test
+    fun `identificarse cambia de operario sin tocar el maestro`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = servidor.url("/").toString().trimEnd('/'), token = "token-viejo",
+                operarioId = 1, operarioNombre = "Juan",
+                proyectoId = 1, pasadaId = 1, pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
+            ),
+        )
+        responder(contrato("identificacion"))
+
+        val resultado = vinculador().identificar("Ana", null)
+
+        assertTrue(resultado is ResultadoDeVinculacion.Vinculado)
+        val actual = base.vinculacionDao().actual()!!
+        assertEquals("Contrato", actual.operarioNombre)
+        assertEquals("token-de-contrato-para-identificarse", actual.token)
+    }
+
+    @Test
+    fun `identificarse sin estar vinculado antes falla`() = runTest {
+        val resultado = vinculador().identificar("Ana", null)
+
+        assertTrue(resultado is ResultadoDeVinculacion.Fallo)
+    }
+
+    @Test
+    fun `identificarse manda el pin al servidor`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = servidor.url("/").toString().trimEnd('/'), token = "token-viejo",
+                operarioId = 1, operarioNombre = "Juan",
+                proyectoId = 1, pasadaId = 1, pasadaNumero = 1, pasadaEtiqueta = "Conteo 1",
+            ),
+        )
+        responder("""{"detail":"El PIN no coincide"}""", 400)
+
+        val resultado = vinculador().identificar("Ana", "0000")
+
+        val mensaje = (resultado as ResultadoDeVinculacion.Fallo).mensaje
+        assertTrue(mensaje.contains("PIN"))
     }
 }

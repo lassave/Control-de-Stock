@@ -59,12 +59,50 @@ class Vinculador(
                         pasadaNumero = quien.pasada.numero,
                         proyectoId = quien.proyecto.id,
                         busqueda = textoDeBusqueda(it.descripcion, it.sku, it.ubicacion),
+                        origen = it.origen,
                     )
                 },
                 codigos = maestro.codigos.map { CodigoEntidad(it.codigo, it.articuloId) },
                 unidades = maestro.unidades.map {
                     UnidadEntidad(it.codigo, it.nombre, it.admiteDecimales)
                 },
+            )
+
+            ResultadoDeVinculacion.Vinculado(quien.operario.nombre, quien.proyecto.nombre)
+        } catch (error: ErrorDeServidor) {
+            ResultadoDeVinculacion.Fallo(error.message.orEmpty())
+        }
+    }
+
+    /**
+     * Identifica a otra persona en un celular que ya está vinculado, sin
+     * volver a escanear el QR.
+     *
+     * A diferencia de `vincular`, no baja el maestro de nuevo: es el mismo
+     * proyecto, así que el que ya está en la base local sigue valiendo.
+     */
+    suspend fun identificar(nombre: String, pin: String?): ResultadoDeVinculacion {
+        val actual = base.vinculacionDao().actual()
+            ?: return ResultadoDeVinculacion.Fallo(
+                "Este celular todavía no está vinculado a ningún panel.",
+            )
+
+        val cliente = crearCliente(actual.url, actual.token)
+
+        return try {
+            val quien = cliente.identificar(nombre, pin)
+
+            base.vincularA(
+                VinculacionEntidad(
+                    url = actual.url,
+                    token = quien.token,
+                    operarioId = quien.operario.id,
+                    operarioNombre = quien.operario.nombre,
+                    proyectoId = quien.proyecto.id,
+                    pasadaId = quien.pasada.id,
+                    pasadaNumero = quien.pasada.numero,
+                    pasadaEtiqueta = quien.pasada.etiqueta,
+                ),
             )
 
             ResultadoDeVinculacion.Vinculado(quien.operario.nombre, quien.proyecto.nombre)
