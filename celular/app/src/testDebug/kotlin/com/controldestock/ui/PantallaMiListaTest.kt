@@ -37,9 +37,9 @@ class PantallaMiListaTest {
             .performScrollToNode(hasText(texto, substring = substring))
     }
 
-    private fun renglon(idOrden: Int, sku: String, contado: Int? = null) = RenglonAsignado(
+    private fun renglon(idOrden: Int, sku: String, contado: Int? = null, articuloId: Int = idOrden) = RenglonAsignado(
         idOrden = idOrden, sku = sku, descripcion = "Producto $sku",
-        codigos = sku, unidad = "UN", contado = contado,
+        codigos = sku, unidad = "UN", contado = contado, articuloId = articuloId,
     )
 
     private fun montar(
