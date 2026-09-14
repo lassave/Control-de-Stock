@@ -1,0 +1,9 @@
+{
+  "operarios": [
+    {
+      "id": 1,
+      "nombre": "Contrato",
+      "tiene_pin": false
+    }
+  ]
+}

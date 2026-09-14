@@ -64,6 +64,10 @@ def main():
         cab = {"X-Token": operario["token_dispositivo"]}
 
         guardar("vinculacion", c.post("/api/dispositivo/vincular", headers=cab).json())
+        guardar("operarios", c.get("/api/dispositivo/operarios", headers=cab).json())
+        guardar("identificacion", c.post(
+            "/api/dispositivo/identificar", headers=cab, json={"nombre": "Contrato"},
+        ).json())
         guardar("maestro", c.get("/api/dispositivo/maestro", headers=cab).json())
 
         # El pedido es la otra mitad del contrato: son los nombres que la app

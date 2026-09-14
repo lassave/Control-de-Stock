@@ -18,7 +18,7 @@ CONTRATO = Path(__file__).resolve().parent.parent.parent / "celular" / "contrato
 
 ARCHIVOS = [
     "vinculacion", "maestro", "conteos-respuesta", "alta-rapida",
-    "mis-ubicaciones",
+    "mis-ubicaciones", "operarios", "identificacion",
 ]
 
 CSV = (
@@ -79,6 +79,12 @@ def vivo(tmp_path_factory):
 
         respuestas["vinculacion"] = c.post(
             "/api/dispositivo/vincular", headers=cab
+        ).json()
+        respuestas["operarios"] = c.get(
+            "/api/dispositivo/operarios", headers=cab
+        ).json()
+        respuestas["identificacion"] = c.post(
+            "/api/dispositivo/identificar", headers=cab, json={"nombre": "Contrato"},
         ).json()
         respuestas["maestro"] = c.get(
             "/api/dispositivo/maestro", headers=cab
@@ -163,7 +169,7 @@ def test_el_maestro_trae_articulos_codigos_y_unidades():
     assert set(datos) == {"proyecto_id", "articulos", "codigos", "unidades"}
     assert set(datos["articulos"][0]) == {
         "id", "id_orden", "tipo", "material", "sku", "descripcion",
-        "grupo", "ubicacion", "unidad",
+        "grupo", "ubicacion", "unidad", "origen",
     }
     assert set(datos["codigos"][0]) == {"codigo", "articulo_id"}
     assert set(datos["unidades"][0]) == {"codigo", "nombre", "admite_decimales"}
@@ -204,3 +210,18 @@ def test_el_alta_rapida_dice_si_creo_o_ya_estaba(vivo):
     assert "stock_sistema" not in datos
     assert "costo_unitario" not in datos
     assert datos["sku"] == "7790009999999"
+
+
+def test_operarios_trae_id_nombre_y_tiene_pin():
+    datos = leer("operarios")
+
+    assert set(datos) == {"operarios"}
+    assert set(datos["operarios"][0]) == {"id", "nombre", "tiene_pin"}
+
+
+def test_identificacion_trae_lo_mismo_que_la_vinculacion_mas_el_token():
+    datos = leer("identificacion")
+
+    assert set(datos) == {"operario", "proyecto", "pasada", "token"}
+    assert set(datos["operario"]) == {"id", "nombre"}
+    assert set(datos["proyecto"]) == {"id", "nombre"}

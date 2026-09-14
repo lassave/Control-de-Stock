@@ -10,7 +10,8 @@
       "descripcion": "Fideos guisero 500g",
       "grupo": null,
       "ubicacion": "P-1",
-      "unidad": "UN"
+      "unidad": "UN",
+      "origen": "importado"
     },
     {
       "id": 2,
@@ -21,7 +22,8 @@
       "descripcion": "Aceite girasol 900ml",
       "grupo": null,
       "ubicacion": "P-2",
-      "unidad": "UN"
+      "unidad": "UN",
+      "origen": "importado"
     }
   ],
   "codigos": [
