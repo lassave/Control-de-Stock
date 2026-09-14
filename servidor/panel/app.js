@@ -940,7 +940,7 @@ async function cargarEstadoDeAuth() {
   const auth = await pedir("/api/auth/estado");
   estado.usuarioActual = auth.usuario;
   $("#usuario-logueado").textContent = auth.usuario ?? "";
-  $('[data-vista="usuarios"]').classList.toggle("oculta", auth.rol !== "superusuario");
+  $('[data-subvista="usuarios"]').classList.toggle("oculta", auth.rol !== "superusuario");
 
   const enRecuperacion = !$("#vista-recuperar").classList.contains("oculta");
   if (!auth.logueado && !enRecuperacion) {
@@ -1121,6 +1121,26 @@ function alternarTema() {
   localStorage.setItem(CLAVE_TEMA, nuevo);
 }
 
+// --- Configuración -----------------------------------------------------------
+
+// Importar maestro, Operarios, Proyecto y Usuarios comparten una sola
+// pestaña con su propia barra lateral: son las cuatro pantallas de
+// mantenimiento, las que se tocan una vez por inventario y no todo el
+// tiempo como el Tablero.
+const SUBVISTAS_CONFIGURACION = ["maestro", "operarios", "proyecto", "usuarios"];
+let subvistaConfiguracionActual = "maestro";
+
+function mostrarSubvistaConfiguracion(nombre) {
+  subvistaConfiguracionActual = nombre;
+  SUBVISTAS_CONFIGURACION.forEach((v) => $(`#vista-${v}`).classList.add("oculta"));
+  $(`#vista-${nombre}`).classList.remove("oculta");
+  document.querySelectorAll("#config-sidebar button")
+    .forEach((b) => b.classList.toggle("activa", b.dataset.subvista === nombre));
+  // Igual que con las pestañas de arriba: sin esto la lista quedaría vacía
+  // hasta el próximo refresco automático.
+  if (nombre === "usuarios") cargarUsuarios();
+}
+
 // --- Arranque --------------------------------------------------------------
 
 function conectarEventos() {
@@ -1143,8 +1163,16 @@ function conectarEventos() {
         refrescarRecuentosAbiertos();
       }
       if (boton.dataset.vista === "novedades") cargarNovedades();
-      if (boton.dataset.vista === "usuarios") cargarUsuarios();
+      // La vista de Configuración esconde sus cuatro sub-pantallas junto con
+      // el resto de `.vista`: hay que volver a mostrar la que estaba activa.
+      if (boton.dataset.vista === "configuracion") {
+        mostrarSubvistaConfiguracion(subvistaConfiguracionActual);
+      }
     });
+  });
+
+  document.querySelectorAll("#config-sidebar button").forEach((boton) => {
+    boton.addEventListener("click", () => mostrarSubvistaConfiguracion(boton.dataset.subvista));
   });
 
   $("#filtro-texto").addEventListener("input", (evento) => {

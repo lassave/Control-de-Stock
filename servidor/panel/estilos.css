@@ -108,6 +108,53 @@ body {
   font-weight: 600;
 }
 
+/* Importar maestro, Operarios, Proyecto y Usuarios: mantenimiento del
+   inventario, no algo que se mire a cada rato como el Tablero, así que
+   comparten una pestaña con su propia barra lateral. */
+.config-layout {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+}
+
+.config-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  width: 200px;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.config-sidebar button {
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 0.55rem 0.75rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--tenue);
+}
+
+.config-sidebar button:hover { background: var(--gris-fondo); }
+
+.config-sidebar button.activa {
+  background: var(--acento-tenue);
+  color: var(--acento);
+  font-weight: 600;
+}
+
+.config-contenido { flex: 1; min-width: 0; }
+
+@media (max-width: 640px) {
+  .config-layout { flex-direction: column; }
+  .config-sidebar { flex-direction: row; flex-wrap: wrap; width: auto; }
+}
+
 main { padding: 1.25rem; }
 /* Los bloques que además definen su propio `display` necesitan nombrarse
    acá: tienen la misma especificidad que `.oculta` y, al estar más abajo en

@@ -21,13 +21,10 @@
 
   <nav class="pestanas oculta" id="pestanas">
     <button data-vista="tablero" class="activa">Tablero</button>
-    <button data-vista="maestro">Importar maestro</button>
-    <button data-vista="operarios">Operarios</button>
     <button data-vista="reparto">Avance por ubicación</button>
     <button data-vista="recuento">Recuento</button>
-    <button data-vista="proyecto">Proyecto</button>
-    <button data-vista="usuarios">Usuarios</button>
     <button data-vista="novedades">Novedades</button>
+    <button data-vista="configuracion">Configuración</button>
   </nav>
 
   <main>
@@ -103,65 +100,6 @@
       </div>
     </section>
 
-    <section id="vista-maestro" class="vista oculta">
-      <h2>Importar maestro</h2>
-      <p class="ayuda">
-        Elegí el CSV que exporta el sistema de gestión. Después indicá qué
-        columna del archivo corresponde a cada campo.
-      </p>
-      <input id="archivo" type="file" accept=".csv,.txt">
-      <div id="mapeo" class="mapeo oculta">
-        <table id="tabla-mapeo"><tbody></tbody></table>
-        <label>
-          Unidad por defecto
-          <select id="unidad-defecto">
-            <option>UN</option><option>KG</option><option>LT</option>
-            <option>MT</option><option>CJ</option><option>PACK</option>
-          </select>
-        </label>
-        <h3>Vista previa</h3>
-        <div class="tabla-envoltorio">
-          <table id="tabla-vista-previa"></table>
-        </div>
-        <button id="confirmar-importacion">Importar</button>
-      </div>
-      <div id="resultado-importacion"></div>
-    </section>
-
-    <section id="vista-operarios" class="vista oculta">
-      <div id="instalacion" class="instalacion oculta">
-        <div>
-          <h2>Instalar la app en un celular</h2>
-          <p class="ayuda">
-            Escaneá este código con la cámara del celular para descargar la
-            app. La primera vez, Android pide permiso para instalar desde
-            esta fuente.
-          </p>
-          <p class="ayuda"><a id="enlace-apk" href="/app.apk">Descargar el APK</a></p>
-          <p class="ayuda" id="version-apk"></p>
-        </div>
-        <!-- Sin `src`: el navegador baja la imagen aunque el bloque esté
-             escondido. Lo pone `cargarInstalacion()` recién cuando hay APK. -->
-        <img id="qr-instalacion" class="qr" alt="Código QR para descargar la app">
-      </div>
-
-      <h2>Operarios</h2>
-      <form id="form-operario">
-        <input id="nombre-operario" placeholder="Nombre y apellido" required>
-        <button>Agregar</button>
-      </form>
-      <ul id="lista-operarios" class="lista lista-operarios"></ul>
-
-      <dialog id="dialogo-sectores">
-        <h3 id="sectores-titulo"></h3>
-        <div id="sectores-lista"></div>
-        <menu>
-          <button id="cerrar-sectores" type="button">Cancelar</button>
-          <button id="guardar-sectores" type="button">Guardar</button>
-        </menu>
-      </dialog>
-    </section>
-
     <section id="vista-reparto" class="vista oculta">
       <h2>Avance por ubicación</h2>
       <p class="ayuda">
@@ -227,33 +165,105 @@
       <div id="recuentos-abiertos"></div>
     </section>
 
-    <section id="vista-proyecto" class="vista oculta">
-      <h2>Proyecto</h2>
-      <form id="form-proyecto">
-        <input id="nombre-proyecto" placeholder="Cliente y fecha" required>
-        <button>Crear proyecto</button>
-      </form>
-      <ul id="lista-proyectos" class="lista"></ul>
-    </section>
-
     <section id="vista-novedades" class="vista oculta">
       <h2>Novedades</h2>
       <p class="ayuda">Qué cambió en cada versión de la app del celular.</p>
       <div id="lista-novedades"></div>
     </section>
 
-    <section id="vista-usuarios" class="vista oculta">
-      <h2>Usuarios del panel</h2>
-      <p class="ayuda">Quién puede entrar a este panel.</p>
+    <section id="vista-configuracion" class="vista oculta">
+      <div class="config-layout">
+        <nav class="config-sidebar" id="config-sidebar">
+          <button data-subvista="maestro" class="activa">Importar maestro</button>
+          <button data-subvista="operarios">Operarios</button>
+          <button data-subvista="proyecto">Proyecto</button>
+          <button data-subvista="usuarios">Usuarios</button>
+        </nav>
 
-      <form id="form-usuario-nuevo">
-        <input id="usuario-nuevo-nombre" type="email" placeholder="Mail" required autocomplete="username">
-        <input id="usuario-nuevo-clave" type="password" placeholder="Contraseña" required autocomplete="new-password">
-        <button>Agregar</button>
-      </form>
-      <p class="error" id="usuario-nuevo-error"></p>
+        <div class="config-contenido">
+          <section id="vista-maestro" class="vista">
+            <h2>Importar maestro</h2>
+            <p class="ayuda">
+              Elegí el CSV que exporta el sistema de gestión. Después indicá qué
+              columna del archivo corresponde a cada campo.
+            </p>
+            <input id="archivo" type="file" accept=".csv,.txt">
+            <div id="mapeo" class="mapeo oculta">
+              <table id="tabla-mapeo"><tbody></tbody></table>
+              <label>
+                Unidad por defecto
+                <select id="unidad-defecto">
+                  <option>UN</option><option>KG</option><option>LT</option>
+                  <option>MT</option><option>CJ</option><option>PACK</option>
+                </select>
+              </label>
+              <h3>Vista previa</h3>
+              <div class="tabla-envoltorio">
+                <table id="tabla-vista-previa"></table>
+              </div>
+              <button id="confirmar-importacion">Importar</button>
+            </div>
+            <div id="resultado-importacion"></div>
+          </section>
 
-      <ul id="lista-usuarios" class="lista"></ul>
+          <section id="vista-operarios" class="vista oculta">
+            <div id="instalacion" class="instalacion oculta">
+              <div>
+                <h2>Instalar la app en un celular</h2>
+                <p class="ayuda">
+                  Escaneá este código con la cámara del celular para descargar la
+                  app. La primera vez, Android pide permiso para instalar desde
+                  esta fuente.
+                </p>
+                <p class="ayuda"><a id="enlace-apk" href="/app.apk">Descargar el APK</a></p>
+                <p class="ayuda" id="version-apk"></p>
+              </div>
+              <!-- Sin `src`: el navegador baja la imagen aunque el bloque esté
+                   escondido. Lo pone `cargarInstalacion()` recién cuando hay APK. -->
+              <img id="qr-instalacion" class="qr" alt="Código QR para descargar la app">
+            </div>
+
+            <h2>Operarios</h2>
+            <form id="form-operario">
+              <input id="nombre-operario" placeholder="Nombre y apellido" required>
+              <button>Agregar</button>
+            </form>
+            <ul id="lista-operarios" class="lista lista-operarios"></ul>
+
+            <dialog id="dialogo-sectores">
+              <h3 id="sectores-titulo"></h3>
+              <div id="sectores-lista"></div>
+              <menu>
+                <button id="cerrar-sectores" type="button">Cancelar</button>
+                <button id="guardar-sectores" type="button">Guardar</button>
+              </menu>
+            </dialog>
+          </section>
+
+          <section id="vista-proyecto" class="vista oculta">
+            <h2>Proyecto</h2>
+            <form id="form-proyecto">
+              <input id="nombre-proyecto" placeholder="Cliente y fecha" required>
+              <button>Crear proyecto</button>
+            </form>
+            <ul id="lista-proyectos" class="lista"></ul>
+          </section>
+
+          <section id="vista-usuarios" class="vista oculta">
+            <h2>Usuarios del panel</h2>
+            <p class="ayuda">Quién puede entrar a este panel.</p>
+
+            <form id="form-usuario-nuevo">
+              <input id="usuario-nuevo-nombre" type="email" placeholder="Mail" required autocomplete="username">
+              <input id="usuario-nuevo-clave" type="password" placeholder="Contraseña" required autocomplete="new-password">
+              <button>Agregar</button>
+            </form>
+            <p class="error" id="usuario-nuevo-error"></p>
+
+            <ul id="lista-usuarios" class="lista"></ul>
+          </section>
+        </div>
+      </div>
     </section>
   </main>
 
