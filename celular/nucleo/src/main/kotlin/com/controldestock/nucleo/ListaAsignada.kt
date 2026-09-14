@@ -19,6 +19,9 @@ data class ArticuloParaLista(
     val ubicacion: String?,
     val unidad: String,
     val codigos: List<String>,
+    // 'importado' o 'alta_rapida'. Por defecto «importado»: es lo que vale
+    // para casi todos los tests existentes, que no le importa este campo.
+    val origen: String = "importado",
 )
 
 /** Un conteo local, con solo lo que hace falta para saber si cuenta. */
@@ -43,6 +46,9 @@ data class RenglonAsignado(
     val codigos: String,
     val unidad: String,
     val contado: Int?,
+    val articuloId: Int,
+    // Nace de una alta rápida y no del maestro original.
+    val agregado: Boolean = false,
 ) {
     val fueContado: Boolean get() = contado != null
 }
@@ -114,6 +120,8 @@ object ListaAsignada {
                         codigos = articulo.codigos.joinToString(", "),
                         unidad = articulo.unidad,
                         contado = contado[articulo.id],
+                        articuloId = articulo.id,
+                        agregado = articulo.origen == "alta_rapida",
                     )
                 }
             UbicacionAsignada(ubicacion, renglones)

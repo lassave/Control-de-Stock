@@ -1,6 +1,7 @@
 package com.controldestock.nucleo
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -227,5 +228,41 @@ class ListaAsignadaTest {
         )
 
         assertEquals(listOf("A", "B"), lista.single().renglones.map { it.sku })
+    }
+
+    @Test
+    fun `cada renglon lleva el id del articulo`() {
+        val lista = ListaAsignada.armar(
+            asignadas = listOf("P-1"),
+            articulos = listOf(articulo(id = 42, idOrden = 1, sku = "A", ubicacion = "P-1")),
+            conteos = emptyList(),
+        )
+
+        assertEquals(42, lista.single().renglones.single().articuloId)
+    }
+
+    @Test
+    fun `un articulo de alta rapida se marca como agregado`() {
+        val lista = ListaAsignada.armar(
+            asignadas = listOf("P-1"),
+            articulos = listOf(
+                articulo(id = 1, idOrden = 1, sku = "A", ubicacion = "P-1")
+                    .copy(origen = "alta_rapida"),
+            ),
+            conteos = emptyList(),
+        )
+
+        assertTrue(lista.single().renglones.single().agregado)
+    }
+
+    @Test
+    fun `un articulo del maestro original no se marca como agregado`() {
+        val lista = ListaAsignada.armar(
+            asignadas = listOf("P-1"),
+            articulos = listOf(articulo(id = 1, idOrden = 1, sku = "A", ubicacion = "P-1")),
+            conteos = emptyList(),
+        )
+
+        assertFalse(lista.single().renglones.single().agregado)
     }
 }
