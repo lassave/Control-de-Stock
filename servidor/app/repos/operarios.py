@@ -90,3 +90,33 @@ def desactivar(con, operario_id):
         )
         if cursor.rowcount == 0:
             raise ValueError(f"No existe el operario {operario_id}")
+
+
+def listar_para_identificar(con):
+    """Nombres activos para elegir al identificarse sin QR.
+
+    Nunca el PIN ni el token: esta lista arma un botón por nombre en el
+    celular, no vincula a nadie por sí sola.
+    """
+    filas = con.execute(
+        "SELECT id, nombre, pin FROM operario WHERE activo = 1 ORDER BY nombre"
+    ).fetchall()
+    return [
+        {"id": fila["id"], "nombre": fila["nombre"], "tiene_pin": bool(fila["pin"])}
+        for fila in filas
+    ]
+
+
+def para_identificar(con, nombre):
+    """El operario por nombre, con su PIN y su token.
+
+    A diferencia de `listar_para_identificar` y `por_token`, esta sí trae el
+    PIN: es la única consulta que lo necesita, para compararlo contra el que
+    mandó el celular. No sale de acá hacia ninguna respuesta HTTP.
+    """
+    fila = con.execute(
+        "SELECT id, nombre, pin, token_dispositivo FROM operario "
+        "WHERE nombre = ? AND activo = 1",
+        (nombre,),
+    ).fetchone()
+    return dict(fila) if fila else None
