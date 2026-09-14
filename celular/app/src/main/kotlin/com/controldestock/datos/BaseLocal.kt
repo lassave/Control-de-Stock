@@ -29,7 +29,7 @@ class ConversorDeEstado {
         AsignacionEntidad::class,
         PasadaItemEntidad::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(ConversorDeEstado::class)
@@ -200,13 +200,28 @@ abstract class BaseLocal : RoomDatabase() {
             }
         }
 
+        /**
+         * Agrega `origen`, para poder marcar en el celular los artículos
+         * nacidos de una alta rápida. Solo una columna, como `MIGRACION_1_2`:
+         * no hace falta recrear ninguna tabla.
+         */
+        val MIGRACION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE articulo ADD COLUMN origen TEXT NOT NULL DEFAULT 'importado'"
+                )
+            }
+        }
+
         fun de(contexto: Context): BaseLocal = instancia ?: synchronized(this) {
             instancia ?: Room.databaseBuilder(
                 contexto.applicationContext,
                 BaseLocal::class.java,
                 "control-de-stock.db",
             )
-                .addMigrations(MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5)
+                .addMigrations(
+                    MIGRACION_1_2, MIGRACION_2_3, MIGRACION_3_4, MIGRACION_4_5, MIGRACION_5_6,
+                )
                 .build().also { instancia = it }
         }
     }

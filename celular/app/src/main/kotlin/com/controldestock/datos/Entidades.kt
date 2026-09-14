@@ -72,6 +72,11 @@ data class ArticuloEntidad(
     val estadoAlta: String? = null,
     // Por qué el servidor no la aceptó, para poder mostrárselo al operario.
     val motivoRechazo: String? = null,
+    // De dónde salió: 'importado' del maestro, o 'alta_rapida' si nació en
+    // un celular durante el conteo. Es lo que pinta la etiqueta AGREGADO —
+    // a diferencia de `estadoAlta`, no se limpia cuando el maestro se
+    // reimporta: sale del `origen` que el servidor conserva para siempre.
+    val origen: String = "importado",
 )
 
 /** Minúsculas y sin acentos, para que la búsqueda encuentre lo que se ve. */

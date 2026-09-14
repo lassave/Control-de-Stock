@@ -75,7 +75,7 @@ class MigracionV5Test {
 
     private fun abrirMigrada(ruta: String): BaseLocal =
         Room.databaseBuilder(contexto, BaseLocal::class.java, ruta)
-            .addMigrations(BaseLocal.MIGRACION_4_5)
+            .addMigrations(BaseLocal.MIGRACION_4_5, BaseLocal.MIGRACION_5_6)
             .build()
 
     @Test
