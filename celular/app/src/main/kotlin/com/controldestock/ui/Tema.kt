@@ -12,6 +12,12 @@ val Acento = Color(0xFF1F5FA9)
 val Verde = Color(0xFF1B7A3D)
 val Rojo = Color(0xFFB3261E)
 val Ambar = Color(0xFF9A5B12)
+// Solo para la etiqueta AGREGADO: no repite Verde (contado), Ambar
+// (pendiente) ni Rojo (error), y no reusa Acento porque ese ya es el color
+// primario de toda la app —una etiqueta con ese tono se confundiría con un
+// botón—. El panel no tiene un color equivalente: ahí la misma marca usa la
+// clase `.marca`, neutra, no un color por tipo.
+val Violeta = Color(0xFF6A3FA0)
 
 private val Claro = lightColorScheme(
     primary = Acento,
