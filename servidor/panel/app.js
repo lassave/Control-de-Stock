@@ -6,7 +6,8 @@
 const estado = {
   proyecto: null,
   filtros: {
-    texto: "", estado: "", grupo: "", ubicacion: "", solo_errores_carga: false,
+    texto: "", estado: "", grupo: "", ubicacion: "",
+    solo_errores_carga: false, solo_agregados: false,
   },
   // Separado de `filtros`: cada pestaña tiene sus propios controles, y
   // compartir un solo objeto haría que filtrar el tablero cambie en
@@ -78,7 +79,7 @@ function dibujarMetricas(resumen) {
     ["Consolidados", resumen.consolidados, "verde"],
     ["A recontar", resumen.a_recontar, "alerta"],
     ["Posible error de carga", resumen.posibles_errores_carga, ""],
-    ["Altas rápidas", resumen.altas_rapidas, ""],
+    ["Agregados", resumen.altas_rapidas, ""],
   ];
   $("#metricas").innerHTML = tarjetas
     .map(([rotulo, valor, clase]) =>
@@ -1196,12 +1197,19 @@ function conectarEventos() {
     refrescarSinRomper();
   });
 
+  $("#filtro-agregados").addEventListener("change", (evento) => {
+    estado.filtros.solo_agregados = evento.target.checked;
+    refrescarSinRomper();
+  });
+
   $("#limpiar-filtros").addEventListener("click", () => {
     estado.filtros = {
-      texto: "", estado: "", grupo: "", ubicacion: "", solo_errores_carga: false,
+      texto: "", estado: "", grupo: "", ubicacion: "",
+      solo_errores_carga: false, solo_agregados: false,
     };
     $("#filtro-texto").value = "";
     $("#filtro-errores-carga").checked = false;
+    $("#filtro-agregados").checked = false;
     ["estado", "grupo", "ubicacion"].forEach((campo) => {
       $(`#filtro-${campo}`).value = "";
     });

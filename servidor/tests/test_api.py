@@ -114,6 +114,24 @@ def test_tablero_acepta_filtros(cliente, proyecto):
     assert len(respuesta.json()["filas"]) == 1
 
 
+def test_tablero_filtra_solo_agregados(cliente, proyecto):
+    importar(cliente, proyecto["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    cliente.post(
+        "/api/dispositivo/articulos",
+        headers={"X-Token": operario["token_dispositivo"]},
+        json={"codigo": "999", "descripcion": "Pack sin etiqueta", "unidad": "UN"},
+    )
+
+    respuesta = cliente.get(
+        f"/api/proyectos/{proyecto['id']}/tablero", params={"solo_agregados": "true"}
+    )
+
+    filas = respuesta.json()["filas"]
+    assert len(filas) == 1
+    assert filas[0]["sku"] == "999"
+
+
 def test_vincular_dispositivo(cliente, proyecto):
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
 

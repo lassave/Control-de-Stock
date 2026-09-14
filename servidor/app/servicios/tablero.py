@@ -222,6 +222,9 @@ def _pasa_filtros(fila, filtros):
     if filtros.get("solo_errores_carga") and not fila["posible_error_carga"]:
         return False
 
+    if filtros.get("solo_agregados") and fila["origen"] != "alta_rapida":
+        return False
+
     texto = (filtros.get("texto") or "").strip().lower()
     if texto:
         blanco = f"{fila['sku']} {fila['descripcion']}".lower()

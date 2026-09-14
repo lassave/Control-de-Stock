@@ -213,11 +213,13 @@ def ver_tablero(
     tipo: str = "", material: str = "", grupo: str = "",
     ubicacion: str = "", estado: str = "", texto: str = "",
     solo_errores_carga: bool = False,
+    solo_agregados: bool = False,
 ):
     con = _con(request)
     filtros = _filtros(
         tipo, material, grupo, ubicacion, estado, texto, solo_errores_carga
     )
+    filtros["solo_agregados"] = solo_agregados
     try:
         return {
             "filas": tablero.filas(con, proyecto_id, filtros),
@@ -405,6 +407,7 @@ def exportar(
     tipo: str = "", material: str = "", grupo: str = "",
     ubicacion: str = "", estado: str = "", texto: str = "",
     solo_errores_carga: bool = False,
+    solo_agregados: bool = False,
 ):
     """Exporta lo que el panel está mostrando, con sus mismos filtros.
 
@@ -415,6 +418,7 @@ def exportar(
     filtros = _filtros(
         tipo, material, grupo, ubicacion, estado, texto, solo_errores_carga
     )
+    filtros["solo_agregados"] = solo_agregados
 
     if tipo_exportacion == "resumen":
         generar = exportacion.resumen_por_sku

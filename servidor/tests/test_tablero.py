@@ -1,6 +1,6 @@
 import pytest
 
-from app.repos import asignaciones, conteos, operarios, proyectos
+from app.repos import articulos, asignaciones, conteos, operarios, proyectos
 from app.servicios import importacion, tablero
 
 
@@ -234,6 +234,28 @@ def test_filtro_por_texto_busca_en_sku_y_descripcion(con, escenario):
     filas = tablero.filas(con, escenario["proyecto_id"], {"texto": "arand"})
 
     assert [f["sku"] for f in filas] == ["C"]
+
+
+def test_filtro_solo_agregados(con, escenario):
+    articulos.crear_alta_rapida(
+        con, escenario["proyecto_id"], escenario["juan"]["id"],
+        {"codigo": "Z", "descripcion": "Pack sin etiqueta", "unidad": "UN"},
+    )
+
+    filas = tablero.filas(con, escenario["proyecto_id"], {"solo_agregados": True})
+
+    assert [f["sku"] for f in filas] == ["Z"]
+
+
+def test_sin_el_filtro_los_agregados_aparecen_con_los_demas(con, escenario):
+    articulos.crear_alta_rapida(
+        con, escenario["proyecto_id"], escenario["juan"]["id"],
+        {"codigo": "Z", "descripcion": "Pack sin etiqueta", "unidad": "UN"},
+    )
+
+    filas = tablero.filas(con, escenario["proyecto_id"])
+
+    assert [f["sku"] for f in filas] == ["A", "B", "C", "Z"]
 
 
 def test_resumen_cuenta_avance(con, escenario):
