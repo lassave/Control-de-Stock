@@ -354,4 +354,39 @@ class ContadorTest {
         val nuevo = base.maestroDao().porCodigo("7790999")
         assertEquals("alta_rapida", nuevo?.origen)
     }
+
+    @Test
+    fun `buscarTexto encuentra por descripcion`() = runTest {
+        val resultados = contador().buscarTexto("fide")
+
+        assertEquals(1, resultados.size)
+        assertEquals("Fideos", resultados[0].articulo.descripcion)
+    }
+
+    @Test
+    fun `buscarTexto encuentra por sku`() = runTest {
+        val resultados = contador().buscarTexto("A-2")
+
+        assertEquals("Harina", resultados.single().articulo.descripcion)
+    }
+
+    @Test
+    fun `buscarTexto sin coincidencias devuelve lista vacia`() = runTest {
+        assertTrue(contador().buscarTexto("no existe nada con esto").isEmpty())
+    }
+
+    @Test
+    fun `buscarTexto no trae lo que quedo fuera de un recuento parcial`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = "http://172.16.11.12:8000", token = "abc",
+                operarioId = 1, operarioNombre = "Juan", proyectoId = 1,
+                pasadaId = 2, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
+                esParcial = true,
+            ),
+        )
+        base.pasadaItemDao().reemplazar(listOf(2)) // solo Harina, no Fideos
+
+        assertTrue(contador().buscarTexto("fide").isEmpty())
+    }
 }

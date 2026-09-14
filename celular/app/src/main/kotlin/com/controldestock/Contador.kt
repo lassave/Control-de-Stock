@@ -81,6 +81,17 @@ class Contador(
         return Hallazgo.Encontrado(articulo, admite, codigo)
     }
 
+    /**
+     * Busca por SKU o por descripción, para cuando la etiqueta está rota y
+     * ni la cámara ni «A mano» sirven.
+     *
+     * Reutiliza `buscarPorId` para cada coincidencia: así hereda de una sola
+     * vez el mismo filtro de recuento parcial que ya usa el resto del
+     * conteo, en vez de repetirlo acá.
+     */
+    suspend fun buscarTexto(texto: String): List<Hallazgo.Encontrado> =
+        base.maestroDao().buscar(texto).mapNotNull { buscarPorId(it.id) }
+
     suspend fun ubicaciones(): List<String> = base.maestroDao().ubicaciones()
 
     suspend fun registrar(
