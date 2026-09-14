@@ -35,13 +35,16 @@ import com.controldestock.datos.UnidadEntidad
 import com.controldestock.datos.VinculacionEntidad
 import com.controldestock.nucleo.ConteoLocal
 import com.controldestock.nucleo.DatosDelQr
+import com.controldestock.nucleo.OperarioParaIdentificar
 import com.controldestock.nucleo.RelojDelSistema
 import com.controldestock.nucleo.UbicacionAsignada
 import com.controldestock.red.ClienteServidor
 import com.controldestock.red.ErrorDeServidor
 import com.controldestock.ui.Atras
 import com.controldestock.ui.AvisoSonoro
+import com.controldestock.ui.DialogoBuscarProducto
 import com.controldestock.ui.DialogoCodigoAMano
+import com.controldestock.ui.DialogoIdentificarse
 import com.controldestock.ui.EstadoDeSubida
 import com.controldestock.ui.FichaDeAlta
 import com.controldestock.ui.FichaDelArticulo
@@ -124,6 +127,16 @@ private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema
     // lectura de cámara en el medio le pisa el código que el operario está
     // tipeando a mano.
     var ingresandoAMano by remember { mutableStateOf(false) }
+    // Buscar un producto por texto: mismo tratamiento que `ingresandoAMano`,
+    // pausa la cámara y el botón atrás lo cierra antes que la ficha.
+    var buscando by remember { mutableStateOf(false) }
+    var resultadosDeBusqueda by remember { mutableStateOf<List<Hallazgo.Encontrado>>(emptyList()) }
+
+    // Identificarse sin QR.
+    var identificando by remember { mutableStateOf(false) }
+    var operariosParaIdentificar by remember { mutableStateOf<List<OperarioParaIdentificar>>(emptyList()) }
+    var cargandoOperarios by remember { mutableStateOf(false) }
+    var errorDeIdentificacion by remember { mutableStateOf<String?>(null) }
     var pendientes by remember { mutableStateOf(0) }
     var ubicaciones by remember { mutableStateOf<List<String>>(emptyList()) }
     var unidades by remember { mutableStateOf<List<UnidadEntidad>>(emptyList()) }
@@ -313,6 +326,15 @@ private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema
         }
     }
 
+    /** Igual que `leerCodigo`, pero para un artículo ya elegido de la lista o de una búsqueda. */
+    val contarPorId: (Int) -> Unit = { articuloId ->
+        alcance.launch {
+            val h = contador.buscarPorId(articuloId) ?: return@launch
+            previos = contador.conteosDe(h.articulo)
+            hallazgo = h
+        }
+    }
+
     LaunchedEffect(Unit) {
         vinculacion.value = base.vinculacionDao().actual()
         pantalla = pantallaSegun(vinculacion.value)
@@ -361,11 +383,26 @@ private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema
                 }
             },
             alContar = { pantalla = Pantalla.Escaneando },
-            // Los dos, no-op por ahora: cablearlos de verdad (abrir la ficha
-            // al tocar un producto, abrir el diálogo para identificarse) es
-            // una tarea posterior; acá alcanza con que el módulo compile.
-            alTocarProducto = {},
-            alIdentificarse = {},
+            alTocarProducto = { id ->
+                pantalla = Pantalla.Escaneando
+                contarPorId(id)
+            },
+            alIdentificarse = {
+                identificando = true
+                errorDeIdentificacion = null
+                cargandoOperarios = true
+                alcance.launch {
+                    val quien = base.vinculacionDao().actual() ?: return@launch
+                    try {
+                        val respuesta = ClienteServidor(quien.url, quien.token).operarios()
+                        operariosParaIdentificar = respuesta.operarios
+                    } catch (error: ErrorDeServidor) {
+                        errorDeIdentificacion = error.message
+                    } finally {
+                        cargandoOperarios = false
+                    }
+                }
+            },
         )
 
         Pantalla.Vinculando -> PantallaVinculacion(
@@ -408,19 +445,16 @@ private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema
             // ficha, pero el contenido que le pasamos (más abajo) no
             // dibuja nada para ese caso, así que queda en 0dp de alto —no
             // se ve nada raro en pantalla.
-            val hayAlgoAbierto = fichaAbierta(hallazgo, altaDe, ingresandoAMano)
+            val hayAlgoAbierto = fichaAbierta(hallazgo, altaDe, ingresandoAMano, buscando)
 
             // Se registra solo acá: en la lista, atrás sale de la app, que es
             // lo que el operario espera. Volver a la lista con una ficha a
             // medio cargar tiraría lo que tipeó, así que se cierra una cosa
             // por vez, en el mismo orden que `atrasCierra` define.
             BackHandler {
-                when (atrasCierra(hallazgo, altaDe, ingresandoAMano)) {
+                when (atrasCierra(hallazgo, altaDe, ingresandoAMano, buscando)) {
                     Atras.CierraIngresoAMano -> ingresandoAMano = false
-                    // Todavía no hay estado de búsqueda acá (llega en una
-                    // tarea posterior); esta rama nunca se toma mientras
-                    // tanto porque `atrasCierra` se llama sin `buscando`.
-                    Atras.CierraBusqueda -> {}
+                    Atras.CierraBusqueda -> buscando = false
                     Atras.CierraAlta -> altaDe = null
                     Atras.CierraFicha -> hallazgo = null
                     Atras.VuelveALaLista -> pantalla = Pantalla.EnLaLista
@@ -467,10 +501,7 @@ private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema
                 puedeIngresarAMano = !hayAlgoAbierto,
                 alIngresarAMano = { ingresandoAMano = true },
                 puedeBuscar = !hayAlgoAbierto,
-                // No-op por ahora: abrir de verdad el diálogo de búsqueda es
-                // una tarea posterior, que todavía no agregó el estado
-                // `buscando` acá.
-                alBuscar = {},
+                alBuscar = { buscando = true; resultadosDeBusqueda = emptyList() },
                 alVolver = { pantalla = Pantalla.EnLaLista },
                 alLeer = leerCodigo,
             ) {
@@ -616,7 +647,52 @@ private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema
                     alCancelar = { ingresandoAMano = false },
                 )
             }
+
+            if (buscando) {
+                DialogoBuscarProducto(
+                    resultados = resultadosDeBusqueda,
+                    alCambiarTexto = { texto ->
+                        alcance.launch { resultadosDeBusqueda = contador.buscarTexto(texto) }
+                    },
+                    alElegir = { h ->
+                        buscando = false
+                        previos = emptyList()
+                        alcance.launch {
+                            previos = contador.conteosDe(h.articulo)
+                            hallazgo = h
+                        }
+                    },
+                    alIngresarAMano = {
+                        buscando = false
+                        ingresandoAMano = true
+                    },
+                    alCerrar = { buscando = false },
+                )
+            }
         }
+    }
+
+    if (identificando) {
+        DialogoIdentificarse(
+            operarios = operariosParaIdentificar,
+            cargando = cargandoOperarios,
+            error = errorDeIdentificacion,
+            alElegir = { nombre, pin ->
+                alcance.launch {
+                    val vinculador = Vinculador(base) { u, t -> ClienteServidor(u, t) }
+                    when (val r = vinculador.identificar(nombre, pin)) {
+                        is ResultadoDeVinculacion.Vinculado -> {
+                            identificando = false
+                            vinculacion.value = base.vinculacionDao().actual()
+                            pantalla = Pantalla.EnLaLista
+                            refrescarListaAsignada()
+                        }
+                        is ResultadoDeVinculacion.Fallo -> errorDeIdentificacion = r.mensaje
+                    }
+                }
+            },
+            alCerrar = { identificando = false },
+        )
     }
 }
 
