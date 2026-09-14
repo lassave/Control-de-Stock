@@ -203,4 +203,36 @@ class PantallaTest {
             atrasCierra(hallazgo, altaDe = null, ingresandoAMano = false),
         )
     }
+
+    @Test
+    fun `buscar un producto tambien pausa la camara`() {
+        assertTrue(
+            fichaAbierta(hallazgo = null, altaDe = null, ingresandoAMano = false, buscando = true),
+        )
+    }
+
+    @Test
+    fun `sin buscar nada abierto no pausa la camara por eso`() {
+        assertFalse(
+            fichaAbierta(hallazgo = null, altaDe = null, ingresandoAMano = false, buscando = false),
+        )
+    }
+
+    @Test
+    fun `atras cierra la busqueda antes que la lista`() {
+        assertEquals(
+            Atras.CierraBusqueda,
+            atrasCierra(hallazgo = null, altaDe = null, ingresandoAMano = false, buscando = true),
+        )
+    }
+
+    @Test
+    fun `atras cierra el ingreso a mano antes que la busqueda`() {
+        // Ambos podrían estar abiertos si el operario llegó a «A mano» desde
+        // el botón «Ingresarlo a mano» del diálogo de búsqueda.
+        assertEquals(
+            Atras.CierraIngresoAMano,
+            atrasCierra(hallazgo = null, altaDe = null, ingresandoAMano = true, buscando = true),
+        )
+    }
 }

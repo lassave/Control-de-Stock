@@ -86,12 +86,21 @@ fun estadoTrasSubir(huboError: Boolean, loPidioElOperario: Boolean): EstadoDeSub
  * Un `Hallazgo.Desconocido` no cuenta: la franja roja se dibuja al lado de
  * la cámara, no la tapa.
  */
-fun fichaAbierta(hallazgo: Hallazgo?, altaDe: String?, ingresandoAMano: Boolean): Boolean =
-    hallazgo is Hallazgo.Encontrado || altaDe != null || ingresandoAMano
+fun fichaAbierta(
+    hallazgo: Hallazgo?,
+    altaDe: String?,
+    ingresandoAMano: Boolean,
+    // Con valor por defecto a propósito: son más de una decena de llamadas
+    // existentes, ninguna sabe de búsqueda, y agregar un cuarto booleano acá
+    // no cambia ninguna de ellas — «false» es exactamente el comportamiento
+    // que ya tenían.
+    buscando: Boolean = false,
+): Boolean = hallazgo is Hallazgo.Encontrado || altaDe != null || ingresandoAMano || buscando
 
 /** Qué cierra el botón atrás, estando en la pantalla de escaneo. */
 sealed class Atras {
     object CierraIngresoAMano : Atras()
+    object CierraBusqueda : Atras()
     object CierraAlta : Atras()
     object CierraFicha : Atras()
     object VuelveALaLista : Atras()
@@ -100,15 +109,20 @@ sealed class Atras {
 /**
  * Decide qué hace el botón atrás de Android en la pantalla de escaneo.
  *
- * El orden es al revés de `fichaAbierta`: ahí cualquiera de las tres causas
+ * El orden es al revés de `fichaAbierta`: ahí cualquiera de las causas
  * alcanza para pausar la cámara, acá hay que elegir una sola cosa para
- * cerrar. Volver a la lista con algo a medio cargar tiraría lo que el
- * operario tipeó, así que cada cuadro se cierra antes que el siguiente:
- * primero el código a mano, después el alta, después la ficha, y recién sin
- * nada abierto el atrás sale de la pantalla.
+ * cerrar. «A mano» va antes que la búsqueda porque a ese diálogo se puede
+ * llegar *desde* la búsqueda (el botón «Ingresarlo a mano»), así que puede
+ * haber dos abiertos a la vez y hay que cerrar el de encima primero.
  */
-fun atrasCierra(hallazgo: Hallazgo?, altaDe: String?, ingresandoAMano: Boolean): Atras = when {
+fun atrasCierra(
+    hallazgo: Hallazgo?,
+    altaDe: String?,
+    ingresandoAMano: Boolean,
+    buscando: Boolean = false,
+): Atras = when {
     ingresandoAMano -> Atras.CierraIngresoAMano
+    buscando -> Atras.CierraBusqueda
     altaDe != null -> Atras.CierraAlta
     hallazgo is Hallazgo.Encontrado -> Atras.CierraFicha
     else -> Atras.VuelveALaLista

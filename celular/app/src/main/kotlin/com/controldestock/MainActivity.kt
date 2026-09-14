@@ -411,6 +411,10 @@ private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema
             BackHandler {
                 when (atrasCierra(hallazgo, altaDe, ingresandoAMano)) {
                     Atras.CierraIngresoAMano -> ingresandoAMano = false
+                    // Todavía no hay estado de búsqueda acá (llega en una
+                    // tarea posterior); esta rama nunca se toma mientras
+                    // tanto porque `atrasCierra` se llama sin `buscando`.
+                    Atras.CierraBusqueda -> {}
                     Atras.CierraAlta -> altaDe = null
                     Atras.CierraFicha -> hallazgo = null
                     Atras.VuelveALaLista -> pantalla = Pantalla.EnLaLista
