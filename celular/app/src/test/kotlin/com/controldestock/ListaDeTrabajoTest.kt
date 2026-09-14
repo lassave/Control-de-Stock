@@ -14,6 +14,7 @@ import com.controldestock.nucleo.RespuestaMisUbicaciones
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -165,5 +166,16 @@ class ListaDeTrabajoTest {
         base.pasadaItemDao().reemplazar(listOf(1))
 
         assertEquals(listOf("A"), lista.armar().single().renglones.map { it.sku })
+    }
+
+    @Test
+    fun `un alta rapida llega marcada como agregado a la lista`() = runTest {
+        base.maestroDao().reemplazarMaestro(
+            articulos = listOf(articulo(1, "A", "P-1").copy(origen = "alta_rapida")),
+            codigos = emptyList(), unidades = emptyList(),
+        )
+        base.asignacionDao().reemplazar(listOf("P-1"))
+
+        assertTrue(lista.armar().single().renglones.single().agregado)
     }
 }

@@ -33,6 +33,7 @@ class ListaDeTrabajo(private val base: BaseLocal) {
                 // Sin código propio, el SKU hace de código: es el mismo
                 // respaldo que usa `Contador.registrar` al mandar el conteo.
                 codigos = codigosPorArticulo[articulo.id] ?: listOf(articulo.sku),
+                origen = articulo.origen,
             )
         }
 
