@@ -47,6 +47,24 @@ data class RespuestaVinculacion(
 )
 
 @Serializable
+data class OperarioParaIdentificar(
+    val id: Int,
+    val nombre: String,
+    @SerialName("tiene_pin") val tienePin: Boolean,
+)
+
+@Serializable
+data class RespuestaOperarios(val operarios: List<OperarioParaIdentificar>)
+
+@Serializable
+data class RespuestaIdentificacion(
+    val operario: OperarioRemoto,
+    val proyecto: ProyectoRemoto,
+    val pasada: PasadaRemota,
+    val token: String,
+)
+
+@Serializable
 data class ArticuloRemoto(
     val id: Int,
     @SerialName("id_orden") val idOrden: Int,
@@ -57,6 +75,9 @@ data class ArticuloRemoto(
     val grupo: String? = null,
     val ubicacion: String? = null,
     val unidad: String,
+    // Por defecto «importado»: un servidor viejo que todavía no manda este
+    // campo no puede dejar a la app sin poder parsear el maestro.
+    val origen: String = "importado",
 )
 
 @Serializable

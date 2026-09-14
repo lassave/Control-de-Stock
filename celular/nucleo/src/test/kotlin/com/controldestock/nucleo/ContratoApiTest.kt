@@ -154,4 +154,43 @@ class ContratoApiTest {
 
         assertTrue(respuesta.creado)
     }
+
+    @Test
+    fun `el maestro trae el origen de cada articulo`() {
+        val respuesta = json.decodeFromString<RespuestaMaestro>(leer("maestro"))
+
+        assertTrue(respuesta.articulos.all { it.origen == "importado" })
+    }
+
+    @Test
+    fun `sin origen en la respuesta se asume importado`() {
+        // Tolerancia hacia un servidor viejo que todavía no manda el campo:
+        // un JSON armado a mano y no el archivo de contrato, para no
+        // depender de su formato exacto.
+        val sinOrigen = """
+            {"proyecto_id":1,"articulos":[{"id":1,"id_orden":1,"sku":"A-1",
+            "descripcion":"Fideos","unidad":"UN"}],"codigos":[],"unidades":[]}
+        """.trimIndent()
+
+        val respuesta = json.decodeFromString<RespuestaMaestro>(sinOrigen)
+
+        assertEquals("importado", respuesta.articulos[0].origen)
+    }
+
+    @Test
+    fun `parsea la lista de operarios para identificarse`() {
+        val respuesta = json.decodeFromString<RespuestaOperarios>(leer("operarios"))
+
+        assertEquals(1, respuesta.operarios.size)
+        assertEquals("Contrato", respuesta.operarios[0].nombre)
+        assertFalse(respuesta.operarios[0].tienePin)
+    }
+
+    @Test
+    fun `parsea la identificacion y trae el token`() {
+        val respuesta = json.decodeFromString<RespuestaIdentificacion>(leer("identificacion"))
+
+        assertEquals("Contrato", respuesta.operario.nombre)
+        assertTrue(respuesta.token.isNotBlank())
+    }
 }
