@@ -70,6 +70,49 @@ def vincular(request: Request, x_token: str = Header(default="")):
     }
 
 
+@router.get("/operarios")
+def listar_operarios(request: Request, x_token: str = Header(default="")):
+    con, _, _ = _contexto(request, x_token)
+    return {"operarios": operarios.listar_para_identificar(con)}
+
+
+@router.post("/identificar")
+async def identificar(request: Request, x_token: str = Header(default="")):
+    """Identificarse en un celular ya vinculado, sin volver a escanear el QR.
+
+    El `X-Token` de acá adentro no es el de la persona que se está por
+    identificar: es el de quien ya tenía el celular, y solo prueba que es un
+    dispositivo que ya pasó por el QR alguna vez.
+    """
+    con, _, proyecto = _contexto(request, x_token)
+    cuerpo = await _cuerpo_json(request)
+
+    nombre = (cuerpo.get("nombre") or "").strip()
+    elegido = operarios.para_identificar(con, nombre)
+    if elegido is None:
+        raise HTTPException(status_code=400, detail="Ese operario no existe")
+
+    pin_guardado = elegido["pin"]
+    if pin_guardado:
+        pin_recibido = cuerpo.get("pin")
+        if not pin_recibido:
+            raise HTTPException(status_code=400, detail="Ese operario necesita un PIN")
+        if pin_recibido != pin_guardado:
+            raise HTTPException(status_code=400, detail="El PIN no coincide")
+
+    try:
+        pasada = proyectos.pasada_activa_de_operario(con, proyecto["id"], elegido["id"])
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+    return {
+        "operario": {"id": elegido["id"], "nombre": elegido["nombre"]},
+        "proyecto": {"id": proyecto["id"], "nombre": proyecto["nombre"]},
+        "pasada": pasada,
+        "token": elegido["token_dispositivo"],
+    }
+
+
 @router.get("/maestro")
 def descargar_maestro(request: Request, x_token: str = Header(default="")):
     con, _, proyecto = _contexto(request, x_token)

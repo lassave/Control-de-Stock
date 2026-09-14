@@ -1374,3 +1374,116 @@ def test_dar_de_baja_rechaza_una_cuenta_menor(tmp_path):
     with TestClient(app) as otro_cliente:
         loguear(otro_cliente, rol="menor")
         assert otro_cliente.post("/api/usuarios/1/desactivar").status_code == 403
+
+
+def test_listar_operarios_para_identificar(cliente, proyecto):
+    cliente.post("/api/operarios", json={"nombre": "Juan"})
+    cliente.post("/api/operarios", json={"nombre": "Ana", "pin": "1234"})
+    token = cliente.post("/api/operarios", json={"nombre": "Pedro"}).json()["token_dispositivo"]
+
+    respuesta = cliente.get("/api/dispositivo/operarios", headers={"X-Token": token})
+
+    assert respuesta.status_code == 200
+    listado = {o["nombre"]: o["tiene_pin"] for o in respuesta.json()["operarios"]}
+    assert listado == {"Juan": False, "Ana": True, "Pedro": False}
+
+
+def test_listar_operarios_con_token_invalido_devuelve_401(cliente, proyecto):
+    respuesta = cliente.get("/api/dispositivo/operarios", headers={"X-Token": "inventado"})
+
+    assert respuesta.status_code == 401
+
+
+def test_identificarse_sin_pin(cliente, proyecto):
+    juan = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    ana = cliente.post("/api/operarios", json={"nombre": "Ana"}).json()
+
+    respuesta = cliente.post(
+        "/api/dispositivo/identificar",
+        headers={"X-Token": juan["token_dispositivo"]},
+        json={"nombre": "Ana"},
+    )
+
+    assert respuesta.status_code == 200
+    cuerpo = respuesta.json()
+    assert cuerpo["operario"]["nombre"] == "Ana"
+    assert cuerpo["proyecto"]["id"] == proyecto["id"]
+    assert cuerpo["token"] == ana["token_dispositivo"]
+
+
+def test_identificarse_con_pin_correcto(cliente, proyecto):
+    juan = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    cliente.post("/api/operarios", json={"nombre": "Ana", "pin": "1234"})
+
+    respuesta = cliente.post(
+        "/api/dispositivo/identificar",
+        headers={"X-Token": juan["token_dispositivo"]},
+        json={"nombre": "Ana", "pin": "1234"},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta.json()["operario"]["nombre"] == "Ana"
+
+
+def test_identificarse_con_pin_incorrecto_devuelve_400(cliente, proyecto):
+    juan = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    cliente.post("/api/operarios", json={"nombre": "Ana", "pin": "1234"})
+
+    respuesta = cliente.post(
+        "/api/dispositivo/identificar",
+        headers={"X-Token": juan["token_dispositivo"]},
+        json={"nombre": "Ana", "pin": "0000"},
+    )
+
+    assert respuesta.status_code == 400
+    assert "PIN no coincide" in respuesta.json()["detail"]
+
+
+def test_identificarse_sin_el_pin_que_hace_falta_devuelve_400(cliente, proyecto):
+    juan = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    cliente.post("/api/operarios", json={"nombre": "Ana", "pin": "1234"})
+
+    respuesta = cliente.post(
+        "/api/dispositivo/identificar",
+        headers={"X-Token": juan["token_dispositivo"]},
+        json={"nombre": "Ana"},
+    )
+
+    assert respuesta.status_code == 400
+    assert "necesita un PIN" in respuesta.json()["detail"]
+
+
+def test_identificarse_con_nombre_inexistente_devuelve_400(cliente, proyecto):
+    juan = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.post(
+        "/api/dispositivo/identificar",
+        headers={"X-Token": juan["token_dispositivo"]},
+        json={"nombre": "Nadie"},
+    )
+
+    assert respuesta.status_code == 400
+    assert "no existe" in respuesta.json()["detail"]
+
+
+def test_identificarse_con_token_invalido_devuelve_401(cliente, proyecto):
+    respuesta = cliente.post(
+        "/api/dispositivo/identificar",
+        headers={"X-Token": "inventado"},
+        json={"nombre": "Juan"},
+    )
+
+    assert respuesta.status_code == 401
+
+
+def test_identificarse_sin_proyecto_abierto_devuelve_409(cliente, proyecto):
+    juan = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+    cliente.post(f"/api/proyectos/{proyecto['id']}/cerrar")
+
+    respuesta = cliente.post(
+        "/api/dispositivo/identificar",
+        headers={"X-Token": juan["token_dispositivo"]},
+        json={"nombre": "Juan"},
+    )
+
+    assert respuesta.status_code == 409
