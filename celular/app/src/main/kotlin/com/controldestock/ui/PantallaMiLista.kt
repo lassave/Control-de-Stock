@@ -1,6 +1,7 @@
 package com.controldestock.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +52,7 @@ import com.controldestock.nucleo.UbicacionAsignada
 fun PantallaMiLista(
     ubicaciones: List<UbicacionAsignada>,
     pasada: String,
+    operario: String,
     actualizando: Boolean,
     avisoDeActualizacion: String?,
     pendientes: Int,
@@ -61,6 +63,8 @@ fun PantallaMiLista(
     alSubir: () -> Unit,
     alContar: () -> Unit,
     alCambiarTema: () -> Unit,
+    alTocarProducto: (Int) -> Unit,
+    alIdentificarse: () -> Unit,
 ) {
     // Por defecto, todas expandidas: una ubicación ausente acá vale «true»,
     // no «false» — si no, cada una nueva que baje el reparto arrancaría
@@ -90,6 +94,16 @@ fun PantallaMiLista(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            operario,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(onClick = alIdentificarse) {
+                            Text("Cambiar", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
                 BotonDeTema(oscuro = oscuro, alTocar = alCambiarTema)
             }
@@ -142,7 +156,7 @@ fun PantallaMiLista(
                         items(
                             ubicacion.renglones,
                             key = { "${ubicacion.ubicacion}-${it.sku}" },
-                        ) { renglon -> TarjetaProducto(renglon) }
+                        ) { renglon -> TarjetaProducto(renglon, alTocar = { alTocarProducto(renglon.articuloId) }) }
                     }
                 }
             }
@@ -292,11 +306,11 @@ private fun TarjetaDeMetrica(
 }
 
 @Composable
-private fun TarjetaProducto(renglon: RenglonAsignado) {
+private fun TarjetaProducto(renglon: RenglonAsignado, alTocar: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp).clickable(onClick = alTocar),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -310,7 +324,10 @@ private fun TarjetaProducto(renglon: RenglonAsignado) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                if (renglon.fueContado) Etiqueta("CONTADO", Verde) else Etiqueta("PENDIENTE", Ambar)
+                Column(horizontalAlignment = Alignment.End) {
+                    if (renglon.fueContado) Etiqueta("CONTADO", Verde) else Etiqueta("PENDIENTE", Ambar)
+                    if (renglon.agregado) Etiqueta("AGREGADO", Violeta)
+                }
             }
             Text(
                 renglon.descripcion,

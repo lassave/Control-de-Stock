@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import com.controldestock.nucleo.RenglonAsignado
 import com.controldestock.nucleo.UbicacionAsignada
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -37,14 +38,19 @@ class PantallaMiListaTest {
             .performScrollToNode(hasText(texto, substring = substring))
     }
 
-    private fun renglon(idOrden: Int, sku: String, contado: Int? = null, articuloId: Int = idOrden) = RenglonAsignado(
+    private fun renglon(
+        idOrden: Int, sku: String, contado: Int? = null,
+        articuloId: Int = idOrden, agregado: Boolean = false,
+    ) = RenglonAsignado(
         idOrden = idOrden, sku = sku, descripcion = "Producto $sku",
-        codigos = sku, unidad = "UN", contado = contado, articuloId = articuloId,
+        codigos = sku, unidad = "UN", contado = contado,
+        articuloId = articuloId, agregado = agregado,
     )
 
     private fun montar(
         ubicaciones: List<UbicacionAsignada> = emptyList(),
         pasada: String = "Conteo 1",
+        operario: String = "Juan",
         actualizando: Boolean = false,
         avisoDeActualizacion: String? = null,
         pendientes: Int = 0,
@@ -55,11 +61,14 @@ class PantallaMiListaTest {
         alSubir: () -> Unit = {},
         alContar: () -> Unit = {},
         alCambiarTema: () -> Unit = {},
+        alTocarProducto: (Int) -> Unit = {},
+        alIdentificarse: () -> Unit = {},
     ) {
         compose.setContent {
             PantallaMiLista(
                 ubicaciones = ubicaciones,
                 pasada = pasada,
+                operario = operario,
                 actualizando = actualizando,
                 avisoDeActualizacion = avisoDeActualizacion,
                 pendientes = pendientes,
@@ -70,6 +79,8 @@ class PantallaMiListaTest {
                 alSubir = alSubir,
                 alContar = alContar,
                 alCambiarTema = alCambiarTema,
+                alTocarProducto = alTocarProducto,
+                alIdentificarse = alIdentificarse,
             )
         }
     }
@@ -111,6 +122,9 @@ class PantallaMiListaTest {
             ),
         )
 
+        // Con scroll: la fila nueva de operario/Cambiar en el encabezado
+        // achica lo que le queda a la lista en la ventana chica del test.
+        scrollHasta("UBICACIÓN ASIGNADA:")
         compose.onNodeWithText("UBICACIÓN ASIGNADA:").assertIsDisplayed()
         compose.onNodeWithText("P-3").assertIsDisplayed()
         scrollHasta("40")
@@ -247,5 +261,62 @@ class PantallaMiListaTest {
         montar(version = "v2026-08-21 (build 223)")
 
         compose.onNodeWithText("v2026-08-21 (build 223)").assertIsDisplayed()
+    }
+
+    @Test
+    fun `el nombre del operario se muestra en el encabezado`() {
+        montar(operario = "María")
+
+        compose.onNodeWithText("María").assertIsDisplayed()
+    }
+
+    @Test
+    fun `el boton Cambiar llama a alIdentificarse`() {
+        var identificando = false
+        montar(alIdentificarse = { identificando = true })
+
+        compose.onNodeWithText("Cambiar").performClick()
+
+        assertTrue(identificando)
+    }
+
+    @Test
+    fun `tocar la tarjeta de un producto llama a alTocarProducto con su id`() {
+        var tocado: Int? = null
+        montar(
+            ubicaciones = listOf(
+                UbicacionAsignada("P-1", listOf(renglon(1, "A-1", articuloId = 42))),
+            ),
+            alTocarProducto = { tocado = it },
+        )
+
+        scrollHasta("ID: 001 | SKU: A-1", substring = true)
+        compose.onNodeWithText("ID: 001 | SKU: A-1", substring = true).performClick()
+
+        assertEquals(42, tocado)
+    }
+
+    @Test
+    fun `un producto agregado muestra la etiqueta AGREGADO`() {
+        montar(
+            ubicaciones = listOf(
+                UbicacionAsignada("P-1", listOf(renglon(1, "A", agregado = true))),
+            ),
+        )
+
+        scrollHasta("AGREGADO")
+        compose.onNodeWithText("AGREGADO").assertIsDisplayed()
+    }
+
+    @Test
+    fun `un producto del maestro original no muestra AGREGADO`() {
+        montar(
+            ubicaciones = listOf(
+                UbicacionAsignada("P-1", listOf(renglon(1, "A"))),
+            ),
+        )
+
+        scrollHasta("PENDIENTE")
+        compose.onAllNodesWithText("AGREGADO").assertCountEquals(0)
     }
 }

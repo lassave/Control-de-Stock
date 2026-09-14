@@ -340,6 +340,7 @@ private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema
         Pantalla.EnLaLista -> PantallaMiLista(
             ubicaciones = ubicacionesAsignadas,
             pasada = vinculacion.value?.pasadaEtiqueta.orEmpty(),
+            operario = vinculacion.value?.operarioNombre.orEmpty(),
             actualizando = actualizandoLista,
             avisoDeActualizacion = avisoDeActualizacion,
             pendientes = pendientes,
@@ -360,6 +361,11 @@ private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema
                 }
             },
             alContar = { pantalla = Pantalla.Escaneando },
+            // Los dos, no-op por ahora: cablearlos de verdad (abrir la ficha
+            // al tocar un producto, abrir el diálogo para identificarse) es
+            // una tarea posterior; acá alcanza con que el módulo compile.
+            alTocarProducto = {},
+            alIdentificarse = {},
         )
 
         Pantalla.Vinculando -> PantallaVinculacion(
