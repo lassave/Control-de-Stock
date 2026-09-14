@@ -48,6 +48,8 @@ class PantallaEscaneoTest {
                 alSubir = {},
                 puedeIngresarAMano = true,
                 alIngresarAMano = {},
+                puedeBuscar = true,
+                alBuscar = {},
                 alVolver = {},
                 camara = { _, _ -> },
             ) {}
@@ -92,6 +94,8 @@ class PantallaEscaneoTest {
                 alSubir = {},
                 puedeIngresarAMano = true,
                 alIngresarAMano = {},
+                puedeBuscar = true,
+                alBuscar = {},
                 alVolver = {},
                 camara = { esta, _ -> activo += esta },
             ) {
@@ -121,6 +125,8 @@ class PantallaEscaneoTest {
                 alSubir = {},
                 puedeIngresarAMano = true,
                 alIngresarAMano = { abrio = true },
+                puedeBuscar = true,
+                alBuscar = {},
                 alVolver = {},
                 camara = { _, _ -> },
             ) {}
@@ -149,6 +155,8 @@ class PantallaEscaneoTest {
                 alSubir = {},
                 puedeIngresarAMano = true,
                 alIngresarAMano = {},
+                puedeBuscar = true,
+                alBuscar = {},
                 alVolver = {},
                 camara = { _, _ -> },
             ) {}
@@ -174,6 +182,8 @@ class PantallaEscaneoTest {
                 alSubir = {},
                 puedeIngresarAMano = true,
                 alIngresarAMano = {},
+                puedeBuscar = true,
+                alBuscar = {},
                 alVolver = { volvio = true },
                 camara = { _, _ -> },
             ) {}
@@ -199,11 +209,66 @@ class PantallaEscaneoTest {
                 alSubir = {},
                 puedeIngresarAMano = false,
                 alIngresarAMano = {},
+                puedeBuscar = true,
+                alBuscar = {},
                 alVolver = {},
                 camara = { _, _ -> },
             ) { }
         }
 
         compose.onNodeWithText("A mano").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `el boton de buscar llama al callback cuando esta habilitado`() {
+        var abrio = false
+        compose.setContent {
+            PantallaEscaneo(
+                operario = "Ana",
+                pasada = "Pasada 1",
+                pendientes = 0,
+                fichaAbierta = false,
+                avisoDeDesconocido = null,
+                alDarDeAlta = null,
+                alLeer = {},
+                estadoDeSubida = EstadoDeSubida.Quieto,
+                alSubir = {},
+                puedeIngresarAMano = true,
+                alIngresarAMano = {},
+                puedeBuscar = true,
+                alBuscar = { abrio = true },
+                alVolver = {},
+                camara = { _, _ -> },
+            ) {}
+        }
+
+        compose.onNodeWithText("Buscar").performClick()
+
+        assertTrue(abrio)
+    }
+
+    @Test
+    fun `el boton de buscar queda deshabilitado con algo mas abierto`() {
+        compose.setContent {
+            PantallaEscaneo(
+                operario = "Ana",
+                pasada = "Pasada 1",
+                pendientes = 0,
+                fichaAbierta = true,
+                avisoDeDesconocido = null,
+                alDarDeAlta = null,
+                alLeer = {},
+                estadoDeSubida = EstadoDeSubida.Quieto,
+                alSubir = {},
+                puedeIngresarAMano = false,
+                alIngresarAMano = {},
+                puedeBuscar = false,
+                alBuscar = {},
+                alVolver = {},
+                camara = { _, _ -> },
+            ) {}
+        }
+
+        compose.onNodeWithText("Buscar").assertIsNotEnabled()
     }
 }

@@ -466,6 +466,11 @@ private fun App(base: BaseLocal, oscuro: Boolean, version: String, alCambiarTema
                 },
                 puedeIngresarAMano = !hayAlgoAbierto,
                 alIngresarAMano = { ingresandoAMano = true },
+                puedeBuscar = !hayAlgoAbierto,
+                // No-op por ahora: abrir de verdad el diálogo de búsqueda es
+                // una tarea posterior, que todavía no agregó el estado
+                // `buscando` acá.
+                alBuscar = {},
                 alVolver = { pantalla = Pantalla.EnLaLista },
                 alLeer = leerCodigo,
             ) {

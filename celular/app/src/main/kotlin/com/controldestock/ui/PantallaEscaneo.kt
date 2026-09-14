@@ -109,6 +109,9 @@ fun PantallaEscaneo(
     /** Si el operario puede abrir el ingreso de código a mano ahora mismo. */
     puedeIngresarAMano: Boolean,
     alIngresarAMano: () -> Unit,
+    /** Si el operario puede abrir la búsqueda por texto ahora mismo. */
+    puedeBuscar: Boolean,
+    alBuscar: () -> Unit,
     /**
      * Vuelve a la lista de lo asignado. Sin valor por defecto a propósito:
      * es la única forma de volver, y que falte tiene que notarse al
@@ -171,6 +174,13 @@ fun PantallaEscaneo(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                 ) {
                     Text("A mano", style = MaterialTheme.typography.bodySmall)
+                }
+                OutlinedButton(
+                    onClick = alBuscar,
+                    enabled = puedeBuscar,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                ) {
+                    Text("Buscar", style = MaterialTheme.typography.bodySmall)
                 }
                 IndicadorDePendientes(
                     pendientes = pendientes,
