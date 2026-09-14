@@ -151,6 +151,19 @@ def test_maestro_para_dispositivo_no_expone_stock(cliente, proyecto):
         assert "costo_unitario" not in articulo
 
 
+def test_maestro_expone_el_origen_de_cada_articulo(cliente, proyecto):
+    importar(cliente, proyecto["id"])
+    operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()
+
+    respuesta = cliente.get(
+        "/api/dispositivo/maestro", headers={"X-Token": operario["token_dispositivo"]}
+    )
+
+    articulos = respuesta.json()["articulos"]
+    assert len(articulos) == 2
+    assert all(a["origen"] == "importado" for a in articulos)
+
+
 def test_enviar_conteos(cliente, proyecto):
     importar(cliente, proyecto["id"])
     operario = cliente.post("/api/operarios", json={"nombre": "Juan"}).json()

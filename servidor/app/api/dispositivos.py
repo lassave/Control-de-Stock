@@ -120,7 +120,7 @@ def descargar_maestro(request: Request, x_token: str = Header(default="")):
     filas_articulos = con.execute(
         """
         SELECT a.id, a.id_orden, a.tipo, a.material, a.sku, a.descripcion,
-               a.grupo, a.ubicacion, a.unidad
+               a.grupo, a.ubicacion, a.unidad, a.origen
         FROM articulo a
         WHERE a.proyecto_id = ? AND a.fusionado_en IS NULL
         ORDER BY a.id_orden
