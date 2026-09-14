@@ -319,4 +319,39 @@ class ContadorTest {
             previos.none { it.evento.codigo == "7790002" },
         )
     }
+
+    @Test
+    fun `buscarPorId encuentra el articulo por su id`() = runTest {
+        val hallazgo = contador().buscarPorId(1)
+
+        assertEquals("Fideos", hallazgo?.articulo?.descripcion)
+    }
+
+    @Test
+    fun `buscarPorId devuelve null si el articulo no existe`() = runTest {
+        assertEquals(null, contador().buscarPorId(999))
+    }
+
+    @Test
+    fun `buscarPorId respeta el recuento parcial`() = runTest {
+        base.vinculacionDao().guardar(
+            VinculacionEntidad(
+                url = "http://172.16.11.12:8000", token = "abc",
+                operarioId = 1, operarioNombre = "Juan", proyectoId = 1,
+                pasadaId = 2, pasadaNumero = 2, pasadaEtiqueta = "Conteo 2",
+                esParcial = true,
+            ),
+        )
+        base.pasadaItemDao().reemplazar(listOf(2)) // solo Harina, no Fideos
+
+        assertEquals(null, contador().buscarPorId(1))
+    }
+
+    @Test
+    fun `el alta rapida nace marcada como agregado`() = runTest {
+        contador().darDeAlta("7790999", "Pack por 6", "UN", null, 6000, null)
+
+        val nuevo = base.maestroDao().porCodigo("7790999")
+        assertEquals("alta_rapida", nuevo?.origen)
+    }
 }

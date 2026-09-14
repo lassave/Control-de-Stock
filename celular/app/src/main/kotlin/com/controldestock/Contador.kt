@@ -58,6 +58,29 @@ class Contador(
         return Hallazgo.Encontrado(articulo, admite, codigo)
     }
 
+    /**
+     * Resuelve un artículo ya elegido de la lista o de una búsqueda, sin
+     * pasar por ningún código de barras.
+     *
+     * `null` cubre dos casos que se tratan igual: el artículo ya no existe
+     * —la lista se armó con un refresco anterior y el maestro se volvió a
+     * bajar— o quedó fuera de un recuento parcial que empezó mientras tanto.
+     * Ninguno de los dos amerita distinguir del otro lado: no hay ficha que
+     * abrir.
+     */
+    suspend fun buscarPorId(articuloId: Int): Hallazgo.Encontrado? {
+        val articulo = base.maestroDao().porId(articuloId) ?: return null
+
+        val vinculacion = base.vinculacionDao().actual()
+        if (vinculacion?.esParcial == true && !base.pasadaItemDao().contiene(articulo.id)) {
+            return null
+        }
+
+        val admite = base.maestroDao().unidad(articulo.unidad)?.admiteDecimales == 1
+        val codigo = base.maestroDao().codigoDe(articulo.id) ?: articulo.sku
+        return Hallazgo.Encontrado(articulo, admite, codigo)
+    }
+
     suspend fun ubicaciones(): List<String> = base.maestroDao().ubicaciones()
 
     suspend fun registrar(
@@ -129,6 +152,7 @@ class Contador(
             proyectoId = vinculacion?.proyectoId ?: 0,
             busqueda = textoDeBusqueda(descripcion, codigo, ubicacion),
             estadoAlta = EstadoSync.PENDIENTE.name,
+            origen = "alta_rapida",
         )
 
         base.maestroDao().insertarArticulos(listOf(articulo))
