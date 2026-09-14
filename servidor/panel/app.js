@@ -111,12 +111,16 @@ function dibujarFila(fila) {
     : "";
   const fecha = (fila.fecha || "").replace("T", " ").replace("Z", "");
 
+  const agregado = fila.origen === "alta_rapida"
+    ? `<span class="marca">AGREGADO</span>`
+    : "";
+
   return `
     <tr${claseFila ? ` class="${claseFila}"` : ""}>
       <td class="num">${esc(fila.id_orden)}</td>
       <td>${esc(fila.tipo)}</td>
       <td>${esc(fila.material)}</td>
-      <td class="sku">${esc(fila.sku)}</td>
+      <td class="sku">${esc(fila.sku)} ${agregado}</td>
       <td>${esc(fila.codigos_de_barra)}</td>
       <td>${esc(fila.descripcion)}</td>
       <td>${esc(fila.grupo)}</td>
